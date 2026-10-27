@@ -1,0 +1,15 @@
+# Aether's Rust cores: thin UniFFI skins over Proton's document crates
+# (RESEARCH_PLAN.md §2, Q1). The crates themselves stay in Proton and are
+# used by path, so both apps read and write the same formats.
+[workspace]
+resolver = "2"
+members = ["aether-diffuse", "uniffi-bindgen"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

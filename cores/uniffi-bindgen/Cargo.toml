@@ -1,0 +1,13 @@
+[package]
+name = "uniffi-bindgen"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Generates the Swift side of Aether's Rust cores."
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "main.rs"
+
+[dependencies]
+uniffi = { version = "0.32", features = ["cli"] }
