@@ -542,9 +542,30 @@ The user took the PI's recommendation on all five.
   - ⇧⌘↩ on the KSampler ran only its ancestors and showed the decoded picture on it.
   - Run to Here from VAE Decode's right-click menu did the same.
 
+**2026-10-27 · Mask painting.** Proton's mask sheet, rebuilt from `ui/diffuse-mask.js` (recovered from Proton's history).
+
+- **Opening it:** Paint the mask, under a Load Image's picture in the inspector. The field shows how much the mask covers, or "No mask: all of it is redrawn".
+- **The sheet:** the picture fitted, with the mask over it in Proton's pink at half strength, and the brush's outline under the pointer.
+  - Brush and eraser (b, e, x swaps), invert (i), clear, and undo a stroke (⌘Z, 30 deep).
+  - Brush size 2–400 px (`[` `]`) and soft edge 0–100%, with "N% of the picture is masked".
+  - Esc cancels and Return is Done. The keys go through the same window key monitor as the stage's, ahead of the menus.
+- **The pixels:** `MaskDocument` in DiffuseCore, as Proton paints:
+  - Each pixel holds how painted it is, at the picture's own size.
+  - Dabs are a solid core fading linearly to the brush's edge, an eighth of the brush apart. The brush paints "over" and the eraser "out".
+  - Shown as a grey coverage image that SwiftUI turns into the tint on the GPU (`luminanceToAlpha`).
+- **Saved:** as `<flow>.<node>.mask.png`, white where painted on black.
+  - Read and written through `proton-raster` in the bridge (`mask_from_png`, `mask_to_png`) with the upload's own formula, so no colour management touches it.
+  - Sealed when the flow, the picture or a mask already there is sealed.
+  - A kept mask of another size is ignored, as Proton does.
+- **Tests:** one more Rust test (a round trip, and a browser canvas's mask read) and six more Swift tests (dabs and their fade, eraser, undo, lines without gaps, invert, clear, share, PNG round trip, sealed and plain files). 41 Swift, 150 Rust in all.
+- **Verified in the app** on the Inpaint starter:
+  - A stroke painted; `]]]` grew the brush to 97 px; `i` inverted to 99% and ⌘Z undid it; `x` erased the stroke's end.
+  - Return kept the mask: 1344 × 768, "1% masked".
+  - The run uploaded the picture re-encoded with the mask in its alpha (793 KB against 142 KB).
+  - After a relaunch, the kept mask came back in the sheet, and Esc left it unchanged.
+
 Not yet:
 - The local Core ML backend (Q3's default), so runs go to Nexus only for now.
-- Painting a Load Image's mask (Proton's mask sheet); masks Proton painted are sent as found.
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
 - The rest of the shell's omnibar.
@@ -561,6 +582,6 @@ Not yet:
 1. ~~Sealed flows and outputs~~: done, see §10a.
 2. ~~**Inputs.**~~ Done, see §10a. Load Image's picture: choose one, drop one, or take one from the Gallery, then upload it through `Client::upload`. This turns on the Gallery's Use as input, and img2img and inpaint flows.
 3. ~~**Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here~~: done, see §10a.
-4. **Mask painting:** Proton's mask sheet over a Load Image (brush, eraser, size, soft edge, invert, clear, undo a stroke), kept as `<flow>.<node>.mask.png`. Runs already send such masks.
+4. ~~**Mask painting**~~: done, see §10a. With it, Diffuse matches Proton's window, apart from Send to Canvas and Send to Game, which wait on those workspaces.
 
 Then the local Core ML backend (Q3's default). It needs several GB of models, so ask before downloading. After that, the omnibar and M1's project graph, which Send to Canvas and Send to Game depend on.

@@ -42,6 +42,21 @@ public enum FlowInputs {
         return root(of: flow).appending(path: "\(stem).\(node).mask.png")
     }
 
+    /// The mask painted over a Load Image, as kept: a PNG, opened with
+    /// `key` when it is sealed; `nil` when none was painted.
+    public static func readMask(node: String, flow: URL, key: SealKey?) throws -> Data? {
+        let plain = mask(node: node, flow: flow)
+        guard SealedFiles.exists(plain) else { return nil }
+        let onDisk = SealedFiles.isSealed(plain) ? SealedFiles.sealed(plain) : plain
+        return try readFile(path: onDisk.path, key: key)
+    }
+
+    /// Keep a mask beside the flow, whole or not at all: sealed with `key`,
+    /// plain without.
+    public static func writeMask(_ png: Data, node: String, flow: URL, key: SealKey?) throws {
+        _ = try writeFile(path: mask(node: node, flow: flow).path, bytes: png, key: key)
+    }
+
     /// The name the picture at `url` has in the flow, when it is in the
     /// flow's folder; `nil` when it is elsewhere and has to be kept first.
     public static func name(of url: URL, flow: URL) -> String? {

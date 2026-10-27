@@ -151,7 +151,14 @@ private struct PictureField: View {
     let field: String
     @State private var dropping = false
 
+    @State private var maskShare: Double?
+
     private var name: String? { node.values[field]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } }
+
+    private var maskSaid: String {
+        guard let maskShare, maskShare > 0 else { return "No mask: all of it is redrawn" }
+        return "\(max(1, Int((maskShare * 100).rounded())))% masked"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -179,6 +186,15 @@ private struct PictureField: View {
                 Button("From the Gallery") { model.pickFromGallery(node: node.id, field: field) }
             }
             .controlSize(.small)
+            if name != nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    Button { Task { await model.openMask(node: node.id, field: field) } } label: {
+                        Label("Paint the mask", systemImage: "paintbrush.pointed")
+                    }
+                    .controlSize(.small)
+                    Text(maskSaid).font(.system(size: 11)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,7 +205,17 @@ private struct PictureField: View {
             Task { await model.usePictureFile(url, node: node.id, field: field) }
             return true
         } isTargeted: { dropping = $0 }
+        .task(id: MaskRead(node: node.id, painted: model.maskShares.count, unlocked: model.sealKey != nil)) {
+            maskShare = await model.maskShare(node: node.id)
+        }
     }
+}
+
+/// What a Load Image's mask share is read again for.
+private struct MaskRead: Hashable {
+    let node: String
+    let painted: Int
+    let unlocked: Bool
 }
 
 /// Edits one field. Every change goes to the core as a `set`; a value the

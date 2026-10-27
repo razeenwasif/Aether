@@ -84,6 +84,13 @@ public struct DiffuseWorkspace: View {
         .animation(Motion.panel, value: model.libraryOpen)
         .animation(Motion.panel, value: model.inspectorOpen)
         .animation(Motion.panel, value: model.stage)
+        .overlay {
+            if let mask = model.mask {
+                MaskSheet(model: model, session: mask)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: model.mask == nil)
         .background(Color.obsidian0)
         .modifier(StageKeys(model: model))
     }

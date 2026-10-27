@@ -194,6 +194,33 @@ pub fn upload_bytes(file: String, mask: Option<String>, key: Option<Arc<SealKey>
     proton_raster::file::encode_png(w, h, &rgba).map_err(failed)
 }
 
+/// A mask's pixels: how painted each is, 0 to 255, row by row.
+#[derive(uniffi::Record)]
+pub struct MaskPixels {
+    pub width: u32,
+    pub height: u32,
+    pub coverage: Vec<u8>,
+}
+
+/// A mask kept as a PNG, read as `upload_bytes` reads it: each pixel's
+/// brightness, as far as it is opaque, is how painted it is.
+#[uniffi::export]
+pub fn mask_from_png(bytes: Vec<u8>) -> Result<MaskPixels, DiffuseError> {
+    let (width, height, rgba) = proton_raster::file::decode_png(&bytes).map_err(failed)?;
+    let coverage = rgba.chunks_exact(4).map(|p| (p[0] as u32 * p[3] as u32 / 255) as u8).collect();
+    Ok(MaskPixels { width, height, coverage })
+}
+
+/// A mask as Proton keeps it: a PNG, white where painted on black.
+#[uniffi::export]
+pub fn mask_to_png(width: u32, height: u32, coverage: Vec<u8>) -> Result<Vec<u8>, DiffuseError> {
+    if coverage.len() != width as usize * height as usize {
+        return Err(failed(format!("a {width} × {height} mask has {} pixels, not {}", width * height, coverage.len())));
+    }
+    let rgba: Vec<u8> = coverage.iter().flat_map(|&c| [c, c, c, 255]).collect();
+    proton_raster::file::encode_png(width, height, &rgba).map_err(failed)
+}
+
 /// The pictures a graph sends: each upload field with a value, as
 /// `[{"node", "field", "value"}]`, the value being the picture's plain name
 /// relative to the flow's folder.
@@ -725,6 +752,18 @@ mod tests {
         std::fs::write(&mask, flat_png(3, 1, [255; 4])).unwrap();
         assert!(upload_bytes(picture.display().to_string(), Some(mask.display().to_string()), None).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_mask_round_trips_and_reads_as_the_upload_does() {
+        let coverage = vec![0, 64, 128, 255, 10, 200];
+        let png = mask_to_png(3, 2, coverage.clone()).unwrap();
+        let back = mask_from_png(png.clone()).unwrap();
+        assert_eq!((back.width, back.height, back.coverage), (3, 2, coverage));
+        // A browser's mask: white with its paint in the alpha.
+        let browser = proton_raster::file::encode_png(2, 1, &[255, 255, 255, 128, 255, 255, 255, 0]).unwrap();
+        assert_eq!(mask_from_png(browser).unwrap().coverage, vec![128, 0]);
+        assert!(mask_to_png(2, 2, vec![0; 3]).is_err());
     }
 
     #[test]

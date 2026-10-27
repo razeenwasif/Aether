@@ -1,6 +1,7 @@
 import AppKit
 import DiffuseBridge
 import DiffuseCore
+import ImageIO
 import LocalAuthentication
 import Observation
 import SwiftUI
@@ -60,6 +61,13 @@ public final class DiffuseWorkspaceModel {
         public let field: String
     }
     public private(set) var pickingInput: PictureTarget?
+
+    /// The mask being painted over a Load Image's picture, while its sheet
+    /// is open.
+    public private(set) var mask: MaskSession?
+    /// How much of each Load Image's picture its mask covers, by the mask's
+    /// file: read once, and set again when a mask is painted.
+    public private(set) var maskShares: [URL: Double] = [:]
 
     @ObservationIgnored private var key: String?
 
@@ -328,6 +336,76 @@ public final class DiffuseWorkspaceModel {
         return editor.selection.first
     }
 
+    // MARK: Masks
+
+    /// Open the mask sheet over a Load Image's picture, with the mask kept
+    /// beside the flow when there is one. The mask is sealed when the flow,
+    /// the picture or the mask already is.
+    public func openMask(node: String, field: String) async {
+        guard let editor, mask == nil,
+              let name = editor.flow.node(node)?.values[field]?.stringValue, !name.isEmpty
+        else { return }
+        let flow = editor.url
+        let picture = FlowInputs.onDisk(name, flow: flow)
+        let maskFile = FlowInputs.mask(node: node, flow: flow)
+        let sealed = editor.isSealed || picture.lastPathComponent.hasSuffix(SealedFiles.suffix) || SealedFiles.isSealed(maskFile)
+        if sealed, await unlockSealed() == nil {
+            if let sealSaid { notice = "The mask is kept sealed: \(sealSaid)" }
+            return
+        }
+        let key = sealed ? sealKey : nil
+        do {
+            let (image, kept) = try await Task.detached { () throws -> (Picture, Data?) in
+                let bytes = try readFile(path: picture.path, key: key)
+                guard let source = CGImageSourceCreateWithData(bytes as CFData, nil),
+                      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+                else { throw FlowInputs.Failure.notAPicture(name) }
+                return (Picture(image: image), try FlowInputs.readMask(node: node, flow: flow, key: key))
+            }.value
+            let w = image.image.width, h = image.image.height
+            let document = kept.flatMap { MaskDocument(png: $0, width: w, height: h) } ?? MaskDocument(width: w, height: h)
+            guard self.editor === editor else { return }
+            mask = MaskSession(node: node, name: name, picture: image.image, document: document, sealWith: key)
+        } catch {
+            notice = "Couldn’t open the mask: \(describe(error))"
+        }
+    }
+
+    /// Keep the mask painted beside the flow and close the sheet.
+    public func finishMask() {
+        guard let mask, let editor else { return }
+        let file = FlowInputs.mask(node: mask.node, flow: editor.url)
+        do {
+            try FlowInputs.writeMask(mask.document.pngData(), node: mask.node, flow: editor.url, key: mask.sealWith)
+            maskShares[file] = mask.document.share
+            self.mask = nil
+        } catch {
+            notice = "Couldn’t keep the mask: \(describe(error))"
+        }
+    }
+
+    public func cancelMask() { mask = nil }
+
+    /// How much of a Load Image's picture its kept mask covers; `nil` with
+    /// none painted. Read once, off the main actor.
+    public func maskShare(node: String) async -> Double? {
+        guard let editor else { return nil }
+        let file = FlowInputs.mask(node: node, flow: editor.url)
+        if let known = maskShares[file] { return known }
+        guard SealedFiles.exists(file) else { return nil }
+        let flow = editor.url
+        let key = SealedFiles.isSealed(file) ? sealKey : nil
+        if SealedFiles.isSealed(file) && key == nil { return nil }
+        let share = await Task.detached { () -> Double? in
+            guard let png = try? FlowInputs.readMask(node: node, flow: flow, key: key),
+                  let pixels = try? maskFromPng(bytes: png), !pixels.coverage.isEmpty
+            else { return nil }
+            return Double(pixels.coverage.reduce(0) { $0 + Int($1) }) / Double(pixels.coverage.count * 255)
+        }.value
+        if let share { maskShares[file] = share }
+        return share
+    }
+
     // MARK: Pictures for Load Image
 
     /// Whether a file is a picture a Load Image can take, sealed or not.
@@ -571,9 +649,22 @@ public final class DiffuseWorkspaceModel {
     /// the window gets, so they work wherever its focus is, except in text.
     public func handleKey(_ event: NSEvent) -> Bool {
         guard let window = event.window, window.isKeyWindow, window.attachedSheet == nil,
-              !(window.firstResponder is NSText),
-              event.modifierFlags.isDisjoint(with: [.command, .option, .control])
+              !(window.firstResponder is NSText)
         else { return false }
+        // The mask sheet takes every key it knows while it is open.
+        if let mask {
+            switch event.keyCode {
+            case 53: cancelMask()
+            case 36, 76: finishMask()
+            default:
+                let command = event.modifierFlags.contains(.command)
+                guard event.modifierFlags.isDisjoint(with: [.option, .control]),
+                      mask.handle(event.charactersIgnoringModifiers ?? "", command: command)
+                else { return false }
+            }
+            return true
+        }
+        guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else { return false }
         switch (event.keyCode, stage) {
         case (51, .graph), (117, .graph):
             guard let editor, !editor.selection.isEmpty else { return false }
@@ -605,3 +696,8 @@ public final class DiffuseWorkspaceModel {
 }
 
 import AetherDesign
+
+/// A picture handed from a reading task to the main actor.
+private struct Picture: @unchecked Sendable {
+    let image: CGImage
+}

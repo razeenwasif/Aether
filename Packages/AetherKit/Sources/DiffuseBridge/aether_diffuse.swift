@@ -1724,6 +1724,67 @@ public func FfiConverterTypeGraphTo_lower(_ value: GraphTo) -> RustBuffer {
 
 
 /**
+ * A mask's pixels: how painted each is, 0 to 255, row by row.
+ */
+public struct MaskPixels: Equatable, Hashable {
+    public var width: UInt32
+    public var height: UInt32
+    public var coverage: Data
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(width: UInt32, height: UInt32, coverage: Data) {
+        self.width = width
+        self.height = height
+        self.coverage = coverage
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MaskPixels: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMaskPixels: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MaskPixels {
+        return
+            try MaskPixels(
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf), 
+                coverage: FfiConverterData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MaskPixels, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+        FfiConverterData.write(value.coverage, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMaskPixels_lift(_ buf: RustBuffer) throws -> MaskPixels {
+    return try FfiConverterTypeMaskPixels.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMaskPixels_lower(_ value: MaskPixels) -> RustBuffer {
+    return FfiConverterTypeMaskPixels.lower(value)
+}
+
+
+/**
  * A starter flow: what the editor calls it and what it is for.
  */
 public struct Template: Equatable, Hashable {
@@ -2045,6 +2106,31 @@ public func keepPicture(root: String, name: String, bytes: Data, key: SealKey?)t
 })
 }
 /**
+ * A mask kept as a PNG, read as `upload_bytes` reads it: each pixel's
+ * brightness, as far as it is opaque, is how painted it is.
+ */
+public func maskFromPng(bytes: Data)throws  -> MaskPixels  {
+    return try  FfiConverterTypeMaskPixels_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_mask_from_png(
+        FfiConverterData.lower(bytes),uniffiCallStatus
+    )
+})
+}
+/**
+ * A mask as Proton keeps it: a PNG, white where painted on black.
+ */
+public func maskToPng(width: UInt32, height: UInt32, coverage: Data)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_mask_to_png(
+        FfiConverterUInt32.lower(width),
+        FfiConverterUInt32.lower(height),
+        FfiConverterData.lower(coverage),uniffiCallStatus
+    )
+})
+}
+/**
  * What an output PNG says of itself, read from its head and never its
  * pixels: `{"width", "height", "graph", "made"}`, the graph being the one
  * forge wrote into it as `proton-flow` (or null) and `made` its seed,
@@ -2153,6 +2239,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_keep_picture() != 30029) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_mask_from_png() != 24900) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_mask_to_png() != 11972) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_png_head() != 51278) {
