@@ -205,7 +205,8 @@ private final class FileFetch: NSObject, URLSessionDownloadDelegate, @unchecked 
 
 /// Where a run goes: forge through Nexus, or this Mac's Core ML pipeline.
 public enum RunPlace: String, Sendable, CaseIterable {
-    /// This Mac when it can run the flow, forge when not.
+    /// forge while it's serving, as it's far quicker (a 4090 against an M2
+    /// Pro); this Mac when forge can't be reached and this Mac can run the flow.
     case automatic
     case local
     case forge
@@ -225,30 +226,53 @@ public struct RunRoute: Equatable, Sendable {
     public var why: String
 
     /// For a flow set to `place`, whose run sends `graphJSON` (`nil` when
-    /// problems stop it), with `models` on this Mac.
-    public static func decide(_ place: RunPlace, graphJSON: String?, models: [LocalModel]) -> RunRoute {
+    /// problems stop it), with `models` on this Mac and forge as `forge`
+    /// says it is.
+    public static func decide(_ place: RunPlace, graphJSON: String?, models: [LocalModel], forge: HealthState) -> RunRoute {
         switch place {
         case .forge:
             return RunRoute(local: false, why: "Set to run on forge.")
         case .local:
             return RunRoute(local: true, why: "Set to run on this Mac.")
         case .automatic:
-            guard let first = models.first else {
-                return RunRoute(local: false, why: "On forge: there’s no image model on this Mac.")
+            switch forge {
+            case .serving:
+                return RunRoute(local: false, why: "On forge, which is serving.")
+            case .looking:
+                return RunRoute(local: false, why: "On forge, once it answers.")
+            case .offline, .badKey, .noKey, .unreachable, .failing:
+                break
             }
-            guard let graphJSON else { return RunRoute(local: true, why: "On this Mac, with \(first.name), once nothing stops the flow.") }
-            switch LocalPlan.make(graphJSON: graphJSON, side: first.side) {
-            case .failure(let refusal):
-                return RunRoute(local: false, why: "On forge: \(refusal.message).")
-            case .success(let plan):
-                guard let model = models.first(where: { $0.answers(plan.checkpoint) }) else {
-                    return RunRoute(local: false, why: "On forge: no model on this Mac stands in for \(plan.checkpoint).")
-                }
-                if plan.startingImage != nil && !model.takesPictures {
-                    return RunRoute(local: false, why: "On forge: \(model.name) can’t start from a picture.")
-                }
-                return RunRoute(local: true, why: "On this Mac, with \(model.name).")
+            // forge can't be reached: this Mac, if it can run the flow.
+            switch local(graphJSON: graphJSON, models: models) {
+            case .success(let model):
+                return RunRoute(local: true, why: "On this Mac, with \(model.name): forge can’t be reached.")
+            case .failure(let why):
+                return RunRoute(local: false, why: "On forge, though it can’t be reached: \(why).")
             }
         }
+    }
+
+    /// The model on this Mac that can run a graph, or why none can.
+    static func local(graphJSON: String?, models: [LocalModel]) -> Result<LocalModel, Reason> {
+        guard let first = models.first else { return .failure(Reason("there’s no image model on this Mac")) }
+        guard let graphJSON else { return .success(first) }
+        switch LocalPlan.make(graphJSON: graphJSON, side: first.side) {
+        case .failure(let refusal):
+            return .failure(Reason(refusal.message))
+        case .success(let plan):
+            guard let model = models.first(where: { $0.answers(plan.checkpoint) }) else {
+                return .failure(Reason("no model on this Mac stands in for \(plan.checkpoint)"))
+            }
+            if plan.startingImage != nil && !model.takesPictures {
+                return .failure(Reason("\(model.name) can’t start from a picture"))
+            }
+            return .success(model)
+        }
+    }
+
+    struct Reason: Error, CustomStringConvertible {
+        var description: String
+        init(_ description: String) { self.description = description }
     }
 }

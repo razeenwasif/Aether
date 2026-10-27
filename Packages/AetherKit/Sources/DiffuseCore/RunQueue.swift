@@ -99,6 +99,21 @@ public final class RunQueue {
         return library
     }
 
+    /// Look at the backend again without saying "looking" in between, as
+    /// the regular check does: the health changes only when the answer
+    /// comes. Answers the live catalogue when the backend has just come
+    /// back to serving.
+    @discardableResult
+    public func check() async -> NodeLibrary? {
+        let backend = self.backend
+        let was = health.state
+        let now = await backend.health()
+        health = now
+        guard now.state == .serving, was != .serving, let library = try? await backend.library() else { return nil }
+        LibraryCache.keep(library)
+        return library
+    }
+
     /// Send `editor`'s flow, follow it to the end, and keep what it makes in
     /// the flow's outputs folder. Each picture a Load Image names is sent
     /// first, with its painted mask in its alpha, and its upload named in

@@ -44,19 +44,21 @@ public struct GatewaySettings: Sendable, Equatable {
 
     /// Aether's own settings; then Proton's, so both apps reach the same
     /// gateway without setting it twice; then the default.
-    public static func current(defaults: UserDefaults = .standard) -> GatewaySettings {
+    public static func current(defaults: UserDefaults = .standard,
+                               proton: URL = URL.homeDirectory.appending(path: ".config/proton/settings.json")) -> GatewaySettings {
         if let override = ProcessInfo.processInfo.environment["AETHER_GATEWAY"], !override.isEmpty {
             return GatewaySettings(home: override, away: "")
         }
         if let home = defaults.string(forKey: "diffuse.gateway") {
             return GatewaySettings(home: home, away: defaults.string(forKey: "diffuse.gatewayAway") ?? "")
         }
-        let proton = URL.homeDirectory.appending(path: ".config/proton/settings.json")
         if let data = try? Data(contentsOf: proton),
            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return GatewaySettings(
-                home: object["diffuse.gateway"] as? String ?? defaultHome,
-                away: object["diffuse.gatewayAway"] as? String ?? "")
+            // Proton keeps them under "diffuse"; a flat "diffuse.gateway" is read too.
+            let diffuse = object["diffuse"] as? [String: Any] ?? [:]
+            let home = diffuse["gateway"] as? String ?? object["diffuse.gateway"] as? String
+            let away = diffuse["gatewayAway"] as? String ?? object["diffuse.gatewayAway"] as? String
+            return GatewaySettings(home: home.flatMap { $0.isEmpty ? nil : $0 } ?? defaultHome, away: away ?? "")
         }
         return GatewaySettings(home: defaultHome, away: "")
     }

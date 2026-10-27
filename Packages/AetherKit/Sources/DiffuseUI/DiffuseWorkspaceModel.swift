@@ -89,6 +89,18 @@ public final class DiffuseWorkspaceModel {
         queue = RunQueue(backend: NexusBackend(settings: settings, key: nil))
         openInitialFlow()
         Task { await connect() }
+        // forge again every 30 s, as Proton looks, so Automatic falls back to
+        // this Mac when forge goes and back to forge when it returns.
+        Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard let self else { return }
+                if let live = await self.queue.check() {
+                    self.library = live
+                    self.editor?.use(live)
+                }
+            }
+        }
     }
 
     // MARK: The server
@@ -351,7 +363,7 @@ public final class DiffuseWorkspaceModel {
     /// Where `editor`'s next run (to `node`, for a run to here) goes, and why.
     public func route(for editor: FlowEditor, upTo node: String? = nil) -> RunRoute {
         let graph = node == nil ? try? editor.graphJSON() : (try? editor.graphJSON(upTo: node!))?.graph
-        return RunRoute.decide(runPlace(for: editor), graphJSON: graph, models: localModels)
+        return RunRoute.decide(runPlace(for: editor), graphJSON: graph, models: localModels, forge: queue.health.state)
     }
 
     /// Download a model to this Mac; the model list is looked at again when

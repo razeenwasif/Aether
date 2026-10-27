@@ -107,24 +107,34 @@ struct RunRouteTests {
                    answersTo: ["SDXL base (4.5-bit)", checkpoint])
     }
 
-    @Test func automaticRunsHereWhenItCanAndSaysWhyNot() throws {
+    @Test func automaticRunsOnForgeWhileItServes() throws {
         let graph = try FlowEditor.open(Fixture.lighthouse(), library: Fixture.library()).graphJSON()
-        #expect(RunRoute.decide(.automatic, graphJSON: graph, models: [model()]).local)
-        let none = RunRoute.decide(.automatic, graphJSON: graph, models: [])
+        let serving = RunRoute.decide(.automatic, graphJSON: graph, models: [model()], forge: .serving)
+        #expect(!serving.local && serving.why.contains("serving"), "forge is far quicker, so it goes first")
+        #expect(!RunRoute.decide(.automatic, graphJSON: graph, models: [model()], forge: .looking).local, "still looking isn't unreachable")
+    }
+
+    @Test func automaticRunsHereOnlyWhenForgeCantBeReached() throws {
+        let graph = try FlowEditor.open(Fixture.lighthouse(), library: Fixture.library()).graphJSON()
+        for down in [HealthState.unreachable, .offline, .failing, .noKey, .badKey] {
+            let here = RunRoute.decide(.automatic, graphJSON: graph, models: [model()], forge: down)
+            #expect(here.local && here.why.contains("can’t be reached"), "\(down)")
+        }
+        let none = RunRoute.decide(.automatic, graphJSON: graph, models: [], forge: .unreachable)
         #expect(!none.local && none.why.contains("no image model"))
-        let other = RunRoute.decide(.automatic, graphJSON: graph, models: [model(answering: "illustrious.safetensors")])
+        let other = RunRoute.decide(.automatic, graphJSON: graph, models: [model(answering: "illustrious.safetensors")], forge: .unreachable)
         #expect(!other.local && other.why.contains("sd_xl_base"))
 
         let hires = try FlowEditor.create(at: FileManager.default.temporaryDirectory.appending(path: "\(UUID()).flow.json"),
                                           template: "hiresFix", library: Fixture.library()).graphJSON()
-        let refused = RunRoute.decide(.automatic, graphJSON: hires, models: [model()])
+        let refused = RunRoute.decide(.automatic, graphJSON: hires, models: [model()], forge: .unreachable)
         #expect(!refused.local && refused.why.contains("upscaling"))
     }
 
     @Test func aFlowSetToAPlaceGoesThere() throws {
         let graph = try FlowEditor.open(Fixture.lighthouse(), library: Fixture.library()).graphJSON()
-        #expect(!RunRoute.decide(.forge, graphJSON: graph, models: [model()]).local)
-        #expect(RunRoute.decide(.local, graphJSON: graph, models: []).local, "set to this Mac, the run says why it can't")
+        #expect(!RunRoute.decide(.forge, graphJSON: graph, models: [model()], forge: .unreachable).local)
+        #expect(RunRoute.decide(.local, graphJSON: graph, models: [], forge: .serving).local, "set to this Mac, the run says why it can't")
     }
 }
 
@@ -134,4 +144,26 @@ private final class Seen: @unchecked Sendable {
     private var values: [Int64] = []
     func add(_ value: Int64) { lock.withLock { values.append(value) } }
     var last: Int64? { lock.withLock { values.last } }
+}
+
+struct GatewaySettingsTests {
+    @Test func protonsNestedAddressesAreRead() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "aether-gateway-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let proton = dir.appending(path: "settings.json")
+        let defaults = try #require(UserDefaults(suiteName: "aether-gateway-\(UUID().uuidString)"))
+
+        try Data(#"{"diffuse": {"gateway": "http://192.168.1.5:7420/img/v1", "gatewayAway": "http://100.64.0.5:7420/img/v1"}}"#.utf8).write(to: proton)
+        let nested = GatewaySettings.current(defaults: defaults, proton: proton)
+        #expect(nested.home == "http://192.168.1.5:7420/img/v1" && nested.away == "http://100.64.0.5:7420/img/v1")
+
+        try Data(#"{"diffuse.gateway": "http://flat:7420/img/v1"}"#.utf8).write(to: proton)
+        #expect(GatewaySettings.current(defaults: defaults, proton: proton).home == "http://flat:7420/img/v1")
+
+        try Data(#"{"research": {}}"#.utf8).write(to: proton)
+        #expect(GatewaySettings.current(defaults: defaults, proton: proton).home == GatewaySettings.defaultHome)
+
+        defaults.set("http://saved:7420/img/v1", forKey: "diffuse.gateway")
+        #expect(GatewaySettings.current(defaults: defaults, proton: proton).home == "http://saved:7420/img/v1", "Aether's own setting comes first")
+    }
 }

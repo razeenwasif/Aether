@@ -601,6 +601,24 @@ The user took the PI's recommendation on all five.
   - Compare the 16-bit model's speed per step (7.04 GB, tight on 16 GB).
   - Decode a preview every few steps.
 
+**2026-10-27 · forge is awake: Automatic prefers it.** The user asked for Automatic to "run on forge when it's serving, and on this Mac only when forge can't be reached".
+
+- **forge from this Mac:**
+  - The gateway answers at `192.168.68.61:7420` (Aether's saved home address) and at `.62` (Proton's). The two addresses are likely two interfaces on atlas.
+  - The key from the login shell is accepted.
+  - forge reports an RTX 4090 with 24.1 GB, and lists FLUX.2-klein-4B, ideogram-4-nf4-diffusers, Illustrious-XL-v2.0 and sd_xl_base_1.0.
+  - `atlas` doesn't resolve by name, and there's no Tailscale on this Mac, so away from home forge needs Tailscale and an Away address.
+- **The rule:** `RunRoute.decide` now takes forge's health.
+  - Automatic runs on forge while it's serving, and while Aether is still looking. A 4090 takes seconds where this Mac takes about 3 minutes.
+  - When forge is unreachable, offline, failing, or its key is missing or refused, Automatic runs on this Mac if `LocalPlan` takes the flow and a model stands in for its checkpoint. If not, it runs on forge and says why neither works.
+  - This Mac and forge, set by hand, are unchanged.
+  - This reverses Q3's "local by default", now that forge is reachable and much quicker.
+- **Watching forge:** Aether checks it every 30 s, as Proton does. The check is quiet (`RunQueue.check()` changes the health only when the answer comes, with no "looking" in between) and takes the live catalogue when forge comes back. So Automatic falls back to this Mac when forge goes, and back to forge when it returns.
+- **Tests:** the routing tests cover serving, looking, each kind of unreachable, and the reasons when neither can run.
+- **Fixed: Proton's gateway address was never read.** Proton nests it as `{"diffuse": {"gateway": …}}`, and `GatewaySettings.current()` looked for a flat `"diffuse.gateway"`. The app only worked because an address had been saved in Aether's own settings. It now reads the nested form, with flat still accepted, and a test covers it.
+- **The first live run on forge through Aether's own backend:** the lighthouse flow, 30 steps at 1024 × 1024, in **14.4 s** against about 177 s on this Mac. The PNG carries its graph. `LiveForgeTests` runs it again only with `AETHER_LIVE_FORGE=1`, so normal test runs never touch the network.
+- **Not checked live in the app:** the screen was locked while I verified this, so the app check was a screenshot. It showed "forge · NVIDIA GeForce RTX 4090" serving with its live 16-node catalogue.
+
 Not yet:
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
