@@ -6,7 +6,7 @@ A native macOS creative studio: Proton's Design, Model, Game, Canvas, Diffuse an
 
 ## Building
 
-Needs Xcode 26 or later, Rust (stable), XcodeGen, and Proton checked out beside this folder (`../Proton`). Aether links Proton's `proton-diffuse` crate (RESEARCH_PLAN.md Q1).
+Needs Xcode 26 or later, Rust (stable) and XcodeGen. The Rust cores Aether takes from Proton, `proton-diffuse` and `proton-raster`, live in `cores/` (RESEARCH_PLAN.md Q1), so Proton isn't needed to build.
 
 ```bash
 ./scripts/build-cores.sh   # Rust core → Packages/AetherKit/Frameworks + Swift bindings
@@ -28,7 +28,9 @@ swift test --package-path Packages/AetherKit       # flows, edits, undo, the wir
 
 | | |
 |---|---|
-| `cores/aether-diffuse` | UniFFI bridge over `proton-diffuse`: flows, edits and undo, checks, the Nexus client |
+| `cores/aether-diffuse` | UniFFI bridge over `proton-diffuse`: flows, edits and undo, checks, sealed files, pictures, the Nexus client |
+| `cores/proton-diffuse`, `cores/proton-raster` | Proton's Diffuse core and raster engine, brought from Proton at `1e1aeb7`, without their TypeScript bindings. The file formats stay Proton's |
+| `docs/DIFFUSE.md` | Proton's Diffuse design and the `/img/v1` contract, which `proton-diffuse` cites and tests against |
 | `Packages/AetherKit` | Everything Swift: `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands) |
 | `App/` | The app's entry point and icon |
 | `scripts/` | Build scripts, the icon renderer, and a stand-in image gateway |

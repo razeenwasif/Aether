@@ -1,6 +1,6 @@
 # RESEARCH_PLAN.md — Aether: a native creative studio for macOS
 
-Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **UI/UX prototype ready for review; decisions Q1–Q5 settled 27 Oct; nothing built yet**
+Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **Design approved and Q1–Q5 settled 27 Oct; the Diffuse workspace is built (see §10a), and the other five are designed and waiting**
 
 Design canvas (12 boards, click-through prototype): https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv
 Status & Plan (run order with live statuses, renders of every board): https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7
@@ -422,7 +422,7 @@ The user took the PI's recommendation on all five.
 
 | | Question | Decision | What it changes |
 |---|---|---|---|
-| **Q1** | Rust cores or a Swift rewrite? | **Link Proton's Rust cores through UniFFI** for formats, ops, the fixed-point simulation and the raster engine. UI, rendering and media stay Swift and Metal. | M0 adds a Rust workspace and generated Swift bindings. Determinism tests carry over from Proton unchanged. Revisit after M2. |
+| **Q1** | Rust cores or a Swift rewrite? | **Link Proton's Rust cores through UniFFI** for formats, ops, the fixed-point simulation and the raster engine. UI, rendering and media stay Swift and Metal. On 27 Oct, when Proton gave its creative modes away, the cores moved into Aether's `cores/` (§10a). | M0 adds a Rust workspace and generated Swift bindings. Determinism tests carry over from Proton unchanged. Revisit after M2. |
 | **Q2** | Minimum macOS? | **macOS 26 and later.** | Panels are built on Liquid Glass (`glassEffect`), with the materials in §5 as the visual spec. Metal 4 is always available. |
 | **Q3** | Diffuse's default backend? | **Local Core ML by default; Nexus on forge per flow.** | Flows run offline and privately unless a flow picks forge. The Run button names the backend in use. |
 | **Q4** | Plugin runtime? | **Wasmtime.** | It follows Q1: Rust is in the build anyway, and Wasmtime is the mature runtime. |
@@ -508,7 +508,20 @@ The user took the PI's recommendation on all five.
   - Use as input on a flow with no Load Image, adding one with its picture on the card.
 - **Not verified live:** drag and drop (it needs Finder), and a painted mask on a real flow (Aether can't paint masks yet; Proton's masks are used as found).
 
-**Watch: Proton is shedding its creative modes.** On 2026-10-27, Proton's working tree had uncommitted removals of Diffuse's and Game's window code and tests, apparently on their way to Aether. Aether builds `proton-diffuse` and `proton-raster` from `../Proton` by path. If those crates leave Proton too, Aether stops building. Before that happens, move them into this repository (`cores/`), with their history if wanted. That's the user's call.
+**2026-10-27 · Proton's crates moved into Aether.** Proton's commits `9111812` and `1e1aeb7` took Design, Model, Game, Canvas, Diffuse and Video out of its window and shell ("they live in another app now"). At the user's call, `proton-diffuse` and `proton-raster` now live in `cores/`, so Aether builds without `../Proton`.
+
+- Copied from Proton's commit `1e1aeb7` (both last changed there in `dca833c`), not its working tree. Proton itself is untouched: its own core still uses its copies.
+- Changes on the way in:
+  - Removed `ts-rs` and its attributes. They only wrote TypeScript bindings for Proton's web window, and in Aether they'd have written into the repo.
+  - Package fields are written out instead of inherited from Proton's workspace.
+  - Nothing else changed.
+- `docs/DIFFUSE.md` came too. It's Diffuse's design and the `/img/v1` contract the crate cites, and its tests read the flows in it.
+- `scripts/render-icon.mjs` now uses its own Playwright instead of Proton's `node_modules`.
+- Checks:
+  - `cargo metadata` resolves no package under Proton.
+  - All 147 Rust tests pass in Aether's workspace (8 in the bridge, 54 in `proton-diffuse`, 85 in `proton-raster`).
+  - The Swift bindings regenerate unchanged, all 32 Swift tests pass, and the app builds and reaches the gateway.
+- History wasn't brought over. It's still in Proton's repo (`git log -- crates/proton-diffuse crates/proton-raster`).
 
 Not yet:
 - The local Core ML backend (Q3's default), so runs go to Nexus only for now.

@@ -1,9 +1,12 @@
-# Aether's Rust cores: thin UniFFI skins over Proton's document crates
-# (RESEARCH_PLAN.md §2, Q1). The crates themselves stay in Proton and are
-# used by path, so both apps read and write the same formats.
+# Aether's Rust cores (RESEARCH_PLAN.md §2, Q1): Proton's document crates,
+# brought here when Proton gave its creative modes to Aether, and thin
+# UniFFI skins over them for Swift. proton-diffuse and proton-raster came
+# from Proton at 1e1aeb7 (last changed there in dca833c), less the
+# TypeScript bindings Proton's web window needed; their file formats —
+# flows, sealed files, PNG heads — stay Proton's, so both apps read them.
 [workspace]
 resolver = "2"
-members = ["aether-diffuse", "uniffi-bindgen"]
+members = ["aether-diffuse", "proton-diffuse", "proton-raster", "uniffi-bindgen"]
 
 [workspace.package]
 version = "0.1.0"

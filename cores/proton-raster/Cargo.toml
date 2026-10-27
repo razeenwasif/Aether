@@ -1,0 +1,20 @@
+[package]
+name = "proton-raster"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+rust-version = "1.82"
+license = "MIT"
+description = "Canvas mode's engine: layered raster images in tiles, changed by ops in whole numbers only, so the window's WebAssembly and the core make the same pixels."
+
+[features]
+default = ["io"]
+# Reading and writing files — canvases, PNGs, Photoshop's PSDs: the core's,
+# and Game's importer's. The window's WebAssembly is built without it.
+io = ["dep:png", "dep:flate2"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+png = { version = "0.17", optional = true }
+flate2 = { version = "1.1", optional = true }

@@ -10,9 +10,9 @@ name = "aether_diffuse"
 crate-type = ["lib", "staticlib", "cdylib"]
 
 [dependencies]
-proton-diffuse = { path = "../../../Proton/crates/proton-diffuse" }
+proton-diffuse = { path = "../proton-diffuse" }
 # Straight RGBA in and out of PNGs, for a picture's mask put in its alpha.
-proton-raster = { path = "../../../Proton/crates/proton-raster" }
+proton-raster = { path = "../proton-raster" }
 serde = "1"
 serde_json = "1"
 uniffi = "0.32"

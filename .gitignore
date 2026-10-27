@@ -14,3 +14,7 @@ Packages/AetherKit/Frameworks/
 cores/target/
 
 .DS_Store
+
+# Playwright, for scripts/render-icon.mjs only
+node_modules/
+package-lock.json

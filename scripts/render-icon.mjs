@@ -1,11 +1,16 @@
-// Renders design/aether-icon.svg into the app's AppIcon set.
+// Renders design/aether-icon.svg into the app's AppIcon set. Only needed
+// after changing the icon; the rendered set is checked in.
+//   npm install --no-save playwright && npx playwright install chromium
 //   node scripts/render-icon.mjs
-// Uses the Playwright install in Proton's node_modules (no new dependency).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from '../../Proton/node_modules/playwright/index.mjs';
+
+const { chromium } = await import('playwright').catch(() => {
+  console.error('render-icon needs Playwright: npm install --no-save playwright && npx playwright install chromium');
+  process.exit(1);
+});
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const svg = readFileSync(join(root, 'design/aether-icon.svg'), 'utf8');

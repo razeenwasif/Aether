@@ -514,8 +514,8 @@ impl RunEvents {
 mod tests {
     use super::*;
 
-    const CATALOGUE: &str = include_str!("../../../../Proton/crates/proton-diffuse/tests/fixtures/catalogue-v1.json");
-    const FLOW: &str = include_str!("../../../../Proton/crates/proton-diffuse/tests/fixtures/lighthouse.flow.json");
+    const CATALOGUE: &str = include_str!("../../proton-diffuse/tests/fixtures/catalogue-v1.json");
+    const FLOW: &str = include_str!("../../proton-diffuse/tests/fixtures/lighthouse.flow.json");
 
     #[test]
     fn edits_undo_and_graph_cross_as_json() {
