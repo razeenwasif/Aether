@@ -76,15 +76,15 @@ private struct NodeInspector: View {
                     PanelSection("Run") {
                         VStack(spacing: 8) {
                             if type?.fields.contains(where: { $0.fieldKind == .seed }) == true {
-                                LabeledRow("Seed after") {
+                                // On a row of its own: three segments don't fit beside a label.
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Seed after a run").font(.system(size: 11.5)).foregroundStyle(Color.ink2)
                                     Picker("Seed after a run", selection: seedMode) {
                                         ForEach(SeedMode.allCases, id: \.self) { Text($0.title).tag($0) }
                                     }
                                     .labelsHidden()
                                     .pickerStyle(.segmented)
                                     .controlSize(.small)
-                                    .fixedSize()
-                                    Spacer(minLength: 0)
                                 }
                             }
                             LabeledRow("Bypass") {
@@ -208,6 +208,64 @@ private struct PictureField: View {
         .task(id: MaskRead(node: node.id, painted: model.maskShares.count, unlocked: model.sealKey != nil)) {
             maskShare = await model.maskShare(node: node.id)
         }
+    }
+}
+
+/// Where the flow runs — Automatic, this Mac or forge — and this Mac's
+/// models, with a download when there are none.
+private struct RunsOn: View {
+    @Bindable var model: DiffuseWorkspaceModel
+    let editor: FlowEditor
+
+    var body: some View {
+        let route = model.route(for: editor)
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Runs on", selection: Binding(get: { model.runPlace(for: editor) }, set: { model.setRunPlace($0, for: editor) })) {
+                ForEach(RunPlace.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            Label(route.why, systemImage: route.local ? "laptopcomputer" : "server.rack")
+                .font(.system(size: 11.5)).foregroundStyle(Color.ink).fixedSize(horizontal: false, vertical: true)
+            if model.localModels.isEmpty {
+                downloadRow
+            } else {
+                ForEach(model.localModels) { local in
+                    Text(verbatim: "\(local.name) · \(local.side) × \(local.side)\(local.takesPictures ? "" : " · no image to image")")
+                        .font(.aeMono).foregroundStyle(Color.ink2)
+                }
+                Text("The first run on this Mac prepares the model for its GPU, once; it takes a while.")
+                    .font(.system(size: 11)).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder private var downloadRow: some View {
+        let offer = LocalModelOffer.sdxlBase4Bit
+        switch model.download.phase {
+        case .fetching(let done, let total):
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: Double(done), total: Double(max(total, 1))).tint(.ice)
+                HStack {
+                    Text(verbatim: "\(gigabytes(done)) of \(gigabytes(total))").font(.aeMono).foregroundStyle(Color.ink2)
+                    Spacer()
+                    Button("Stop", action: model.download.cancel).buttonStyle(.link).font(.system(size: 11.5))
+                }
+            }
+        case .failed(let why):
+            Text(why).font(.system(size: 11.5)).foregroundStyle(Color.coral).fixedSize(horizontal: false, vertical: true)
+            Button("Try again") { model.downloadModel(offer) }.controlSize(.small)
+        default:
+            Text("No image model on this Mac yet.").font(.system(size: 11.5)).foregroundStyle(Color.ink2)
+            Button("Download \(offer.name), \(gigabytes(offer.total))") { model.downloadModel(offer) }
+                .controlSize(.small)
+                .help("Apple's Core ML SDXL from Hugging Face, into Application Support/Aether/Models")
+        }
+    }
+
+    private func gigabytes(_ bytes: Int64) -> String {
+        (Double(bytes) / 1e9).formatted(.number.precision(.fractionLength(2))) + " GB"
     }
 }
 
@@ -435,6 +493,7 @@ private struct FlowInspector: View {
                             subtitle: editor.url.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
             ScrollView {
                 VStack(spacing: 0) {
+                    PanelSection("Runs on") { RunsOn(model: model, editor: editor) }
                     PanelSection("Server") { server }
                     PanelSection("Catalogue") {
                         Text("\(editor.library.catalogue.nodes.count) node types · \(editor.library.source.label)")

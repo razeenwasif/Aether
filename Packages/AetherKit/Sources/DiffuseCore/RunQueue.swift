@@ -42,6 +42,8 @@ public final class RunItem: Identifiable {
     public let flowName: String
     /// The node a run to here runs to; `nil` for a run of the whole flow.
     public let target: String?
+    /// Where it runs: forge through Nexus, or this Mac.
+    public let backend: any ImageBackend
     public let started = Date.now
     public internal(set) var runID: String?
     public internal(set) var phase: Phase = .sending
@@ -54,9 +56,10 @@ public final class RunItem: Identifiable {
     /// run to here's Preview Image, shown on the node run to.
     var shownAs: [String: String] = [:]
 
-    init(flowName: String, target: String? = nil) {
+    init(flowName: String, target: String? = nil, backend: any ImageBackend) {
         self.flowName = flowName
         self.target = target
+        self.backend = backend
     }
 
     /// The node running now, if any.
@@ -101,8 +104,10 @@ public final class RunQueue {
     /// first, with its painted mask in its alpha, and its upload named in
     /// the graph; `key` reads sealed pictures in a plain flow. With `node`,
     /// a run to here: only what that node needs, its picture shown on it.
-    public func run(_ editor: FlowEditor, key: SealKey? = nil, upTo node: String? = nil) {
-        let item = RunItem(flowName: editor.name, target: node)
+    /// With `place`, on that backend instead of the queue's (this Mac's).
+    public func run(_ editor: FlowEditor, key: SealKey? = nil, upTo node: String? = nil, on place: (any ImageBackend)? = nil) {
+        let backend = place ?? self.backend
+        let item = RunItem(flowName: editor.name, target: node, backend: backend)
         runs.insert(item, at: 0)
         let graph: String
         do {
@@ -131,7 +136,6 @@ public final class RunQueue {
         }
         let flow = editor.url
         let readKey = editor.sealKey ?? key
-        let backend = self.backend
         Task {
             do {
                 let sending = try await Self.uploading(pictures, of: graph, flow: flow, key: readKey, to: backend)
@@ -169,7 +173,7 @@ public final class RunQueue {
 
     public func cancel(_ item: RunItem) {
         guard let run = item.runID, item.phase.isLive else { return }
-        let backend = self.backend
+        let backend = item.backend
         Task { try? await backend.cancel(run: run) }
     }
 

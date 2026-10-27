@@ -564,8 +564,44 @@ The user took the PI's recommendation on all five.
   - The run uploaded the picture re-encoded with the mask in its alpha (793 KB against 142 KB).
   - After a relaunch, the kept mask came back in the sheet, and Esc left it unchanged.
 
+**2026-10-27 · The local Core ML backend (Q3's default).** Flows run on this Mac with Apple's Core ML Stable Diffusion, the user having approved the downloads after seeing them.
+
+- **This Mac is an M2 Pro with 16 GB** (the plan had assumed an M4 Max; §7's budgets need checking against this).
+- **Downloaded, with the user's OK:**
+  - Apple's `ml-stable-diffusion` 1.1.1 (with `swift-argument-parser` 1.8.2), as a package in a new `DiffuseLocal` target, so DiffuseCore and its tests don't depend on it.
+  - The 4.5-bit palettized SDXL base from `apple/coreml-stable-diffusion-mixed-bit-palettization`, compiled files only: 3,356,763,306 bytes, each file checked against its published size. It's in `~/Library/Application Support/Aether/Models/SDXL base (4.5-bit)`, with an `aether-model.json` saying it stands in for `sd_xl_base_1.0.safetensors`.
+  - `scripts/download-sdxl.sh` does the same from a shell.
+- **What runs here:**
+  - Text to image and image to image, with SDXL base, at 1024 × 1024, the only size Apple compiled the models for.
+  - `LocalPlan` refuses LoRAs, masks, upscaling, a second sampler and other sizes, in words. It notes where this Mac differs from forge: other samplers become DPM++ 2M, seeds are 32 bits, and a starting picture is scaled to cover the square and cropped to its middle.
+- **`CoreMLPipeline`:**
+  - Loads once on the GPU (`.cpuAndGPU`, Apple's choice for SDXL on a Mac) and keeps the model loaded. It lets the model go only on *critical* memory pressure: on 16 GB the warnings come often, and loading again costs about 20 s.
+  - Sets SDXL's VAE scale to 0.13025, as Apple's sample does. DPM++ 2M runs with Karras spacing when the flow asks for it.
+  - Logs its load and stage times under `dev.razeen.aether` / `local`.
+- **`LocalBackend`:**
+  - The Load Checkpoint card shows the model loading, and the KSampler shows each step.
+  - Runs are one at a time and stop between steps.
+  - Its PNGs carry their graph, as forge's do, so the Gallery reads them.
+- **Where runs go:** each flow has **Runs on: Automatic / This Mac / forge**, kept in Aether's settings by flow path. Automatic runs here when `LocalPlan` takes the graph and a model stands in for its checkpoint, and on forge otherwise, saying why. The status bar shows "This Mac" or forge's state, and each run keeps the backend it went to, for Cancel.
+- **The in-app download:** with no model installed, Runs on offers "Download SDXL base (4.5-bit), 3.36 GB", with progress and Stop.
+  - Each file is size-checked into a `.partial` folder and renamed when complete.
+  - Started again, it keeps what came.
+  - Tested against a stubbed server; the real files came through the script.
+- **Measured on this Mac** (lighthouse flow, 1024 × 1024, DPM++ 2M Karras):
+  - The first-ever load took about 110 s, while Core ML specialised the model for the GPU, once. Later loads take 20–22 s, on the first local run after launch.
+  - Per picture: prompt encoding about 16 s, about 4.3 s a step, about 9 s to decode. 30 steps take about 2.5–3 minutes (177 s warm), and 10 steps about 70 s.
+  - The same seed makes the same picture.
+  - The picture is a clean SDXL lighthouse.
+- **Fixed on the way:**
+  - The KSampler inspector's "Seed after a run" control is on its own row, so the panel no longer runs past its edge.
+  - The memory-pressure unload no longer fires on mere warnings.
+- **Tests:** 15 more Swift tests (the plan, discovery, the backend against a stand-in pipeline, stopping, the queue keeping a local picture, the download, routing). 56 Swift and 150 Rust in all.
+- **Follow-ups for speed, not done:**
+  - Prompt encoding is the largest fixed cost. Try the text encoders on the Neural Engine, with compute units per model, which means building the pipeline's parts by hand. Or cache the embeddings when only the seed changes, which Apple's package doesn't expose.
+  - Compare the 16-bit model's speed per step (7.04 GB, tight on 16 GB).
+  - Decode a preview every few steps.
+
 Not yet:
-- The local Core ML backend (Q3's default), so runs go to Nexus only for now.
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
 - The rest of the shell's omnibar.
@@ -584,4 +620,4 @@ Not yet:
 3. ~~**Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here~~: done, see §10a.
 4. ~~**Mask painting**~~: done, see §10a. With it, Diffuse matches Proton's window, apart from Send to Canvas and Send to Game, which wait on those workspaces.
 
-Then the local Core ML backend (Q3's default). It needs several GB of models, so ask before downloading. After that, the omnibar and M1's project graph, which Send to Canvas and Send to Game depend on.
+Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. After that, the omnibar and M1's project graph, which Send to Canvas and Send to Game depend on.

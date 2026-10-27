@@ -4,6 +4,7 @@
 //   AetherDiffuseFFI  the Rust core (proton-diffuse via UniFFI), built by scripts/build-cores.sh
 //   DiffuseBridge     the generated Swift bindings for it
 //   DiffuseCore       flows, the catalogue, image backends and the run queue
+//   DiffuseLocal      image generation on this Mac: Apple's Core ML Stable Diffusion
 //   AetherDesign      Velvet Obsidian: tokens, glass, controls
 //   DiffuseUI         the Diffuse workspace: the flow canvas, node library, inspector
 //   AetherShell       the window: the rail, panels and workspaces
@@ -14,6 +15,10 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .library(name: "AetherKit", targets: ["AetherShell"]),
+    ],
+    dependencies: [
+        // Apple's Core ML Stable Diffusion pipeline, for runs on this Mac.
+        .package(url: "https://github.com/apple/ml-stable-diffusion.git", exact: "1.1.1"),
     ],
     targets: [
         .binaryTarget(name: "AetherDiffuseFFI", path: "Frameworks/AetherDiffuseFFI.xcframework"),
@@ -32,8 +37,12 @@ let package = Package(
             dependencies: ["DiffuseBridge"],
             resources: [.copy("Resources/catalogue-v1.json"), .copy("Resources/models.json")]
         ),
+        .target(
+            name: "DiffuseLocal",
+            dependencies: ["DiffuseCore", .product(name: "StableDiffusion", package: "ml-stable-diffusion")]
+        ),
         .target(name: "AetherDesign"),
-        .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "AetherDesign"]),
+        .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "DiffuseLocal", "AetherDesign"]),
         .target(name: "AetherShell", dependencies: ["AetherDesign", "DiffuseBridge", "DiffuseCore", "DiffuseUI"]),
         .testTarget(
             name: "DiffuseCoreTests",

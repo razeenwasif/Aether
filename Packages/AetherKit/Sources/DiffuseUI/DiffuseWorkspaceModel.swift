@@ -1,6 +1,7 @@
 import AppKit
 import DiffuseBridge
 import DiffuseCore
+import DiffuseLocal
 import ImageIO
 import LocalAuthentication
 import Observation
@@ -68,6 +69,16 @@ public final class DiffuseWorkspaceModel {
     /// How much of each Load Image's picture its mask covers, by the mask's
     /// file: read once, and set again when a mask is painted.
     public private(set) var maskShares: [URL: Double] = [:]
+
+    /// Image generation on this Mac, beside forge's (the queue's backend).
+    public let local = LocalBackend(pipeline: CoreMLPipeline())
+    /// The models on this Mac, looked for at launch and after a download.
+    public private(set) var localModels: [LocalModel] = LocalModels.installed()
+    /// A model downloading into the Models folder.
+    public let download = ModelDownload()
+    /// Where each flow runs, by its file: Aether's own setting, as Proton's
+    /// flow format has no room for it.
+    private var runPlaces: [String: String] = UserDefaults.standard.dictionary(forKey: "diffuse.runsOn") as? [String: String] ?? [:]
 
     @ObservationIgnored private var key: String?
 
@@ -314,11 +325,46 @@ public final class DiffuseWorkspaceModel {
 
     public func run() {
         guard let editor else { return }
-        if queue.health.state != .serving && queue.health.state != .looking {
+        send(editor, upTo: nil)
+    }
+
+    /// Send a run where the flow's setting says: this Mac or forge.
+    private func send(_ editor: FlowEditor, upTo node: String?) {
+        let route = route(for: editor, upTo: node)
+        if !route.local && queue.health.state != .serving && queue.health.state != .looking {
             notice = queue.health.message
         }
-        queue.run(editor, key: sealKey)
+        queue.run(editor, key: sealKey, upTo: node, on: route.local ? local : nil)
     }
+
+    // MARK: Where runs go
+
+    public func runPlace(for editor: FlowEditor) -> RunPlace {
+        runPlaces[editor.url.path].flatMap(RunPlace.init(rawValue:)) ?? .automatic
+    }
+
+    public func setRunPlace(_ place: RunPlace, for editor: FlowEditor) {
+        runPlaces[editor.url.path] = place == .automatic ? nil : place.rawValue
+        UserDefaults.standard.set(runPlaces, forKey: "diffuse.runsOn")
+    }
+
+    /// Where `editor`'s next run (to `node`, for a run to here) goes, and why.
+    public func route(for editor: FlowEditor, upTo node: String? = nil) -> RunRoute {
+        let graph = node == nil ? try? editor.graphJSON() : (try? editor.graphJSON(upTo: node!))?.graph
+        return RunRoute.decide(runPlace(for: editor), graphJSON: graph, models: localModels)
+    }
+
+    /// Download a model to this Mac; the model list is looked at again when
+    /// it is in.
+    public func downloadModel(_ offer: LocalModelOffer = .sdxlBase4Bit) {
+        download.start(offer)
+        Task {
+            while download.isFetching { try? await Task.sleep(for: .milliseconds(500)) }
+            localModels = LocalModels.installed()
+        }
+    }
+
+    public func lookForModels() { localModels = LocalModels.installed() }
 
     /// Run only what `node` needs and show what it makes on it.
     public func runTo(_ node: String) {
@@ -327,7 +373,7 @@ public final class DiffuseWorkspaceModel {
             notice = queue.health.message
         }
         editor.selection = [node]
-        queue.run(editor, key: sealKey, upTo: node)
+        send(editor, upTo: node)
     }
 
     /// The one node selected, which Run to Here runs to.

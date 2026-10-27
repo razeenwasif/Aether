@@ -171,11 +171,20 @@ private struct StatusBar: View {
                 }
             }
             Divider().frame(height: 12)
-            HStack(spacing: 5) {
-                Circle().fill(HealthStyle.color(model.queue.health.state)).frame(width: 6, height: 6)
-                Text(HealthStyle.label(model.queue.health)).font(.system(size: 11.5)).foregroundStyle(Color.ink)
+            let route = model.route(for: editor)
+            if route.local {
+                HStack(spacing: 5) {
+                    Image(systemName: "laptopcomputer").font(.system(size: 10)).foregroundStyle(Color.live)
+                    Text("This Mac").font(.system(size: 11.5)).foregroundStyle(Color.ink)
+                }
+                .help(route.why)
+            } else {
+                HStack(spacing: 5) {
+                    Circle().fill(HealthStyle.color(model.queue.health.state)).frame(width: 6, height: 6)
+                    Text(HealthStyle.label(model.queue.health)).font(.system(size: 11.5)).foregroundStyle(Color.ink)
+                }
+                .help(route.why + "\n" + model.queue.health.message)
             }
-            .help(model.queue.health.message)
             if !editor.problems.isEmpty && model.stage == .graph {
                 Divider().frame(height: 12)
                 HStack(spacing: 4) {
@@ -223,6 +232,9 @@ private struct RunHUD: View {
     }
 
     private var title: String {
+        if case .running = run.phase, run.runningNode == nil, run.backend is LocalBackend {
+            return "Preparing the model on this Mac"
+        }
         if case .running = run.phase, let node = run.runningNode {
             // A node a run to here added, such as its decode, is named by
             // the node it runs to.
