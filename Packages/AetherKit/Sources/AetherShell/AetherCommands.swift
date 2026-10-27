@@ -64,6 +64,8 @@ public struct AetherCommands: Commands {
                 .keyboardShortcut("1", modifiers: [.shift])
                 .disabled(diffuse.stage != .graph)
             Divider()
+            Button("Lock Sealed Files") { diffuse.lockSealed() }
+                .disabled(diffuse.sealKey == nil)
             Button("Look for the Server Again") { Task { await diffuse.lookAgain() } }
         }
         CommandGroup(before: .sidebar) {

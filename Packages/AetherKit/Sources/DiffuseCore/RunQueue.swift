@@ -1,3 +1,4 @@
+import DiffuseBridge
 import Foundation
 import Observation
 
@@ -138,11 +139,11 @@ public final class RunQueue {
             if let data = Data(base64Encoded: jpeg) { item.preview = (id, data) }
         case let .image(id, image, _, width, height):
             guard let data = try? await backend.image(image) else { return }
-            let place = places[id] ?? OutputPlace(folder: LibraryCache.directory.appending(path: "previews"), prefix: "image")
-            try? FileManager.default.createDirectory(at: place.folder, withIntermediateDirectories: true)
+            let place = places[id] ?? OutputPlace(folder: LibraryCache.directory.appending(path: "previews"), prefix: "image", key: nil)
             let file = OutputNaming.next(in: place.folder, prefix: place.prefix)
-            let kept = (try? data.write(to: file, options: .atomic)) != nil
-            item.outputs.append(.init(node: id, image: image, file: kept ? file : nil, data: data, width: width, height: height))
+            // A sealed flow's pictures are sealed too, as Proton keeps them.
+            let kept = (try? writeFile(path: file.path, bytes: data, key: place.key)).map { URL(fileURLWithPath: $0) }
+            item.outputs.append(.init(node: id, image: image, file: kept, data: data, width: width, height: height))
         case let .error(id, _, message):
             item.phase = .failed(id.map { "Node \($0): \(message)" } ?? message)
         case .done(let seconds):
@@ -164,22 +165,25 @@ public final class RunQueue {
             outputs = base.appending(path: "outputs/\(editor.name)", directoryHint: .isDirectory)
         }
         let previews = LibraryCache.directory.appending(path: "previews", directoryHint: .isDirectory)
+        let key = editor.isSealed ? editor.sealKey : nil
         var places: [String: OutputPlace] = [:]
         for node in editor.flow.nodes {
             guard let type = editor.library.catalogue.node(node.type), type.isOutput else { continue }
             if let field = type.fields.first(where: { $0.name == "prefix" }) {
                 let prefix = node.values["prefix"]?.stringValue ?? field.default?.stringValue ?? "image"
-                places[node.id] = OutputPlace(folder: outputs, prefix: prefix)
+                places[node.id] = OutputPlace(folder: outputs, prefix: prefix, key: key)
             } else {
-                places[node.id] = OutputPlace(folder: previews, prefix: node.type.lowercased())
+                places[node.id] = OutputPlace(folder: previews, prefix: node.type.lowercased(), key: key)
             }
         }
         return places
     }
 }
 
-/// Where one output node's pictures are written.
+/// Where one output node's pictures are written, and the key they are
+/// sealed with, if any.
 struct OutputPlace: Sendable {
     var folder: URL
     var prefix: String
+    var key: SealKey?
 }

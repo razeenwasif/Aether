@@ -11,10 +11,11 @@
 //! them off the main actor.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use proton_diffuse::client::Events;
-use proton_diffuse::{check, doc, layout, png, templates, Catalogue, Client, FlowDoc, Graph, Key, Models, Op};
+use proton_diffuse::{check, doc, layout, png, seal, templates, Catalogue, Client, FlowDoc, Graph, Key, Models, Op, Seal};
 
 uniffi::setup_scaffolding!();
 
@@ -96,6 +97,51 @@ impl NodeCatalogue {
     }
 }
 
+// MARK: - Sealed files
+
+/// The key Proton seals Diffuse's files with, out of the person's keychain.
+/// Its bytes go in and never come back out.
+#[derive(uniffi::Object)]
+pub struct SealKey {
+    seal: Seal,
+}
+
+#[uniffi::export]
+impl SealKey {
+    #[uniffi::constructor]
+    pub fn new(key: Vec<u8>) -> Result<Arc<SealKey>, DiffuseError> {
+        let key: [u8; 32] = key.as_slice().try_into().map_err(|_| failed("a seal key is 32 bytes"))?;
+        Ok(Arc::new(SealKey { seal: Seal::new(key) }))
+    }
+}
+
+impl std::fmt::Debug for SealKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SealKey(…)")
+    }
+}
+
+/// A file's bytes, `path` being the file itself, `.sealed` or not: opened
+/// with `key` when they are sealed, as they are when they are not.
+#[uniffi::export]
+pub fn read_file(path: String, key: Option<Arc<SealKey>>) -> Result<Vec<u8>, DiffuseError> {
+    let bytes = std::fs::read(&path).map_err(|e| failed(format!("{path}: {e}")))?;
+    if !seal::is_sealed(&bytes) {
+        return Ok(bytes);
+    }
+    let key = key.ok_or_else(|| failed(format!("{path} is sealed: unlock Diffuse to read it")))?;
+    key.seal.open(&bytes).map_err(|why| failed(format!("{path}: {why}")))
+}
+
+/// Write `bytes` for `path`, whole or not at all: sealed beside it as
+/// `path.sealed` with `key`, plain without. Answers where it went.
+#[uniffi::export]
+pub fn write_file(path: String, bytes: Vec<u8>, key: Option<Arc<SealKey>>) -> Result<String, DiffuseError> {
+    seal::write(Path::new(&path), &bytes, key.as_ref().map(|k| &k.seal))
+        .map(|to| to.display().to_string())
+        .map_err(failed)
+}
+
 // MARK: - A flow open for editing
 
 /// One `.flow.json`: changed by batches of ops, each one undo step, written
@@ -103,21 +149,42 @@ impl NodeCatalogue {
 #[derive(uniffi::Object)]
 pub struct FlowDocument {
     doc: Mutex<FlowDoc>,
+    sealed: AtomicBool,
 }
 
 #[uniffi::export]
 impl FlowDocument {
-    /// The flow at `path`.
+    /// The flow `path` names: its sealed file, `path.sealed`, opened with
+    /// `key` when there is one, else the plain file. It is saved the way it
+    /// was found, so a plain flow stays plain even when a key is given.
     #[uniffi::constructor]
-    pub fn open(path: String) -> Result<Arc<FlowDocument>, DiffuseError> {
-        FlowDoc::read(Path::new(&path)).map(|d| Arc::new(FlowDocument { doc: Mutex::new(d) })).map_err(failed)
+    pub fn open(path: String, key: Option<Arc<SealKey>>) -> Result<Arc<FlowDocument>, DiffuseError> {
+        let path = Path::new(&path);
+        let sealed = seal::sealed_path(path).is_file();
+        let seal = if sealed { key.as_ref().map(|k| &k.seal) } else { None };
+        let doc = FlowDoc::read_sealed(path, seal).map_err(failed)?;
+        Ok(Arc::new(FlowDocument { doc: Mutex::new(doc), sealed: AtomicBool::new(sealed) }))
     }
 
     /// A flow that exists in memory until it is saved to `path`.
     #[uniffi::constructor]
     pub fn create(path: String, flow_json: String) -> Result<Arc<FlowDocument>, DiffuseError> {
         let flow = doc::parse(&flow_json).map_err(failed)?;
-        Ok(Arc::new(FlowDocument { doc: Mutex::new(FlowDoc::fresh(Path::new(&path), flow)) }))
+        Ok(Arc::new(FlowDocument { doc: Mutex::new(FlowDoc::fresh(Path::new(&path), flow)), sealed: AtomicBool::new(false) }))
+    }
+
+    /// Whether it is saved sealed.
+    pub fn is_sealed(&self) -> bool {
+        self.sealed.load(Ordering::Relaxed)
+    }
+
+    /// Save it sealed with `key` from now on, or plain without. For a flow
+    /// not yet written, or written somewhere new: one already on disk would
+    /// leave its other file behind.
+    pub fn seal_with(&self, key: Option<Arc<SealKey>>) {
+        let mut doc = lock(&self.doc);
+        self.sealed.store(key.is_some(), Ordering::Relaxed);
+        *doc = doc.clone().sealed_with(key.map(|k| k.seal.clone()));
     }
 
     pub fn path(&self) -> String {
@@ -252,11 +319,17 @@ pub fn flow_format() -> u32 {
 /// What an output PNG says of itself, read from its head and never its
 /// pixels: `{"width", "height", "graph", "made"}`, the graph being the one
 /// forge wrote into it as `proton-flow` (or null) and `made` its seed,
-/// settings and prompt. `None` for a file that is not a PNG.
+/// settings and prompt. `None` for a file that is not a PNG, and for a
+/// sealed one (`.png.sealed`) without `key`, which has to be opened whole.
 #[uniffi::export]
-pub fn png_head(path: String) -> Option<String> {
-    let file = std::fs::File::open(&path).ok()?;
-    let head = png::head(std::io::BufReader::new(file))?;
+pub fn png_head(path: String, key: Option<Arc<SealKey>>) -> Option<String> {
+    let head = if path.ends_with(seal::SEALED) {
+        let bytes = read_file(path, Some(key?)).ok()?;
+        png::head(std::io::Cursor::new(bytes))?
+    } else {
+        let file = std::fs::File::open(&path).ok()?;
+        png::head(std::io::BufReader::new(file))?
+    };
     let graph = head.flow.as_deref().and_then(png::graph_of);
     let made = graph.as_ref().map(png::made);
     Some(json(&serde_json::json!({ "width": head.width, "height": head.height, "graph": graph, "made": made })))
@@ -380,5 +453,72 @@ mod tests {
             let ops = template_ops(t.name.clone()).unwrap();
             doc.apply(ops, catalogue.clone()).unwrap_or_else(|e| panic!("{}: {e}", t.name));
         }
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("aether-seal-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_sealed_flow_opens_with_its_key_and_stays_sealed() {
+        let dir = scratch("flow");
+        let path = dir.join("lighthouse.flow.json").display().to_string();
+        let key = SealKey::new(vec![7; 32]).unwrap();
+        let written = write_file(path.clone(), FLOW.as_bytes().to_vec(), Some(key.clone())).unwrap();
+        assert_eq!(written, format!("{path}.sealed"));
+
+        let refused = FlowDocument::open(path.clone(), None).err().unwrap().to_string();
+        assert!(refused.contains("unlock Diffuse"), "{refused}");
+        assert!(FlowDocument::open(path.clone(), Some(SealKey::new(vec![8; 32]).unwrap())).is_err());
+
+        let catalogue = NodeCatalogue::parse(CATALOGUE.into()).unwrap();
+        let doc = FlowDocument::open(path.clone(), Some(key.clone())).unwrap();
+        assert!(doc.is_sealed());
+        doc.apply(r#"[{"op":"note","text":"kept sealed"}]"#.into(), catalogue).unwrap();
+        doc.save().unwrap();
+        let on_disk = std::fs::read(&written).unwrap();
+        assert!(seal::is_sealed(&on_disk));
+        assert!(!on_disk.windows(11).any(|w| w == b"kept sealed"), "the note shows through");
+        assert!(!Path::new(&path).exists(), "a plain copy was written");
+        assert!(FlowDocument::open(path, Some(key)).unwrap().flow_json().contains("kept sealed"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_plain_flow_stays_plain_with_a_key() {
+        let dir = scratch("plain");
+        let path = dir.join("plain.flow.json");
+        std::fs::write(&path, FLOW).unwrap();
+        let doc = FlowDocument::open(path.display().to_string(), Some(SealKey::new(vec![7; 32]).unwrap())).unwrap();
+        assert!(!doc.is_sealed());
+        doc.save().unwrap();
+        assert!(!seal::sealed_path(&path).exists());
+        assert!(SealKey::new(vec![1; 31]).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_sealed_pictures_head_needs_its_key() {
+        let dir = scratch("png");
+        // A PNG's signature and IHDR are all `png::head` needs before IEND.
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        bytes.extend_from_slice(&[0, 0, 0, 13]);
+        bytes.extend_from_slice(b"IHDR");
+        bytes.extend_from_slice(&[0, 0, 5, 64, 0, 0, 3, 0, 8, 2, 0, 0, 0]);
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes.extend_from_slice(b"IEND");
+        bytes.extend_from_slice(&[0; 4]);
+        let key = SealKey::new(vec![9; 32]).unwrap();
+        let sealed = write_file(dir.join("image_0001.png").display().to_string(), bytes.clone(), Some(key.clone())).unwrap();
+        assert!(png_head(sealed.clone(), None).is_none());
+        let head = png_head(sealed.clone(), Some(key.clone())).unwrap();
+        assert!(head.contains("\"width\":1344") && head.contains("\"height\":768"), "{head}");
+        assert_eq!(read_file(sealed.clone(), Some(key)).unwrap(), bytes);
+        assert!(read_file(sealed, None).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

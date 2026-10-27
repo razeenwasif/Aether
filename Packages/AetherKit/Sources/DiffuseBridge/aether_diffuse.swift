@@ -598,6 +598,11 @@ public protocol FlowDocumentProtocol: AnyObject, Sendable {
     
     func isDirty()  -> Bool
     
+    /**
+     * Whether it is saved sealed.
+     */
+    func isSealed()  -> Bool
+    
     func path()  -> String
     
     /**
@@ -623,6 +628,13 @@ public protocol FlowDocumentProtocol: AnyObject, Sendable {
      * Write it, whole or not at all.
      */
     func save() throws 
+    
+    /**
+     * Save it sealed with `key` from now on, or plain without. For a flow
+     * not yet written, or written somewhere new: one already on disk would
+     * leave its other file behind.
+     */
+    func sealWith(key: SealKey?) 
     
     /**
      * The flow as its file's text.
@@ -701,13 +713,16 @@ public static func create(path: String, flowJson: String)throws  -> FlowDocument
 }
     
     /**
-     * The flow at `path`.
+     * The flow `path` names: its sealed file, `path.sealed`, opened with
+     * `key` when there is one, else the plain file. It is saved the way it
+     * was found, so a plain flow stays plain even when a key is given.
      */
-public static func `open`(path: String)throws  -> FlowDocument  {
+public static func `open`(path: String, key: SealKey?)throws  -> FlowDocument  {
     return try  FfiConverterTypeFlowDocument_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_constructor_flowdocument_open(
-        FfiConverterString.lower(path),uniffiCallStatus
+        FfiConverterString.lower(path),
+        FfiConverterOptionTypeSealKey.lower(key),uniffiCallStatus
     )
 })
 }
@@ -783,6 +798,18 @@ open func isDirty() -> Bool  {
 })
 }
     
+    /**
+     * Whether it is saved sealed.
+     */
+open func isSealed() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_flowdocument_is_sealed(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
 open func path() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
         uniffiCallStatus in
@@ -848,6 +875,20 @@ open func save()throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lif
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_method_flowdocument_save(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Save it sealed with `key` from now on, or plain without. For a flow
+     * not yet written, or written somewhere new: one already on disk would
+     * leave its other file behind.
+     */
+open func sealWith(key: SealKey?)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_flowdocument_seal_with(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionTypeSealKey.lower(key),uniffiCallStatus
     )
 }
 }
@@ -1473,6 +1514,129 @@ public func FfiConverterTypeRunEvents_lower(_ value: RunEvents) -> UInt64 {
 
 
 
+
+
+/**
+ * The key Proton seals Diffuse's files with, out of the person's keychain.
+ * Its bytes go in and never come back out.
+ */
+public protocol SealKeyProtocol: AnyObject, Sendable {
+    
+}
+/**
+ * The key Proton seals Diffuse's files with, out of the person's keychain.
+ * Its bytes go in and never come back out.
+ */
+open class SealKey: SealKeyProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_sealkey(self.handle, $0) }
+    }
+public convenience init(key: Data)throws  {
+    let handle =
+        try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_sealkey_new(
+        FfiConverterData.lower(key),uniffiCallStatus
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_sealkey(handle, $0) }
+    }
+
+    
+
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSealKey: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = SealKey
+
+    public static func lift(_ handle: UInt64) throws -> SealKey {
+        return SealKey(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: SealKey) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SealKey {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: SealKey, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSealKey_lift(_ handle: UInt64) throws -> SealKey {
+    return try FfiConverterTypeSealKey.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSealKey_lower(_ value: SealKey) -> UInt64 {
+    return FfiConverterTypeSealKey.lower(value)
+}
+
+
+
+
 /**
  * A starter flow: what the editor calls it and what it is for.
  */
@@ -1657,6 +1821,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeSealKey: FfiConverterRustBuffer {
+    typealias SwiftType = SealKey?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSealKey.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSealKey.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -1729,13 +1917,28 @@ public func flowFromGraph(graphJson: String, catalogue: NodeCatalogue)throws  ->
  * What an output PNG says of itself, read from its head and never its
  * pixels: `{"width", "height", "graph", "made"}`, the graph being the one
  * forge wrote into it as `proton-flow` (or null) and `made` its seed,
- * settings and prompt. `None` for a file that is not a PNG.
+ * settings and prompt. `None` for a file that is not a PNG, and for a
+ * sealed one (`.png.sealed`) without `key`, which has to be opened whole.
  */
-public func pngHead(path: String) -> String?  {
+public func pngHead(path: String, key: SealKey?) -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_func_png_head(
-        FfiConverterString.lower(path),uniffiCallStatus
+        FfiConverterString.lower(path),
+        FfiConverterOptionTypeSealKey.lower(key),uniffiCallStatus
+    )
+})
+}
+/**
+ * A file's bytes, `path` being the file itself, `.sealed` or not: opened
+ * with `key` when they are sealed, as they are when they are not.
+ */
+public func readFile(path: String, key: SealKey?)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_read_file(
+        FfiConverterString.lower(path),
+        FfiConverterOptionTypeSealKey.lower(key),uniffiCallStatus
     )
 })
 }
@@ -1757,6 +1960,20 @@ public func templates() -> [Template]  {
     return try!  FfiConverterSequenceTypeTemplate.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_func_templates(uniffiCallStatus
+    )
+})
+}
+/**
+ * Write `bytes` for `path`, whole or not at all: sealed beside it as
+ * `path.sealed` with `key`, plain without. Answers where it went.
+ */
+public func writeFile(path: String, bytes: Data, key: SealKey?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_write_file(
+        FfiConverterString.lower(path),
+        FfiConverterData.lower(bytes),
+        FfiConverterOptionTypeSealKey.lower(key),uniffiCallStatus
     )
 })
 }
@@ -1782,13 +1999,19 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_func_flow_from_graph() != 13124) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aether_diffuse_checksum_func_png_head() != 11521) {
+    if (uniffi_aether_diffuse_checksum_func_png_head() != 51278) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_read_file() != 36494) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_template_ops() != 40664) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_templates() != 10226) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_write_file() != 2637) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_apply() != 29198) {
@@ -1809,6 +2032,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_flowdocument_is_dirty() != 50050) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_flowdocument_is_sealed() != 14621) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_path() != 56608) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1825,6 +2051,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_save() != 27211) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_flowdocument_seal_with() != 64371) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_text() != 22880) {
@@ -1869,13 +2098,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_constructor_flowdocument_create() != 53531) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aether_diffuse_checksum_constructor_flowdocument_open() != 13023) {
+    if (uniffi_aether_diffuse_checksum_constructor_flowdocument_open() != 16960) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_gateway_new() != 327) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_nodecatalogue_parse() != 48655) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_sealkey_new() != 7945) {
         return InitializationResult.apiChecksumMismatch
     }
 

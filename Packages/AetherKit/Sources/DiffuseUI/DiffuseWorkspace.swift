@@ -24,6 +24,8 @@ public struct DiffuseWorkspace: View {
             } else if let editor = model.editor {
                 FlowCanvas(model: model, editor: editor)
                     .id(editor.url)
+            } else if let locked = model.lockedFlow {
+                LockedFlow(model: model, url: locked)
             } else {
                 Color.obsidian0
             }
@@ -50,11 +52,19 @@ public struct DiffuseWorkspace: View {
                 }
             }
 
-            if let editor = model.editor {
-                StatusBar(model: model, editor: editor)
-                    .padding(.leading, leftInset + 12)
-                    .padding(.top, 12)
+            Group {
+                if let editor = model.editor {
+                    StatusBar(model: model, editor: editor)
+                } else {
+                    // No flow open, as while a sealed one waits: the switch stays.
+                    StageSwitch(model: model)
+                        .padding(.horizontal, 4)
+                        .frame(height: 30)
+                        .aeGlass(.floating, radius: 9)
+                }
             }
+            .padding(.leading, leftInset + 12)
+            .padding(.top, 12)
 
             VStack {
                 if let run = model.queue.runs.first {
@@ -65,7 +75,7 @@ public struct DiffuseWorkspace: View {
                     NoticeView(text: notice) { model.notice = nil }
                         .padding(.bottom, 10)
                 }
-                if onGraph { ToolDock(model: model).padding(.bottom, 16) }
+                if onGraph && model.editor != nil { ToolDock(model: model).padding(.bottom, 16) }
             }
             .frame(maxWidth: .infinity)
             .padding(.leading, leftInset)
@@ -99,6 +109,40 @@ private struct StageKeys: ViewModifier {
     }
 }
 
+/// A sealed flow that isn't shown until the person unlocks it.
+private struct LockedFlow: View {
+    @Bindable var model: DiffuseWorkspaceModel
+    let url: URL
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "lock.fill").font(.system(size: 22)).foregroundStyle(Color.ink2)
+            Text("\(url.lastPathComponent) is sealed.").font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.inkHi)
+            Text("Proton keeps it encrypted. Unlock with Touch ID or your password to open it; it stays sealed when you save.")
+                .font(.system(size: 12)).foregroundStyle(Color.ink2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            HStack(spacing: 8) {
+                Button(model.sealUnlocking ? "Waiting for you…" : "Unlock", action: model.unlockLockedFlow)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.runFill)
+                    .foregroundStyle(Color.obsidian0)
+                    .disabled(model.sealUnlocking)
+                Button("New Flow") { model.newFlow(template: "textToImage") }
+                Button("Open Another…", action: model.chooseAndOpen)
+            }
+            .padding(.top, 4)
+            if let said = model.sealSaid {
+                Text(said).font(.system(size: 11.5)).foregroundStyle(Color.coral).multilineTextAlignment(.center).frame(maxWidth: 360)
+            }
+        }
+        .padding(28)
+        .aeGlass(.floating, radius: Radius.floating)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.obsidian0)
+    }
+}
+
 /// The flow's name, whether it is saved, and how the server is.
 private struct StatusBar: View {
     @Bindable var model: DiffuseWorkspaceModel
@@ -109,6 +153,11 @@ private struct StatusBar: View {
             StageSwitch(model: model)
             Divider().frame(height: 12)
             HStack(spacing: 6) {
+                if editor.isSealed {
+                    Image(systemName: "lock.fill").font(.system(size: 9.5, weight: .semibold)).foregroundStyle(Color.ink2)
+                        .help("Sealed with Proton’s key: saved encrypted, and so are its outputs")
+                        .accessibilityLabel("Sealed")
+                }
                 Text(editor.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.inkHi)
                 if editor.isDirty {
                     Circle().fill(Color.ink).frame(width: 6, height: 6).help("Not saved: ⌘S")

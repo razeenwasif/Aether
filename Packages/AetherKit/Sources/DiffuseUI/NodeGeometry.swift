@@ -5,7 +5,8 @@ import SwiftUI
 /// The fixed measures a node card is drawn to, so wires can find its ports
 /// without measuring views.
 enum NodeMetrics {
-    static let width: CGFloat = 236
+    /// Proton's `NODE_W`, so flows laid out in Proton come across as drawn.
+    static let width: CGFloat = 220
     static let header: CGFloat = 32
     static let rowsTop: CGFloat = 6
     static let socketRow: CGFloat = 24

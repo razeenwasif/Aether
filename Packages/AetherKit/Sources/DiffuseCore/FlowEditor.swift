@@ -17,23 +17,33 @@ public final class FlowEditor {
     /// Why the last edit was refused, in the core's words.
     public private(set) var refusal: String?
     public var selection: Set<String> = []
+    /// The plain file's place; a sealed flow is kept beside it, `.sealed`.
     public private(set) var url: URL
+    /// Whether it is kept sealed with Proton's key, and so are its outputs.
+    public private(set) var isSealed: Bool
+    /// The key it is sealed with; `nil` for a plain flow.
+    @ObservationIgnored public private(set) var sealKey: SealKey?
 
     @ObservationIgnored private var document: FlowDocument
     @ObservationIgnored private let decoder = JSONDecoder()
     @ObservationIgnored private let encoder = JSONEncoder()
 
-    private init(document: FlowDocument, url: URL, library: NodeLibrary) throws {
+    private init(document: FlowDocument, url: URL, library: NodeLibrary, key: SealKey? = nil) throws {
         self.document = document
         self.url = url
         self.library = library
+        isSealed = document.isSealed()
+        sealKey = document.isSealed() ? key : nil
         flow = try decoder.decode(Flow.self, from: Data(document.flowJson().utf8))
         refresh()
     }
 
-    /// The flow at `url`.
-    public static func open(_ url: URL, library: NodeLibrary) throws -> FlowEditor {
-        try FlowEditor(document: FlowDocument.open(path: url.path), url: url, library: library)
+    /// The flow at `url`, the plain file's place: its sealed file opened
+    /// with `key` when there is one, else the plain file. Saved the way it
+    /// was found.
+    public static func open(_ url: URL, library: NodeLibrary, key: SealKey? = nil) throws -> FlowEditor {
+        let url = SealedFiles.plain(url)
+        return try FlowEditor(document: FlowDocument.open(path: url.path, key: key), url: url, library: library, key: key)
     }
 
     /// A new flow at `url`, not written until saved, started from a template
@@ -51,9 +61,12 @@ public final class FlowEditor {
         try FlowEditor(document: FlowDocument.create(path: url.path, flowJson: flowJSON), url: url, library: library)
     }
 
-    /// A new flow from the graph a picture holds, laid out by the core.
-    public static func create(at url: URL, fromGraph graphJSON: String, library: NodeLibrary) throws -> FlowEditor {
-        try create(at: url, flowJSON: flowFromGraph(graphJson: graphJSON, catalogue: library.core), library: library)
+    /// A new flow from the graph a picture holds, laid out by the core, and
+    /// sealed with `key` when given: a sealed picture's graph stays sealed.
+    public static func create(at url: URL, fromGraph graphJSON: String, library: NodeLibrary, sealedWith key: SealKey? = nil) throws -> FlowEditor {
+        let document = try FlowDocument.create(path: url.path, flowJson: flowFromGraph(graphJson: graphJSON, catalogue: library.core))
+        if let key { document.sealWith(key: key) }
+        return try FlowEditor(document: document, url: url, library: library, key: key)
     }
 
     /// The flow's name: its file's, without `.flow.json`.
@@ -98,9 +111,12 @@ public final class FlowEditor {
         refresh()
     }
 
-    /// Save to a new place: the flow from now on lives there.
+    /// Save to a new place: the flow from now on lives there, sealed if it
+    /// was.
     public func save(as newURL: URL) throws {
+        let newURL = SealedFiles.plain(newURL)
         let next = try FlowDocument.create(path: newURL.path, flowJson: document.flowJson())
+        if isSealed { next.sealWith(key: sealKey) }
         try next.save()
         document = next
         url = newURL

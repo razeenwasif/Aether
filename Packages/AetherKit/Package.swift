@@ -33,7 +33,7 @@ let package = Package(
             resources: [.copy("Resources/catalogue-v1.json"), .copy("Resources/models.json")]
         ),
         .target(name: "AetherDesign"),
-        .target(name: "DiffuseUI", dependencies: ["DiffuseCore", "AetherDesign"]),
+        .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "AetherDesign"]),
         .target(name: "AetherShell", dependencies: ["AetherDesign", "DiffuseBridge", "DiffuseCore", "DiffuseUI"]),
         .testTarget(
             name: "DiffuseCoreTests",

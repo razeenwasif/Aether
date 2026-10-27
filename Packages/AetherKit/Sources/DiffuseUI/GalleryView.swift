@@ -1,5 +1,6 @@
 import AetherDesign
 import AppKit
+import DiffuseBridge
 import DiffuseCore
 import ImageIO
 import SwiftUI
@@ -66,7 +67,7 @@ struct GalleryStage: View {
         .background(Color.obsidian0)
         .task(id: outputsMade) { await model.refreshGallery() }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let png = urls.first(where: { $0.pathExtension.lowercased() == "png" }) else { return false }
+            guard let png = urls.first(where: { SealedFiles.plain($0).pathExtension.lowercased() == "png" }) else { return false }
             Task { await model.openGraph(of: png) }
             return true
         }
@@ -119,6 +120,19 @@ struct GalleryStage: View {
             Text("\(gallery.shown.count) \(gallery.shown.count == 1 ? "image" : "images"), newest first")
                 .font(.system(size: 11.5)).foregroundStyle(Color.ink3)
             Spacer()
+            if gallery.sealedCount > 0 && model.sealKey == nil {
+                if let said = model.sealSaid {
+                    Text(said).font(.system(size: 11.5)).foregroundStyle(Color.coral).lineLimit(1).truncationMode(.tail)
+                }
+                Button { Task { await model.unlockSealed() } } label: {
+                    Label(model.sealUnlocking ? "Waiting for you…" : "Unlock \(gallery.sealedCount) sealed", systemImage: "lock.fill")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(model.sealUnlocking)
+                .help("Proton sealed these. Unlock with Touch ID or your password to see them.")
+            }
             IconButton("arrow.clockwise", label: "Look again") { Task { await model.refreshGallery() } }
         }
     }
@@ -158,13 +172,24 @@ private struct GalleryTile: View {
     var body: some View {
         Button { model.gallery.pick(picture.url, adding: NSApp.currentEvent?.modifierFlags.contains(.command) ?? false) } label: {
             VStack(alignment: .leading, spacing: 6) {
-                Thumbnail(url: picture.url, side: 360)
+                Thumbnail(url: picture.url, side: 360, key: model.sealKey)
                     .frame(maxWidth: .infinity)
                     .frame(height: 168)
                     .background(Color.obsidian1)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        if picture.isSealed && model.sealKey != nil {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Color.inkHi)
+                                .padding(5)
+                                .background(Circle().fill(Color.black.opacity(0.55)))
+                                .padding(6)
+                                .help("Sealed with Proton’s key")
+                        }
+                    }
                 HStack(spacing: 6) {
-                    Text(picture.url.lastPathComponent).font(.aeMono).foregroundStyle(Color.ink).lineLimit(1).truncationMode(.middle)
+                    Text(picture.name).font(.aeMono).foregroundStyle(Color.ink).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
                     if let seed { Text(verbatim: "\(seed)").font(.aeMono).foregroundStyle(Color.ink3).lineLimit(1) }
                 }
@@ -178,8 +203,10 @@ private struct GalleryTile: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .simultaneousGesture(TapGesture(count: 2).onEnded { Task { await model.openGraph(of: picture.url) } })
-        .task(id: picture.url) { seed = await model.gallery.head(for: picture.url)?.made?.seed }
-        .accessibilityLabel(picture.url.lastPathComponent)
+        .task(id: HeadRequest(url: picture.url, unlocked: model.sealKey != nil)) {
+            seed = await model.gallery.head(for: picture.url)?.made?.seed
+        }
+        .accessibilityLabel(picture.isSealed ? "\(picture.name), sealed" : picture.name)
         .accessibilityValue(seed.map { "Seed \($0)" } ?? "")
         .accessibilityAddTraits(isPicked ? .isSelected : [])
         .accessibilityAction(named: "Open its graph") { Task { await model.openGraph(of: picture.url) } }
@@ -218,7 +245,7 @@ struct GalleryInspector: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .aeGlass()
-        .task(id: gallery.chosen) {
+        .task(id: HeadRequest(url: gallery.chosen, unlocked: model.sealKey != nil)) {
             head = nil
             if let url = gallery.chosen { head = await gallery.head(for: url) }
         }
@@ -267,17 +294,31 @@ struct GalleryInspector: View {
 
     private func one(_ picture: GalleryPicture) -> some View {
         VStack(spacing: 0) {
-            InspectorHeader(symbol: "photo", title: picture.url.lastPathComponent, subtitle: subtitle(picture))
+            InspectorHeader(symbol: picture.isSealed ? "lock.doc" : "photo", title: picture.name, subtitle: subtitle(picture))
             ScrollView {
                 VStack(spacing: 0) {
-                    Thumbnail(url: picture.url, side: 900, fit: true)
+                    Thumbnail(url: picture.url, side: 900, key: model.sealKey, fit: true)
                         .frame(maxWidth: .infinity)
                         .frame(maxHeight: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.white.opacity(0.08)))
                         .padding(.horizontal, 14)
                         .padding(.bottom, 12)
-                    if let made = head?.made {
+                    if picture.isSealed && model.sealKey == nil {
+                        PanelSection("Sealed") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Proton sealed this picture. Unlock with Touch ID or your password to see it and what made it.")
+                                    .font(.system(size: 11.5)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+                                ActionButton(model.sealUnlocking ? "Waiting for you…" : "Unlock sealed files", symbol: "lock.open", prominent: true) {
+                                    Task { await model.unlockSealed() }
+                                }
+                                .disabled(model.sealUnlocking)
+                                if let said = model.sealSaid {
+                                    Text(said).font(.system(size: 11.5)).foregroundStyle(Color.coral).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    } else if let made = head?.made {
                         PanelSection("Made with") { MadeRows(made: made) }
                     } else if head != nil {
                         PanelSection("Made with") {
@@ -293,7 +334,8 @@ struct GalleryInspector: View {
 
     private func subtitle(_ picture: GalleryPicture) -> String {
         let size = head.map { "\($0.width) × \($0.height) · " } ?? ""
-        return size + picture.modified.formatted(date: .abbreviated, time: .shortened)
+        let sealed = picture.isSealed ? " · sealed" : ""
+        return size + picture.modified.formatted(date: .abbreviated, time: .shortened) + sealed
     }
 
     private func actions(_ picture: GalleryPicture) -> some View {
@@ -432,8 +474,12 @@ private struct ActionButton: View {
 struct Thumbnail: View {
     let url: URL
     let side: Int
+    /// Proton's key, for a sealed picture; without it one shows locked.
+    var key: SealKey?
     var fit = false
     @State private var image: CGImage?
+
+    private var isSealed: Bool { url.lastPathComponent.hasSuffix(SealedFiles.suffix) }
 
     var body: some View {
         ZStack {
@@ -446,10 +492,28 @@ struct Thumbnail: View {
             } else {
                 Rectangle().fill(Color.obsidian1)
                     .aspectRatio(fit ? 16 / 10 : nil, contentMode: .fit)
+                    .overlay {
+                        if isSealed && key == nil {
+                            VStack(spacing: 6) {
+                                Image(systemName: "lock.fill").font(.system(size: 18))
+                                Text("Sealed").font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundStyle(Color.ink3)
+                        }
+                    }
             }
         }
-        .task(id: url) { image = await Thumbnails.shared.image(url, side: side) }
+        .task(id: HeadRequest(url: url, unlocked: key != nil)) {
+            image = await Thumbnails.shared.image(url, side: side, key: key)
+        }
     }
+}
+
+/// What a picture's head or thumbnail is read again for: another picture,
+/// or sealed files unlocked or locked.
+struct HeadRequest: Hashable {
+    let url: URL?
+    let unlocked: Bool
 }
 
 /// Thumbnails made once a gallery opening, let go when it shuts.
@@ -460,11 +524,21 @@ final class Thumbnails {
 
     private struct Kept: @unchecked Sendable { let image: CGImage }
 
-    func image(_ url: URL, side: Int) async -> CGImage? {
+    /// A thumbnail of `url`. A sealed picture is opened with `key`, in
+    /// memory only; without it, `nil`.
+    func image(_ url: URL, side: Int, key sealKey: SealKey? = nil) async -> CGImage? {
+        let sealed = url.lastPathComponent.hasSuffix(SealedFiles.suffix)
+        guard !sealed || sealKey != nil else { return nil }
         let key = "\(side):\(url.path)"
         if let hit = kept[key] { return hit.image }
         let result = await Task.detached(priority: .userInitiated) { () -> Kept? in
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let source: CGImageSource?
+            if sealed {
+                source = (try? readFile(path: url.path, key: sealKey)).flatMap { CGImageSourceCreateWithData($0 as CFData, nil) }
+            } else {
+                source = CGImageSourceCreateWithURL(url as CFURL, nil)
+            }
+            guard let source,
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                       kCGImageSourceCreateThumbnailFromImageAlways: true,
                       kCGImageSourceCreateThumbnailWithTransform: true,
@@ -479,4 +553,7 @@ final class Thumbnails {
     }
 
     func forget() { kept = [:] }
+
+    /// Let go of every sealed picture's thumbnail: sealed files locked.
+    func forgetSealed() { kept = kept.filter { !$0.key.hasSuffix(SealedFiles.suffix) } }
 }

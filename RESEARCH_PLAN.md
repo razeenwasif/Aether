@@ -460,11 +460,35 @@ The user took the PI's recommendation on all five.
 - Verified in the app against the stand-in: run → stamped PNG → gallery tile with seed → inspector values → Open its graph → ⌫ and ⌘⌫ → Trash.
 - Not verified live: the lock's system prompt. Use as input, Send to Canvas and Send to Game are present but disabled.
 
+**2026-10-27 · Proton's sealed flows and outputs.** Aether opens what Proton's Diffuse seals: AES-256-GCM files named `<name>.sealed`, keyed by 32 bytes in the login keychain (service "Proton Diffuse", account "seal key").
+
+- The bridge exposes `SealKey`, `FlowDocument.open(path, key)`, `is_sealed` and `seal_with`, plus `read_file` / `write_file` and `png_head(path, key)`, all over `proton_diffuse::seal`. Four Rust tests cover sealed round trips, a wrong key, plain flows staying plain, and a sealed PNG's head.
+- `SealVault` reads the key after LocalAuthentication, as `proton-shell/src/vault.rs` does. The keychain asks the person once per build to let Aether read Proton's item; that's theirs to allow.
+- **Decision, Aether's own: keep each file as it was found.** Proton seals everything once unlocked. Aether only keeps sealed what was sealed:
+  - A sealed flow saves sealed, and Save As keeps it sealed.
+  - A sealed flow's outputs and previews are written sealed.
+  - A flow opened from a sealed picture's graph is sealed.
+  - Plain flows stay plain, even with the key in hand, and nothing plain gets sealed.
+- Nothing sealed is shown or asked for until the person asks.
+  - A sealed last flow waits behind a locked card at launch.
+  - The Gallery lists `.png.sealed` files and shows them locked until unlocked. Decrypted thumbnails and heads stay in memory only.
+  - The Gallery's own Touch ID check also unlocks sealed pictures, without asking twice.
+  - Flow ▸ Lock Sealed Files lets the key go. It saves and shuts a sealed flow and locks its pictures again. Quitting does the same.
+- Node cards are now 220 pt wide, Proton's `NODE_W`, so flows laid out in Proton don't overlap in Aether.
+- Debug builds only: `AETHER_SEAL_KEY_FILE` points at a 32-byte test key file instead of the keychain and skips the Touch ID check. `cargo run --example seal -- <key-file> <file>…` seals fixtures in Proton's format.
+- Eight more Swift tests (25 in all). One drives the run queue with a fake backend to prove a sealed flow's output lands sealed.
+- Verified in the app against a throwaway key and fixtures, not the person's files:
+  - The locked card at launch, then unlock and open.
+  - The lock glyph in the status bar.
+  - Gallery tiles decrypted, with what made them, and Open its flow.
+  - A run writing `lighthouse_0002.png.sealed`.
+  - Lock Sealed Files, then unlock again from the Gallery header.
+- Not verified live: the real keychain prompt and Touch ID. Both need the person.
+
 Not yet:
 - The local Core ML backend (Q3's default), so runs go to Nexus only for now.
 - Uploading input images (and with it the Gallery's Use as input).
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
-- Opening Proton's sealed (encrypted) flows.
 - Marquee selection.
 - The rest of the shell's omnibar.
 
@@ -474,13 +498,11 @@ Not yet:
 - Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a). The other five workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
-**Next agent: GPT-6 Astra (Lab Engineer).** Trigger: this file. Tasks for `VERDICT.md`:
-1. Check the §7 frame-budget split and heap sizing for a 4096 × 2304 canvas, an 11-node flow at 1344 × 768, and 4K timeline playback, using M-series unified memory figures.
-2. Specify the `Transaction` inverse rules and the all-or-nothing validation (§6.4), including how live links behave across undo.
-3. Review the scaffold that now exists (`project.yml`, `Packages/AetherKit`, `cores/`) against §6, instead of creating one, and say what M0's other cores (design, scene, canvas, timeline) need from the bridge pattern `aether-diffuse` set.
+**Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, move to Claude. They're due before M1, since nothing built so far depends on them.
 
-Then **Gemini (AVS)** builds the scaffold, runs the M0 spikes, and logs the results to `SANDBOX_LOG.md`.
+**Next: Claude.** Diffuse parity, in this order (proposed 2026-10-27):
+1. ~~Sealed flows and outputs~~: done, see §10a.
+2. **Inputs.** Load Image's picture: choose one, drop one, or take one from the Gallery, then upload it through `Client::upload`. This turns on the Gallery's Use as input, and img2img and inpaint flows.
+3. **Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here.
 
-```bash
-codex "Read RESEARCH_PLAN.md in this folder and write VERDICT.md per section 10."
-```
+Then the local Core ML backend (Q3's default). It needs several GB of models, so ask before downloading. After that, the omnibar and M1's project graph, which Send to Canvas and Send to Game depend on.

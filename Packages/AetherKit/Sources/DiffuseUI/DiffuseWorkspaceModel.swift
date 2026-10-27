@@ -1,4 +1,5 @@
 import AppKit
+import DiffuseBridge
 import DiffuseCore
 import LocalAuthentication
 import Observation
@@ -42,6 +43,17 @@ public final class DiffuseWorkspaceModel {
     /// Why the last unlock did not open it, in the system's words.
     public private(set) var unlockSaid: String?
 
+    /// Proton's key for sealed flows and pictures, while they are unlocked:
+    /// asked for once (Touch ID or the Mac's password, then the keychain),
+    /// forgotten by Lock and on quit.
+    public private(set) var sealKey: SealKey?
+    public private(set) var sealUnlocking = false
+    /// Why the last unlock of sealed files did not happen.
+    public private(set) var sealSaid: String?
+    /// A sealed flow waiting to be unlocked before it is shown: the last
+    /// flow, at launch, or one whose unlock was turned down.
+    public private(set) var lockedFlow: URL?
+
     @ObservationIgnored private var key: String?
 
     public init() {
@@ -84,11 +96,17 @@ public final class DiffuseWorkspaceModel {
     }
 
     private func openInitialFlow() {
-        if let last = UserDefaults.standard.string(forKey: "diffuse.lastFlow"),
-           FileManager.default.fileExists(atPath: last),
-           let editor = try? FlowEditor.open(URL(fileURLWithPath: last), library: library) {
-            self.editor = editor
-            return
+        if let last = UserDefaults.standard.string(forKey: "diffuse.lastFlow").map({ URL(fileURLWithPath: $0) }),
+           SealedFiles.exists(last) {
+            // Nothing sealed is shown, or asked for, until the person asks.
+            if SealedFiles.isSealed(last) {
+                lockedFlow = last
+                return
+            }
+            if let editor = try? FlowEditor.open(last, library: library) {
+                self.editor = editor
+                return
+            }
         }
         newFlow(template: "textToImage")
     }
@@ -97,15 +115,35 @@ public final class DiffuseWorkspaceModel {
         let url = untitledURL()
         do {
             editor = try FlowEditor.create(at: url, template: template, library: library)
+            lockedFlow = nil
             fitRequest += 1
         } catch {
             notice = describe(error)
         }
     }
 
+    /// Open the flow at `url`, the plain file or its `.sealed` twin. A
+    /// sealed one asks for the key first; turned down, the flow open now
+    /// stays open.
     public func open(_ url: URL) {
+        let url = SealedFiles.plain(url)
+        guard SealedFiles.isSealed(url), sealKey == nil else { return finishOpening(url) }
+        Task {
+            if await unlockSealed() != nil {
+                finishOpening(url)
+            } else if editor == nil {
+                lockedFlow = url
+            } else if let sealSaid {
+                notice = "\(url.lastPathComponent) is sealed and stays shut: \(sealSaid)"
+            }
+        }
+    }
+
+    private func finishOpening(_ url: URL) {
         do {
-            editor = try FlowEditor.open(url, library: library)
+            editor = try FlowEditor.open(url, library: library, key: sealKey)
+            lockedFlow = nil
+            show(.graph)
             UserDefaults.standard.set(url.path, forKey: "diffuse.lastFlow")
             fitRequest += 1
         } catch {
@@ -115,10 +153,68 @@ public final class DiffuseWorkspaceModel {
 
     public func chooseAndOpen() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.json]
+        panel.allowedContentTypes = [.json] + [UTType(filenameExtension: "sealed")].compactMap { $0 }
         panel.directoryURL = flowsFolder
-        panel.message = "Choose a .flow.json"
-        if panel.runModal() == .OK, let url = panel.url { open(url) }
+        panel.message = "Choose a .flow.json, or one Proton sealed (.flow.json.sealed)"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard SealedFiles.plain(url).lastPathComponent.hasSuffix(".json") else {
+            notice = "\(url.lastPathComponent) isn’t a flow."
+            return
+        }
+        open(url)
+    }
+
+    // MARK: Sealed files
+
+    /// Unlock Proton's sealed files: Touch ID or the Mac's password, unless
+    /// that was just `asked` (by the gallery's lock), then the key from the
+    /// keychain. Answers the key, or `nil` with the reason in `sealSaid`.
+    @discardableResult
+    public func unlockSealed(asked: Bool = false) async -> SealKey? {
+        if let sealKey { return sealKey }
+        guard !sealUnlocking else { return nil }
+        sealUnlocking = true
+        sealSaid = nil
+        defer { sealUnlocking = false }
+        do {
+            if !asked && !SealVault.usesTestKey {
+                try await OwnerCheck.ask(reason: "open your sealed Diffuse files")
+            }
+            guard let key = try await Task.detached(operation: { try SealVault.readKey() }).value else {
+                sealSaid = "There’s no Diffuse key in your keychain, so Proton hasn’t sealed anything on this Mac."
+                return nil
+            }
+            sealKey = key
+            gallery.key = key
+            return key
+        } catch OwnerCheck.Failure.cancelled {
+            return nil
+        } catch {
+            sealSaid = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Open the sealed flow waiting at launch.
+    public func unlockLockedFlow() {
+        guard let lockedFlow else { return }
+        Task {
+            if await unlockSealed() != nil { finishOpening(lockedFlow) }
+        }
+    }
+
+    /// Lock sealed files again, as Proton's Lock does: the key is let go, a
+    /// sealed flow open now is saved and shut, and sealed pictures lock.
+    public func lockSealed() {
+        guard sealKey != nil else { return }
+        if let editor, editor.isSealed {
+            if editor.isDirty { save() }
+            lockedFlow = editor.url
+            self.editor = nil
+        }
+        sealKey = nil
+        gallery.key = nil
+        Thumbnails.shared.forgetSealed()
     }
 
     public func save() {
@@ -250,6 +346,8 @@ public final class DiffuseWorkspaceModel {
         guard stage == .gallery else { return }
         galleryLocked = false
         await refreshGallery()
+        // The person just proved they are here: sealed pictures open too.
+        if gallery.sealedCount > 0 { await unlockSealed(asked: true) }
     }
 
     /// The gallery left: shut again, and its pictures let go.
@@ -261,10 +359,10 @@ public final class DiffuseWorkspaceModel {
     }
 
     /// The folders whose `outputs/` the gallery shows: where new flows go,
-    /// and the open flow's own folder.
+    /// and the folder of the flow open now, or of the sealed one waiting.
     public var galleryRoots: [URL] {
         var roots = [flowsFolder.standardizedFileURL]
-        if let folder = editor?.url.deletingLastPathComponent().standardizedFileURL, !roots.contains(folder) {
+        if let folder = (editor?.url ?? lockedFlow)?.deletingLastPathComponent().standardizedFileURL, !roots.contains(folder) {
             roots.append(folder)
         }
         return roots
@@ -276,14 +374,23 @@ public final class DiffuseWorkspaceModel {
     }
 
     /// A new flow from the graph forge wrote into `picture`, named after it.
+    /// A sealed picture's graph needs the key, and the flow made from it is
+    /// sealed too.
     public func openGraph(of url: URL) async {
-        guard let head = await gallery.head(for: url) ?? PictureHead.read(url), let graph = head.graphJSON else {
-            notice = "\(url.lastPathComponent) holds no graph: it was not made by a flow, or not by forge."
+        let sealed = url.lastPathComponent.hasSuffix(SealedFiles.suffix)
+        if sealed, await unlockSealed() == nil {
+            if let sealSaid { notice = "\(SealedFiles.plain(url).lastPathComponent) is sealed and stays shut: \(sealSaid)" }
             return
         }
-        let stem = url.deletingPathExtension().lastPathComponent
+        let name = SealedFiles.plain(url).lastPathComponent
+        guard let head = await gallery.head(for: url) ?? PictureHead.read(url, key: sealKey), let graph = head.graphJSON else {
+            notice = "\(name) holds no graph: it was not made by a flow, or not by forge."
+            return
+        }
+        let stem = SealedFiles.plain(url).deletingPathExtension().lastPathComponent
         do {
-            editor = try FlowEditor.create(at: freeURL(named: stem), fromGraph: graph, library: library)
+            editor = try FlowEditor.create(at: freeURL(named: stem), fromGraph: graph, library: library, sealedWith: sealed ? sealKey : nil)
+            lockedFlow = nil
             show(.graph)
             fitRequest += 1
         } catch {
@@ -291,11 +398,12 @@ public final class DiffuseWorkspaceModel {
         }
     }
 
-    /// The flow a picture's folder is named after, if it is at hand.
+    /// The flow a picture's folder is named after, if it is at hand, sealed
+    /// or plain.
     public func flowFile(for picture: GalleryPicture) -> URL? {
         for root in galleryRoots {
             let url = root.appending(path: "\(picture.flow).flow.json")
-            if FileManager.default.fileExists(atPath: url.path) { return url }
+            if SealedFiles.exists(url) { return url }
         }
         return nil
     }
@@ -333,7 +441,7 @@ public final class DiffuseWorkspaceModel {
         while true {
             let name = n == 1 ? "\(stem).flow.json" : "\(stem) \(n).flow.json"
             let url = flowsFolder.appending(path: name)
-            if !FileManager.default.fileExists(atPath: url.path) { return url }
+            if !SealedFiles.exists(url) { return url }
             n += 1
         }
     }

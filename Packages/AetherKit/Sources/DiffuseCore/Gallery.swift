@@ -24,9 +24,10 @@ public struct PictureHead: Sendable, Equatable {
     public var graphJSON: String?
     public var made: Made?
 
-    /// Read through the core, which reads the head and never the pixels.
-    public static func read(_ url: URL) -> PictureHead? {
-        guard let json = pngHead(path: url.path),
+    /// Read through the core, which reads a plain PNG's head and never its
+    /// pixels. A sealed one is opened whole with `key`; without it, `nil`.
+    public static func read(_ url: URL, key: SealKey? = nil) -> PictureHead? {
+        guard let json = pngHead(path: url.path, key: key),
               let object = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]
         else { return nil }
         let graph = object["graph"].flatMap { $0 is NSNull ? nil : $0 }
@@ -41,11 +42,17 @@ public struct PictureHead: Sendable, Equatable {
 
 /// One picture in the gallery.
 public struct GalleryPicture: Identifiable, Hashable, Sendable {
+    /// The file itself: `image_0001.png`, or `image_0001.png.sealed`.
     public var url: URL
     /// The flow that made it: the folder it is in, under `outputs/`.
     public var flow: String
     public var modified: Date
     public var id: URL { url }
+
+    /// Whether it is sealed with Proton's key.
+    public var isSealed: Bool { url.lastPathComponent.hasSuffix(SealedFiles.suffix) }
+    /// Its name as Proton shows it: the plain file's.
+    public var name: String { SealedFiles.plain(url).lastPathComponent }
 }
 
 /// The pictures runs have made, newest first, filtered by flow. Outputs are
@@ -59,6 +66,11 @@ public final class Gallery {
     public private(set) var scanned = false
     /// The flow shown, or every flow when `nil`.
     public var filter: String?
+    /// Proton's key, while sealed files are unlocked; sealed pictures show
+    /// locked without it.
+    public var key: SealKey? {
+        didSet { if key == nil { heads = heads.filter { !$0.key.lastPathComponent.hasSuffix(SealedFiles.suffix) } } }
+    }
     /// The pictures chosen: one with a press, more with ⌘-press.
     public private(set) var picked: Set<URL> = []
     /// The one whose detail the inspector shows: the last pressed.
@@ -74,6 +86,9 @@ public final class Gallery {
     }
 
     public var chosenPicture: GalleryPicture? { chosen.flatMap { url in pictures.first { $0.url == url } } }
+
+    /// How many pictures are sealed, and so locked without the key.
+    public var sealedCount: Int { pictures.count { $0.isSealed } }
 
     /// Choose `url`, alone or, `adding`, as one more (pressed again, it is
     /// taken away).
@@ -112,10 +127,13 @@ public final class Gallery {
         if let filter, !found.contains(where: { $0.flow == filter }) { self.filter = nil }
     }
 
-    /// The head of `url`, read once.
+    /// The head of `url`, read once. A sealed picture's needs the key.
     public func head(for url: URL) async -> PictureHead? {
         if let head = heads[url] { return head }
-        let head = await Task.detached { PictureHead.read(url) }.value
+        let sealed = url.lastPathComponent.hasSuffix(SealedFiles.suffix)
+        guard !sealed || key != nil else { return nil }
+        let key = self.key
+        let head = await Task.detached { PictureHead.read(url, key: key) }.value
         heads[url] = head
         return head
     }
@@ -135,25 +153,30 @@ public final class Gallery {
         return failed
     }
 
+    /// The PNGs under each root's `outputs/`, plain or sealed. Where a picture
+    /// is there both ways (left from before Proton sealed it), the sealed
+    /// one is the picture, as Proton reads it.
     nonisolated static func scan(_ roots: [URL]) -> [GalleryPicture] {
-        var seen = Set<URL>()
-        var found: [GalleryPicture] = []
+        var byPlain: [URL: GalleryPicture] = [:]
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
         for root in roots {
             let outputs = root.appending(path: "outputs", directoryHint: .isDirectory)
             guard let walk = FileManager.default.enumerator(at: outputs, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]) else { continue }
-            for case let url as URL in walk where url.pathExtension.lowercased() == "png" {
-                let resolved = url.resolvingSymlinksInPath()
-                guard seen.insert(resolved).inserted else { continue }
+            for case let url as URL in walk {
+                let plain = SealedFiles.plain(url)
+                guard plain.pathExtension.lowercased() == "png" else { continue }
                 let values = try? url.resourceValues(forKeys: Set(keys))
                 guard values?.isRegularFile == true else { continue }
-                found.append(GalleryPicture(
+                let picture = GalleryPicture(
                     url: url,
                     flow: url.deletingLastPathComponent().lastPathComponent,
-                    modified: values?.contentModificationDate ?? .distantPast))
+                    modified: values?.contentModificationDate ?? .distantPast)
+                let place = plain.resolvingSymlinksInPath()
+                if let there = byPlain[place], there.isSealed || !picture.isSealed { continue }
+                byPlain[place] = picture
             }
         }
-        return found.sorted { $0.modified > $1.modified }
+        return byPlain.values.sorted { $0.modified > $1.modified }
     }
 }
 
@@ -164,6 +187,7 @@ public enum OutputNaming {
         let safe = prefix.isEmpty ? "image" : prefix.replacingOccurrences(of: "/", with: "-")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         let taken = names.compactMap { name -> Int? in
+            let name = name.hasSuffix(SealedFiles.suffix) ? String(name.dropLast(SealedFiles.suffix.count)) : name
             guard name.hasPrefix(safe + "_"), name.hasSuffix(".png") else { return nil }
             return Int(name.dropFirst(safe.count + 1).dropLast(4))
         }
