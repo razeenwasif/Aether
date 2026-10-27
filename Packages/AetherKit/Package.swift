@@ -5,6 +5,7 @@
 //   DiffuseBridge     the generated Swift bindings for it
 //   DiffuseCore       flows, the catalogue, image backends and the run queue
 //   DiffuseLocal      image generation on this Mac: Apple's Core ML Stable Diffusion
+//   aether-local-bench  times local runs, and the text encoders on each compute unit
 //   AetherDesign      Velvet Obsidian: tokens, glass, controls
 //   DiffuseUI         the Diffuse workspace: the flow canvas, node library, inspector
 //   AetherShell       the window: the rail, panels and workspaces
@@ -41,9 +42,20 @@ let package = Package(
             name: "DiffuseLocal",
             dependencies: ["DiffuseCore", .product(name: "StableDiffusion", package: "ml-stable-diffusion")]
         ),
+        // Times local runs and the text encoders on each compute unit:
+        //   swift run -c release aether-local-bench --help
+        .executableTarget(
+            name: "aether-local-bench",
+            dependencies: ["DiffuseCore", "DiffuseLocal", .product(name: "StableDiffusion", package: "ml-stable-diffusion")],
+            path: "Sources/LocalBench"
+        ),
         .target(name: "AetherDesign"),
         .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "DiffuseLocal", "AetherDesign"]),
         .target(name: "AetherShell", dependencies: ["AetherDesign", "DiffuseBridge", "DiffuseCore", "DiffuseUI"]),
+        .testTarget(
+            name: "DiffuseLocalTests",
+            dependencies: ["DiffuseLocal", .product(name: "StableDiffusion", package: "ml-stable-diffusion")]
+        ),
         .testTarget(
             name: "DiffuseCoreTests",
             dependencies: ["DiffuseCore"],

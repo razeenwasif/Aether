@@ -597,7 +597,7 @@ The user took the PI's recommendation on all five.
   - The memory-pressure unload no longer fires on mere warnings.
 - **Tests:** 15 more Swift tests (the plan, discovery, the backend against a stand-in pipeline, stopping, the queue keeping a local picture, the download, routing). 56 Swift and 150 Rust in all.
 - **Follow-ups for speed, not done:**
-  - Prompt encoding is the largest fixed cost. Try the text encoders on the Neural Engine, with compute units per model, which means building the pipeline's parts by hand. Or cache the embeddings when only the seed changes, which Apple's package doesn't expose.
+  - ~~Prompt encoding is the largest fixed cost~~. Measured: it isn't. See "Local speed" below; the text encoders and a prompt cache are done.
   - Compare the 16-bit model's speed per step (7.04 GB, tight on 16 GB).
   - Decode a preview every few steps.
 
@@ -618,6 +618,45 @@ The user took the PI's recommendation on all five.
 - **Fixed: Proton's gateway address was never read.** Proton nests it as `{"diffuse": {"gateway": …}}`, and `GatewaySettings.current()` looked for a flat `"diffuse.gateway"`. The app only worked because an address had been saved in Aether's own settings. It now reads the nested form, with flat still accepted, and a test covers it.
 - **The first live run on forge through Aether's own backend:** the lighthouse flow, 30 steps at 1024 × 1024, in **14.4 s** against about 177 s on this Mac. The PNG carries its graph. `LiveForgeTests` runs it again only with `AETHER_LIVE_FORGE=1`, so normal test runs never touch the network.
 - **Not checked live in the app:** the screen was locked while I verified this, so the app check was a screenshot. It showed "forge · NVIDIA GeForce RTX 4090" serving with its live 16-node catalogue.
+
+**2026-10-27 · Local speed: text encoders and a prompt cache, measured.** The user asked to "try the text encoders on the Neural Engine and caching prompt embeddings when only the seed changes, and measure".
+
+- **How:**
+  - `CoreMLPipeline` now builds Apple's SDXL pipeline from its parts (its public initialiser), as Apple's loader does. The U-Net and VAE run on the GPU; the VAE can't use the Neural Engine, which has no float32. The text encoders run where `textEncoders` says.
+  - Each encoder is wrapped in `KeptTextEncoder` (Apple's public `TextEncoderXLModel` protocol), so its outputs for a prompt are kept in `PromptCache` (32 entries) while the model is loaded. A run that changes only the seed encodes nothing.
+  - `lastRun` and the log give each stage: load, encode (and how many of the 4 encodings were kept), first step, the remaining steps, and decode.
+  - `aether-local-bench` (a new executable target) times the encoders alone and whole runs: `swift run -c release aether-local-bench encoders|runs --on gpu|ane|cpu [--no-cache]`.
+- **The encoders alone**, loaded, then prompt and negative encoded three times:
+
+  | encoders on | load (encoder 1 + 2) | first prompt + negative | warm |
+  | --- | --- | --- | --- |
+  | GPU | 1.3 + 8.5 s | 1.0 + 0.8 s | 0.01 + 0.08 s |
+  | Neural Engine | 2.5 + 4.8 s | 0.02 + 0.18 s | 0.01 + 0.12 s |
+  | CPU | 0.3 + 1.9 s | 0.04 + 0.18 s | 0.02 + 0.11 s |
+
+- **Whole runs**, 10 steps at 1024², through Aether's pipeline in the bench, three runs each. "Warm" means runs 2–3.
+
+  | encoders | cache | encode, new prompt | encode, repeat | first step (warm) | 9 more steps | decode (warm) | total (warm) |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | GPU | off | 1.5–2.3 s | 1.5–1.8 s | 12.5–13.4 s | 33 s | 18–22 s | 66–70 s |
+  | GPU | on | 2.1 s | 0 s | 13.5–19.9 s | 34 s | 23–35 s | 70–88 s |
+  | CPU | on | 5.1 s | 0 s | 12–17 s | 34 s | 23–40 s | 69–91 s |
+  | CPU, encoders released after encoding | on | 4.7 s | 0 s | 11–13 s | 35 s | 23–28 s | 69–74 s |
+  | Neural Engine | on | 6.4 s | 0 s | 10–11 s | 33 s | 25–26 s | 68–69 s |
+
+  - The cache gives pixel-identical pictures, on or off. The encoders' placement changes the picture slightly (their arithmetic differs), but each placement repeats exactly.
+- **What it showed:**
+  - **Encoding was never the big fixed cost.** On the GPU a new prompt takes about 2 s, and on the CPU or the Neural Engine 4.5–6.4 s. The earlier "about 16 s for the prompt" was really the first U-Net step.
+  - **The real fixed cost is memory paging.** A step runs at about 3.7 s. But after the first run, each run's first step takes 10–20 s and its decode 18–40 s (6 s when nothing pages), as the U-Net and the VAE push each other out. Each set of three runs swapped in 14–18 GB, with 14–15 GB of the 16 GB swap in use (many other apps were open). No encoder placement changed that, and releasing the encoders after encoding didn't either, so that option was taken back out.
+- **Kept:** encoders on the GPU (the quickest for a new prompt) with the cache on, the default `CoreMLPipeline()` the app uses.
+- **Verified in the app**, 30 steps, set to This Mac: run 2 logged "encoding 0.0 s (4 of 4 kept)", against 2.9 s on run 1.
+  - Run 1's first step took 206.8 s: the first U-Net prediction after a fresh build of the app, under that swap. Run 2's was 22.2 s, its 29 steps 118.6 s (4.1 s each), and its decode 37.5 s.
+- **Tests:** 3 for `PromptCache` (kept prompts, cache off, the oldest let go), in a new `DiffuseLocalTests` target. 62 Swift and 150 Rust tests pass.
+- **What would actually be quicker, not done:**
+  - Fewer other apps open while running locally, as memory is the limit on 16 GB.
+  - The U-Net on the Neural Engine: Apple's ANE-shaped SDXL builds hold palettized weights compressed. It's a different download, and the first compile is slow.
+  - Apple's reduced-memory mode, unloading each part after its stage, against the cost of reloading.
+  - forge, which Automatic now prefers whenever it's serving.
 
 Not yet:
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
