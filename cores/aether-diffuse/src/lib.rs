@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use proton_diffuse::client::Events;
-use proton_diffuse::{check, doc, layout, png, seal, templates, Catalogue, Client, FlowDoc, Graph, Key, Models, Op, Seal};
+use proton_diffuse::{check, doc, layout, png, seal, templates, Catalogue, Client, FlowDoc, Graph, Key, Kind, Models, Op, Seal};
 
 uniffi::setup_scaffolding!();
 
@@ -140,6 +140,96 @@ pub fn write_file(path: String, bytes: Vec<u8>, key: Option<Arc<SealKey>>) -> Re
     seal::write(Path::new(&path), &bytes, key.as_ref().map(|k| &k.seal))
         .map(|to| to.display().to_string())
         .map_err(failed)
+}
+
+// MARK: - Pictures a flow sends
+
+/// Keep a picture for a flow's Load Image under `root`'s `inputs/`, as
+/// Proton's Diffuse keeps one: only a PNG, named `inputs/<name>.png` from
+/// `name` made safe; the same bytes as a picture already of that name are
+/// that file, other bytes take `-2`, `-3`. Sealed with `key`, plain
+/// without. Answers the name the flow gives it, relative to `root`.
+#[uniffi::export]
+pub fn keep_picture(root: String, name: String, bytes: Vec<u8>, key: Option<Arc<SealKey>>) -> Result<String, DiffuseError> {
+    png::head(bytes.as_slice()).ok_or_else(|| failed("only a PNG is kept"))?;
+    let stem: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '-' }).collect();
+    let stem = stem.trim_matches('-');
+    let stem = if stem.is_empty() { "picture" } else { stem };
+    let root = Path::new(&root);
+    let seal = key.as_ref().map(|k| &k.seal);
+    let mut rel = format!("inputs/{stem}.png");
+    let mut n = 2;
+    while seal::exists(&root.join(&rel)) {
+        if seal::read(&root.join(&rel), seal).is_ok_and(|there| there == bytes) {
+            return Ok(rel);
+        }
+        rel = format!("inputs/{stem}-{n}.png");
+        n += 1;
+    }
+    seal::write(&root.join(&rel), &bytes, seal).map_err(|e| failed(format!("{rel}: {e}")))?;
+    Ok(rel)
+}
+
+/// A picture as forge takes it, read from its plain name `file` (sealed or
+/// not): with a mask (white where painted, Proton's `<flow>.<node>.mask.png`)
+/// put in its alpha, transparent where masked, as ComfyUI's Load Image reads
+/// one; without, the file as it is.
+#[uniffi::export]
+pub fn upload_bytes(file: String, mask: Option<String>, key: Option<Arc<SealKey>>) -> Result<Vec<u8>, DiffuseError> {
+    let seal = key.as_ref().map(|k| &k.seal);
+    let name = |p: &str| Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let bytes = seal::read(Path::new(&file), seal).map_err(failed)?;
+    let Some(mask) = mask else { return Ok(bytes) };
+    let (w, h, mut rgba) = proton_raster::file::decode_png(&bytes).map_err(|e| failed(format!("{}: {e}", name(&file))))?;
+    let painted = seal::read(Path::new(&mask), seal).map_err(failed)?;
+    let (mw, mh, shade) = proton_raster::file::decode_png(&painted).map_err(|e| failed(format!("{}: {e}", name(&mask))))?;
+    if (mw, mh) != (w, h) {
+        return Err(failed(format!("the mask is {mw} × {mh} and the picture {w} × {h}: paint the mask again")));
+    }
+    for (pixel, painted) in rgba.chunks_exact_mut(4).zip(shade.chunks_exact(4)) {
+        // How much is masked: the mask's brightness, as far as it is opaque.
+        let masked = (painted[0] as u32 * painted[3] as u32 / 255) as u8;
+        pixel[3] = pixel[3].min(255 - masked);
+    }
+    proton_raster::file::encode_png(w, h, &rgba).map_err(failed)
+}
+
+/// The pictures a graph sends: each upload field with a value, as
+/// `[{"node", "field", "value"}]`, the value being the picture's plain name
+/// relative to the flow's folder.
+#[uniffi::export]
+pub fn graph_pictures(graph_json: String, catalogue: Arc<NodeCatalogue>) -> Result<String, DiffuseError> {
+    let graph: Graph = serde_json::from_str(&graph_json).map_err(|e| failed(format!("a graph: {e}")))?;
+    let mut out = Vec::new();
+    for node in &graph.nodes {
+        let Some(kind) = catalogue.inner.node(&node.kind) else { continue };
+        for field in kind.fields().filter(|f| f.kind() == Kind::Upload) {
+            if let Some(value) = node.values.get(&field.name).and_then(serde_json::Value::as_str) {
+                out.push(serde_json::json!({ "node": node.id, "field": field.name, "value": value }));
+            }
+        }
+    }
+    Ok(json(&out))
+}
+
+/// The graph with each picture named by forge's upload of it:
+/// `uploads_json` is `[{"node", "field", "id"}]`.
+#[uniffi::export]
+pub fn graph_with_uploads(graph_json: String, uploads_json: String) -> Result<String, DiffuseError> {
+    #[derive(serde::Deserialize)]
+    struct Named {
+        node: String,
+        field: String,
+        id: String,
+    }
+    let mut graph: Graph = serde_json::from_str(&graph_json).map_err(|e| failed(format!("a graph: {e}")))?;
+    let named: Vec<Named> = serde_json::from_str(&uploads_json).map_err(|e| failed(format!("the uploads: {e}")))?;
+    for upload in named {
+        if let Some(node) = graph.nodes.iter_mut().find(|n| n.id == upload.node) {
+            node.values.insert(upload.field, serde_json::Value::String(upload.id));
+        }
+    }
+    Ok(json(&graph))
 }
 
 // MARK: - A flow open for editing
@@ -498,6 +588,56 @@ mod tests {
         assert!(!seal::sealed_path(&path).exists());
         assert!(SealKey::new(vec![1; 31]).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A PNG of `w` × `h` pixels, every one `rgba`.
+    fn flat_png(w: u32, h: u32, rgba: [u8; 4]) -> Vec<u8> {
+        proton_raster::file::encode_png(w, h, &rgba.repeat((w * h) as usize)).unwrap()
+    }
+
+    #[test]
+    fn a_picture_is_kept_once_renamed_apart_and_only_as_a_png() {
+        let dir = scratch("keep");
+        let root = dir.display().to_string();
+        let red = flat_png(4, 4, [255, 0, 0, 255]);
+        let blue = flat_png(4, 4, [0, 0, 255, 255]);
+        assert_eq!(keep_picture(root.clone(), "My photo.jpeg".into(), red.clone(), None).unwrap(), "inputs/My-photo-jpeg.png");
+        assert_eq!(keep_picture(root.clone(), "My photo.jpeg".into(), red.clone(), None).unwrap(), "inputs/My-photo-jpeg.png");
+        assert_eq!(keep_picture(root.clone(), "My photo.jpeg".into(), blue, None).unwrap(), "inputs/My-photo-jpeg-2.png");
+        assert_eq!(keep_picture(root.clone(), "..".into(), red.clone(), None).unwrap(), "inputs/picture.png");
+        assert!(keep_picture(root.clone(), "note".into(), b"plain text".to_vec(), None).is_err());
+        let key = SealKey::new(vec![5; 32]).unwrap();
+        let sealed = keep_picture(root, "private".into(), red.clone(), Some(key.clone())).unwrap();
+        assert!(dir.join(format!("{sealed}.sealed")).is_file() && !dir.join(&sealed).exists());
+        assert_eq!(upload_bytes(dir.join(&sealed).display().to_string(), None, Some(key)).unwrap(), red);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_mask_goes_into_the_pictures_alpha() {
+        let dir = scratch("mask");
+        let picture = dir.join("inputs/photo.png");
+        std::fs::create_dir_all(picture.parent().unwrap()).unwrap();
+        std::fs::write(&picture, flat_png(2, 1, [10, 20, 30, 255])).unwrap();
+        // White on the left pixel, nothing painted on the right.
+        let mask = dir.join("flow.3.mask.png");
+        std::fs::write(&mask, proton_raster::file::encode_png(2, 1, &[255, 255, 255, 255, 0, 0, 0, 0]).unwrap()).unwrap();
+        let sent = upload_bytes(picture.display().to_string(), Some(mask.display().to_string()), None).unwrap();
+        let (_, _, rgba) = proton_raster::file::decode_png(&sent).unwrap();
+        assert_eq!(rgba, vec![10, 20, 30, 0, 10, 20, 30, 255]);
+        std::fs::write(&mask, flat_png(3, 1, [255; 4])).unwrap();
+        assert!(upload_bytes(picture.display().to_string(), Some(mask.display().to_string()), None).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_graphs_pictures_are_listed_and_named_by_their_uploads() {
+        let catalogue = NodeCatalogue::parse(CATALOGUE.into()).unwrap();
+        let graph = r#"{"nodes":[{"id":"1","type":"LoadImage","values":{"image":"inputs/photo.png"}},{"id":"2","type":"KSampler","values":{"cfg":1.0}}],"links":[]}"#;
+        let listed = graph_pictures(graph.into(), catalogue).unwrap();
+        assert_eq!(listed, r#"[{"field":"image","node":"1","value":"inputs/photo.png"}]"#);
+        let named = graph_with_uploads(graph.into(), r#"[{"node":"1","field":"image","id":"up_1.png"}]"#.into()).unwrap();
+        assert!(named.contains(r#""image":"up_1.png""#) && named.contains(r#""cfg":1.0"#), "{named}");
     }
 
     #[test]

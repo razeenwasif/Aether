@@ -43,6 +43,8 @@ Runs go to Nexus's image server on forge through atlas's gateway: the address co
 
 **Sealed files.** Proton seals Diffuse's flows and pictures once you unlock it there (`testing.flow.json.sealed`, `image_0001.png.sealed`). Aether opens them with Proton's key from your keychain after Touch ID or your password. The first time, macOS asks you to let Aether read the "Proton Diffuse" keychain item, and a debug build asks again after each rebuild. Each file stays the way it was: sealed flows save sealed and their outputs are written sealed, while plain flows stay plain. A sealed last flow waits behind a locked card at launch. Flow ▸ Lock Sealed Files (or quitting) locks them again. To test without your key, debug builds read a throwaway 32-byte key from `AETHER_SEAL_KEY_FILE`, and `cargo run --example seal -- <key-file> <file>…` (in `cores/`) seals fixtures in Proton's format.
 
+**Pictures for Load Image.** You can choose a file, drop one on the field or the card, or take one from the Gallery (From the Gallery, or Use as input on a picture). Pictures are kept as PNGs in the flow folder's `inputs/`; a Gallery picture already in the folder is used where it is. Runs upload each picture first, with a mask Proton painted (`<flow>.<node>.mask.png`) in its alpha. Dropping a PNG with a graph in it on the graph opens that graph; any other picture adds a Load Image.
+
 To try runs without forge, start the stand-in gateway and point Aether at it. It writes the graph into each PNG it returns, as forge does, so the Gallery has something to read:
 
 ```bash

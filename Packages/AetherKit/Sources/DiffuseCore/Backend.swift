@@ -8,6 +8,9 @@ public protocol ImageBackend: Sendable {
     func health() async -> Health
     /// The server's live catalogue and model lists.
     func library() async throws -> NodeLibrary
+    /// Send a picture a run's Load Image takes (a PNG or a JPEG); answers
+    /// the server's name for it, to put in the graph.
+    func upload(_ picture: Data) async throws -> String
     func run(graphJSON: String) async throws -> Queued
     func events(run: String) -> AsyncThrowingStream<RunEvent, Error>
     func image(_ id: String) async throws -> Data
@@ -119,6 +122,13 @@ public final class NexusBackend: ImageBackend {
         let gateway = try need()
         let (catalogue, models) = try await offMain { (try gateway.catalogue().json(), try? gateway.models()) }
         return try NodeLibrary(catalogueJSON: catalogue, modelsJSON: models, source: .server(.now))
+    }
+
+    public func upload(_ picture: Data) async throws -> String {
+        struct Upload: Decodable { var id: String }
+        let gateway = try need()
+        let json = try await offMain { try gateway.upload(bytes: picture) }
+        return try JSONDecoder().decode(Upload.self, from: Data(json.utf8)).id
     }
 
     public func run(graphJSON: String) async throws -> Queued {

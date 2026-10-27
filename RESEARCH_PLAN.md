@@ -485,9 +485,34 @@ The user took the PI's recommendation on all five.
   - Lock Sealed Files, then unlock again from the Gallery header.
 - Not verified live: the real keychain prompt and Touch ID. Both need the person.
 
+**2026-10-27 · Image inputs.** Load Image takes a picture, as Proton's D5 does:
+
+- **Choosing a picture:** choose a file, drop one on the field, drop one on a Load Image card, or take one from the Gallery (From the Gallery waits in the Gallery, then "Use as Load Image's picture" or a double-click gives it).
+- **Keeping it:** a picture is kept as a PNG under the flow folder's `inputs/`.
+  - Converted by ImageIO if it isn't a PNG, and turned the way the camera says.
+  - The same picture again is the same file; a different picture with the same name gets `-2`.
+  - It's sealed when the flow or the source is sealed.
+  - The bridge's `keep_picture` does this, mirroring Proton's `put`.
+- **Use as input:** gives the waiting Load Image, the selected one or the first its picture, or adds a Load Image with it.
+  - A Gallery picture inside the flow's folder is named where it is (`outputs/…/x.png`), as Proton names it.
+  - One from elsewhere is kept in `inputs/` first.
+- **Drops on the graph:** a PNG with a graph in it opens that graph, as Proton does. Any other picture adds a Load Image where it was dropped.
+- **On a run:** each picture is sent to `POST /uploads` before the graph. A painted mask (`<flow>.<node>.mask.png`, beside the flow) goes into the picture's alpha via `proton-raster`, as Proton's `upload_bytes` does. Then `graph_with_uploads` names each upload in the graph.
+- **Problems:** a picture missing from the folder is a problem on its node, and a run with one fails before anything is sent.
+- **Display:** the Load Image card shows its picture.
+- **Tests:** three more Rust tests and seven more Swift tests, including a run through a recording backend that checks the bytes sent and the upload named in the graph, and a mask in the alpha.
+- **Verified in the app against the stand-in gateway**, which now takes uploads and fails a run whose Load Image names no upload:
+  - From the Gallery, then Use as Load Image's picture.
+  - A run uploading 142 KB before the graph and finishing.
+  - Choose… with a JPEG, kept as a 512 × 292 PNG.
+  - Use as input on a flow with no Load Image, adding one with its picture on the card.
+- **Not verified live:** drag and drop (it needs Finder), and a painted mask on a real flow (Aether can't paint masks yet; Proton's masks are used as found).
+
+**Watch: Proton is shedding its creative modes.** On 2026-10-27, Proton's working tree had uncommitted removals of Diffuse's and Game's window code and tests, apparently on their way to Aether. Aether builds `proton-diffuse` and `proton-raster` from `../Proton` by path. If those crates leave Proton too, Aether stops building. Before that happens, move them into this repository (`cores/`), with their history if wanted. That's the user's call.
+
 Not yet:
 - The local Core ML backend (Q3's default), so runs go to Nexus only for now.
-- Uploading input images (and with it the Gallery's Use as input).
+- Painting a Load Image's mask (Proton's mask sheet); masks Proton painted are sent as found.
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
 - The rest of the shell's omnibar.
@@ -502,7 +527,7 @@ Not yet:
 
 **Next: Claude.** Diffuse parity, in this order (proposed 2026-10-27):
 1. ~~Sealed flows and outputs~~: done, see §10a.
-2. **Inputs.** Load Image's picture: choose one, drop one, or take one from the Gallery, then upload it through `Client::upload`. This turns on the Gallery's Use as input, and img2img and inpaint flows.
+2. ~~**Inputs.**~~ Done, see §10a. Load Image's picture: choose one, drop one, or take one from the Gallery, then upload it through `Client::upload`. This turns on the Gallery's Use as input, and img2img and inpaint flows.
 3. **Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here.
 
 Then the local Core ML backend (Q3's default). It needs several GB of models, so ask before downloading. After that, the omnibar and M1's project graph, which Send to Canvas and Send to Game depend on.

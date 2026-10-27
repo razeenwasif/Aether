@@ -88,8 +88,10 @@ public final class RunQueue {
     }
 
     /// Send `editor`'s flow, follow it to the end, and keep what it makes in
-    /// the flow's outputs folder.
-    public func run(_ editor: FlowEditor) {
+    /// the flow's outputs folder. Each picture a Load Image names is sent
+    /// first, with its painted mask in its alpha, and its upload named in
+    /// the graph; `key` reads sealed pictures in a plain flow.
+    public func run(_ editor: FlowEditor, key: SealKey? = nil) {
         let item = RunItem(flowName: editor.name)
         runs.insert(item, at: 0)
         let graph: String
@@ -100,10 +102,20 @@ public final class RunQueue {
             return
         }
         let places = outputPlaces(for: editor)
+        let pictures: [GraphPicture]
+        do {
+            pictures = try JSONDecoder().decode([GraphPicture].self, from: Data(graphPictures(graphJson: graph, catalogue: editor.library.core).utf8))
+        } catch {
+            item.phase = .failed(describe(error))
+            return
+        }
+        let flow = editor.url
+        let readKey = editor.sealKey ?? key
         let backend = self.backend
         Task {
             do {
-                let queued = try await backend.run(graphJSON: graph)
+                let sending = try await Self.uploading(pictures, of: graph, flow: flow, key: readKey, to: backend)
+                let queued = try await backend.run(graphJSON: sending)
                 item.runID = queued.run
                 item.phase = .queued(position: queued.position)
                 // The graph went with this run's seeds; move them for the next.
@@ -116,6 +128,23 @@ public final class RunQueue {
                 if item.phase.isLive { item.phase = .failed(describe(error)) }
             }
         }
+    }
+
+    /// The graph with each picture uploaded and named by its upload.
+    private static func uploading(_ pictures: [GraphPicture], of graph: String, flow: URL, key: SealKey?, to backend: any ImageBackend) async throws -> String {
+        guard !pictures.isEmpty else { return graph }
+        var named: [[String: String]] = []
+        for picture in pictures {
+            let file = FlowInputs.file(picture.value, flow: flow)
+            guard SealedFiles.exists(file) else { throw PictureMissing(name: picture.value) }
+            let mask = FlowInputs.mask(node: picture.node, flow: flow)
+            let maskPath = SealedFiles.exists(mask) ? mask.path : nil
+            let bytes = try await offMain { try uploadBytes(file: file.path, mask: maskPath, key: key) }
+            let id = try await backend.upload(bytes)
+            named.append(["node": picture.node, "field": picture.field, "id": id])
+        }
+        let uploads = String(decoding: try JSONEncoder().encode(named), as: UTF8.self)
+        return try graphWithUploads(graphJson: graph, uploadsJson: uploads)
     }
 
     public func cancel(_ item: RunItem) {
@@ -178,6 +207,18 @@ public final class RunQueue {
         }
         return places
     }
+}
+
+/// A picture a graph sends: the node and field that name it, and its name.
+struct GraphPicture: Decodable, Sendable {
+    var node: String
+    var field: String
+    var value: String
+}
+
+struct PictureMissing: LocalizedError {
+    var name: String
+    var errorDescription: String? { "\(name) isn’t in the flow’s folder: choose the picture again" }
 }
 
 /// Where one output node's pictures are written, and the key they are

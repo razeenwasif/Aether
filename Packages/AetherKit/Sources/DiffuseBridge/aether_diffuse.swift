@@ -1914,6 +1914,51 @@ public func flowFromGraph(graphJson: String, catalogue: NodeCatalogue)throws  ->
 })
 }
 /**
+ * The pictures a graph sends: each upload field with a value, as
+ * `[{"node", "field", "value"}]`, the value being the picture's plain name
+ * relative to the flow's folder.
+ */
+public func graphPictures(graphJson: String, catalogue: NodeCatalogue)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_graph_pictures(
+        FfiConverterString.lower(graphJson),
+        FfiConverterTypeNodeCatalogue_lower(catalogue),uniffiCallStatus
+    )
+})
+}
+/**
+ * The graph with each picture named by forge's upload of it:
+ * `uploads_json` is `[{"node", "field", "id"}]`.
+ */
+public func graphWithUploads(graphJson: String, uploadsJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_graph_with_uploads(
+        FfiConverterString.lower(graphJson),
+        FfiConverterString.lower(uploadsJson),uniffiCallStatus
+    )
+})
+}
+/**
+ * Keep a picture for a flow's Load Image under `root`'s `inputs/`, as
+ * Proton's Diffuse keeps one: only a PNG, named `inputs/<name>.png` from
+ * `name` made safe; the same bytes as a picture already of that name are
+ * that file, other bytes take `-2`, `-3`. Sealed with `key`, plain
+ * without. Answers the name the flow gives it, relative to `root`.
+ */
+public func keepPicture(root: String, name: String, bytes: Data, key: SealKey?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_keep_picture(
+        FfiConverterString.lower(root),
+        FfiConverterString.lower(name),
+        FfiConverterData.lower(bytes),
+        FfiConverterOptionTypeSealKey.lower(key),uniffiCallStatus
+    )
+})
+}
+/**
  * What an output PNG says of itself, read from its head and never its
  * pixels: `{"width", "height", "graph", "made"}`, the graph being the one
  * forge wrote into it as `proton-flow` (or null) and `made` its seed,
@@ -1964,6 +2009,22 @@ public func templates() -> [Template]  {
 })
 }
 /**
+ * A picture as forge takes it, read from its plain name `file` (sealed or
+ * not): with a mask (white where painted, Proton's `<flow>.<node>.mask.png`)
+ * put in its alpha, transparent where masked, as ComfyUI's Load Image reads
+ * one; without, the file as it is.
+ */
+public func uploadBytes(file: String, mask: String?, key: SealKey?)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_upload_bytes(
+        FfiConverterString.lower(file),
+        FfiConverterOptionString.lower(mask),
+        FfiConverterOptionTypeSealKey.lower(key),uniffiCallStatus
+    )
+})
+}
+/**
  * Write `bytes` for `path`, whole or not at all: sealed beside it as
  * `path.sealed` with `key`, plain without. Answers where it went.
  */
@@ -1999,6 +2060,15 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_func_flow_from_graph() != 13124) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_func_graph_pictures() != 59033) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_graph_with_uploads() != 29301) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_keep_picture() != 30029) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_func_png_head() != 51278) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2009,6 +2079,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_templates() != 10226) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_upload_bytes() != 9973) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_write_file() != 2637) {

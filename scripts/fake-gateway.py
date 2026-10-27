@@ -24,6 +24,7 @@ FIXTURES = os.path.join(ROOT, "Packages/AetherKit/Tests/DiffuseCoreTests/Fixture
 PREFIX = "/img/v1"
 
 runs = {}
+uploads = {}
 cancelled = set()
 lock = threading.Lock()
 
@@ -129,6 +130,15 @@ class Handler(BaseHTTPRequestHandler):
                 run = "run%03d" % (len(runs) + 1)
                 runs[run] = {"graph": graph, "state": "queued"}
             return self.send_json(200, {"run": run, "position": 0})
+        if parts == ["uploads"]:
+            width = height = 0
+            if body[:8] == b"\x89PNG\r\n\x1a\n":
+                width, height = struct.unpack(">II", body[16:24])
+            with lock:
+                upload = "upload%03d.%s" % (len(uploads) + 1, "png" if body[:4] == b"\x89PNG" else "jpg")
+                uploads[upload] = len(body)
+            print(f"gateway: kept {upload}, {len(body)} bytes, {width}x{height}", flush=True)
+            return self.send_json(200, {"id": upload, "width": width, "height": height})
         if len(parts) == 3 and parts[0] == "runs" and parts[2] == "cancel":
             cancelled.add(parts[1])
             return self.send_json(200, {})
@@ -163,6 +173,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.event("cancelled", {})
                     return
                 values = node.get("values", {})
+                if node["type"] == "LoadImage" and values.get("image") not in uploads:
+                    # Forge only reads pictures sent to /uploads first.
+                    self.event("error", {"id": node["id"], "error": "invalid", "message": f"no upload named {values.get('image')!r}"})
+                    return
                 if node["type"] == "EmptyLatent":
                     size = (values.get("width", 1024), values.get("height", 1024))
                 if node["type"].startswith("Load"):

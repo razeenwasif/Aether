@@ -54,6 +54,13 @@ public final class DiffuseWorkspaceModel {
     /// flow, at launch, or one whose unlock was turned down.
     public private(set) var lockedFlow: URL?
 
+    /// The Load Image waiting for a picture from the Gallery.
+    public struct PictureTarget: Equatable, Sendable {
+        public let node: String
+        public let field: String
+    }
+    public private(set) var pickingInput: PictureTarget?
+
     @ObservationIgnored private var key: String?
 
     public init() {
@@ -302,7 +309,98 @@ public final class DiffuseWorkspaceModel {
         if queue.health.state != .serving && queue.health.state != .looking {
             notice = queue.health.message
         }
-        queue.run(editor)
+        queue.run(editor, key: sealKey)
+    }
+
+    // MARK: Pictures for Load Image
+
+    /// Whether a file is a picture a Load Image can take, sealed or not.
+    nonisolated public static func isPicture(_ url: URL) -> Bool {
+        ["png", "jpg", "jpeg", "heic", "webp", "gif", "tif", "tiff", "bmp"].contains(SealedFiles.plain(url).pathExtension.lowercased())
+    }
+
+    /// Choose a picture file for a Load Image.
+    public func choosePicture(node: String, field: String) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image] + [UTType(filenameExtension: "sealed")].compactMap { $0 }
+        panel.directoryURL = editor.map { FlowInputs.root(of: $0.url) }
+        panel.message = "Choose a picture for Load Image"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task { await usePictureFile(url, node: node, field: field) }
+    }
+
+    /// Wait in the Gallery for the picture a Load Image takes.
+    public func pickFromGallery(node: String, field: String) {
+        pickingInput = PictureTarget(node: node, field: field)
+        show(.gallery)
+    }
+
+    public func cancelPicking() {
+        pickingInput = nil
+        show(.graph)
+    }
+
+    /// Keep the picture at `url` in the flow's `inputs/`, made a PNG, and
+    /// give it to a Load Image (see `FlowEditor.usePicture`). It is sealed
+    /// when the flow is, or when it was.
+    public func usePictureFile(_ url: URL, node: String? = nil, field: String? = nil, at point: CGPoint? = nil) async {
+        guard let editor else { return }
+        let sourceSealed = url.lastPathComponent.hasSuffix(SealedFiles.suffix)
+        if sourceSealed, await unlockSealed() == nil {
+            if let sealSaid { notice = "\(SealedFiles.plain(url).lastPathComponent) is sealed and stays shut: \(sealSaid)" }
+            return
+        }
+        let key = editor.isSealed || sourceSealed ? sealKey : nil
+        let flow = editor.url
+        do {
+            let name = try await Task.detached { try FlowInputs.keep(url, flow: flow, key: key) }.value
+            guard self.editor === editor else { return }
+            if editor.usePicture(name, node: node, field: field, at: point) == nil { notice = editor.refusal }
+        } catch {
+            notice = "Couldn’t use \(SealedFiles.plain(url).lastPathComponent): \(describe(error))"
+        }
+    }
+
+    /// Give a Gallery picture to the Load Image waiting for one, or to the
+    /// flow's (adding one if it has none). A picture in the flow's folder is
+    /// named where it is, as Proton names it; one from elsewhere is kept in
+    /// the flow's `inputs/` first.
+    public func useAsInput(_ picture: GalleryPicture) async {
+        guard let editor else {
+            notice = "Open a flow to use a picture in it."
+            return
+        }
+        let target = pickingInput
+        pickingInput = nil
+        if let name = FlowInputs.name(of: picture.url, flow: editor.url) {
+            if editor.usePicture(name, node: target?.node, field: target?.field) == nil {
+                notice = editor.refusal
+                return
+            }
+        } else {
+            await usePictureFile(picture.url, node: target?.node, field: target?.field)
+        }
+        show(.graph)
+    }
+
+    /// Pictures dropped on the graph: on a Load Image, its picture; a PNG
+    /// with a graph in it, elsewhere, that graph as a new flow, as Proton
+    /// does; any other picture, a Load Image of it where it was dropped.
+    public func dropped(_ urls: [URL], at point: CGPoint, onto node: String?) async {
+        for url in urls {
+            let sealed = url.lastPathComponent.hasSuffix(SealedFiles.suffix)
+            if node == nil, SealedFiles.plain(url).pathExtension.lowercased() == "png" {
+                if sealed, await unlockSealed() == nil { continue }
+                let key = sealKey
+                let head = await Task.detached { PictureHead.read(url, key: key) }.value
+                if head?.graphJSON != nil {
+                    await openGraph(of: url)
+                    continue
+                }
+            }
+            let at = CGPoint(x: point.x - NodeMetrics.width / 2, y: point.y - NodeMetrics.header / 2)
+            await usePictureFile(url, node: node, at: node == nil ? at : nil)
+        }
     }
 
     // MARK: The gallery
@@ -311,7 +409,10 @@ public final class DiffuseWorkspaceModel {
         guard next != stage else { return }
         let was = stage
         stage = next
-        if was == .gallery { shutGallery() }
+        if was == .gallery {
+            pickingInput = nil
+            shutGallery()
+        }
         if next == .gallery {
             if galleryLockOn {
                 Task { await unlockGallery() }

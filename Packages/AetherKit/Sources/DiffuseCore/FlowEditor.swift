@@ -1,3 +1,4 @@
+import CoreGraphics
 import DiffuseBridge
 import Foundation
 import Observation
@@ -129,6 +130,51 @@ public final class FlowEditor {
         refresh()
     }
 
+    // MARK: Pictures
+
+    /// The field a node takes its picture in, if it takes one.
+    public func pictureField(of node: FlowNode) -> String? {
+        library.catalogue.node(node.type)?.fields.first { $0.fieldKind == .upload }?.name
+    }
+
+    /// Give a Load Image the picture `name`: the node and field given, else
+    /// the Load Image selected, else the first; with none in the flow, add
+    /// one with it at `at`, or under the rest. One undo step. Answers the
+    /// node's id, or `nil` when the core refused (and says why in `refusal`).
+    @discardableResult
+    public func usePicture(_ name: String, node target: String? = nil, field: String? = nil, at: CGPoint? = nil) -> String? {
+        let loads = flow.nodes.filter { pictureField(of: $0) != nil }
+        let node = target.flatMap { flow.node($0) } ?? loads.first { selection.contains($0.id) } ?? loads.first
+        if let node, let field = field ?? pictureField(of: node) {
+            guard apply([.set(id: node.id, name: field, value: .string(name))]) != nil else { return nil }
+            selection = [node.id]
+            return node.id
+        }
+        guard library.catalogue.node("LoadImage") != nil else {
+            refusal = "The server has no Load Image node to take the picture."
+            return nil
+        }
+        let lowest = flow.nodes.map(\.position.y).max().map { $0 + 300 } ?? 16
+        let place = at ?? CGPoint(x: 16, y: max(16, lowest))
+        guard let added = apply([.add(type: "LoadImage", at: place, values: ["image": .string(name)])]) else { return nil }
+        selection = Set(added)
+        return added.first
+    }
+
+    /// A picture a node names that isn't in the flow's folder, sealed or
+    /// plain: said on its node, as Proton says it.
+    private func missingPictures() -> [Problem] {
+        flow.nodes.flatMap { node -> [Problem] in
+            guard !node.isBypassed, let type = library.catalogue.node(node.type) else { return [] }
+            return type.fields.compactMap { field in
+                guard field.fieldKind == .upload, let name = node.values[field.name]?.stringValue, !name.isEmpty,
+                      !SealedFiles.exists(FlowInputs.file(name, flow: url))
+                else { return nil }
+                return Problem(node: node.id, input: field.name, message: "\(name) isn’t in the flow’s folder: choose the picture again")
+            }
+        }
+    }
+
     // MARK: Running
 
     /// The graph a run sends, or the problems that stop it.
@@ -160,6 +206,7 @@ public final class FlowEditor {
         let ids = Set(flow.nodes.map(\.id))
         selection.formIntersection(ids)
         problems = (try? decoder.decode([Problem].self, from: Data(document.problems(catalogue: library.core, modelsJson: library.modelsJSON).utf8))) ?? []
+        problems += missingPictures()
         canUndo = document.canUndo()
         canRedo = document.canRedo()
         isDirty = document.isDirty()

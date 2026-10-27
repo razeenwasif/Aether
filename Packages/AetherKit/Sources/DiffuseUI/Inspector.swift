@@ -129,6 +129,56 @@ struct LabeledRow<Content: View>: View {
     }
 }
 
+/// A Load Image's picture: what it is, and where to take another from — a
+/// file, the Gallery, or one dropped on it.
+private struct PictureField: View {
+    @Bindable var model: DiffuseWorkspaceModel
+    let editor: FlowEditor
+    let node: FlowNode
+    let field: String
+    @State private var dropping = false
+
+    private var name: String? { node.values[field]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let name {
+                let onDisk = FlowInputs.onDisk(name, flow: editor.url)
+                HStack(spacing: 10) {
+                    Thumbnail(url: onDisk, side: 200, key: model.sealKey)
+                        .frame(width: 52, height: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.08)))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: name).font(.aeMono).foregroundStyle(Color.inkHi).lineLimit(2).truncationMode(.middle)
+                        if onDisk.lastPathComponent.hasSuffix(SealedFiles.suffix) {
+                            Label("Sealed", systemImage: "lock.fill").font(.system(size: 10.5)).foregroundStyle(Color.ink2)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            } else {
+                Text("No picture yet: choose one, take one from the Gallery, or drop one here or on the graph.")
+                    .font(.system(size: 11.5)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 6) {
+                Button("Choose…") { model.choosePicture(node: node.id, field: field) }
+                Button("From the Gallery") { model.pickFromGallery(node: node.id, field: field) }
+            }
+            .controlSize(.small)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.field).fill(Color.raise1))
+        .overlay(RoundedRectangle(cornerRadius: Radius.field).strokeBorder(dropping ? Color.ice : Color.line2))
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first(where: DiffuseWorkspaceModel.isPicture) else { return false }
+            Task { await model.usePictureFile(url, node: node.id, field: field) }
+            return true
+        } isTargeted: { dropping = $0 }
+    }
+}
+
 /// Edits one field. Every change goes to the core as a `set`; a value the
 /// core refuses snaps back, and the reason shows under the field.
 private struct FieldEditor: View {
@@ -155,6 +205,9 @@ private struct FieldEditor: View {
                     .frame(height: 96)
                     .background(fieldBackground)
                     .focused($focused)
+            } else if field.fieldKind == .upload {
+                Text(field.name).font(.system(size: 11.5)).foregroundStyle(Color.ink2)
+                PictureField(model: model, editor: editor, node: node, field: field.name)
             } else {
                 LabeledRow(field.name) { control }
             }
@@ -206,13 +259,7 @@ private struct FieldEditor: View {
                 .focused($focused)
                 .onSubmit(commitText)
         case .upload:
-            HStack {
-                Text(value?.stringValue ?? "No image").font(.aeMono).foregroundStyle(Color.inkHi).lineLimit(1)
-                Spacer()
-                Button("Choose…") {}
-                    .disabled(true)
-                    .help("Uploading input images to the server comes next")
-            }
+            EmptyView()
         case .other:
             Text(value?.display ?? "—").font(.aeMono).foregroundStyle(Color.ink)
         }

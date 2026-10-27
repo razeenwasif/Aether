@@ -51,6 +51,9 @@ struct GalleryStage: View {
                 locked
             } else {
                 VStack(alignment: .leading, spacing: 12) {
+                    if let target = model.pickingInput {
+                        picking(target)
+                    }
                     head
                     if gallery.shown.isEmpty {
                         empty
@@ -105,6 +108,22 @@ struct GalleryStage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.leading, leftInset)
         .padding(.trailing, rightInset)
+    }
+
+    /// Waiting to give a Load Image its picture.
+    private func picking(_ target: DiffuseWorkspaceModel.PictureTarget) -> some View {
+        let title = model.editor?.flow.node(target.node).flatMap { model.editor?.library.catalogue.node($0.type)?.title } ?? "Load Image"
+        return HStack(spacing: 10) {
+            Image(systemName: "square.and.arrow.down.on.square").foregroundStyle(Color.ice)
+            Text("Choose a picture for \(title) \(target.node), then Use as its picture, or double-click it.")
+                .font(.system(size: 12)).foregroundStyle(Color.inkHi)
+            Spacer()
+            Button("Cancel", action: model.cancelPicking).controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Color.ice.opacity(0.1)))
+        .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Color.ice.opacity(0.3)))
     }
 
     private var head: some View {
@@ -202,7 +221,11 @@ private struct GalleryTile: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .simultaneousGesture(TapGesture(count: 2).onEnded { Task { await model.openGraph(of: picture.url) } })
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            Task {
+                if model.pickingInput != nil { await model.useAsInput(picture) } else { await model.openGraph(of: picture.url) }
+            }
+        })
         .task(id: HeadRequest(url: picture.url, unlocked: model.sealKey != nil)) {
             seed = await model.gallery.head(for: picture.url)?.made?.seed
         }
@@ -340,8 +363,13 @@ struct GalleryInspector: View {
 
     private func actions(_ picture: GalleryPicture) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            if model.pickingInput != nil {
+                ActionButton("Use as Load Image’s picture", symbol: "square.and.arrow.down.on.square", prominent: true) {
+                    Task { await model.useAsInput(picture) }
+                }
+            }
             if head?.graphJSON != nil {
-                ActionButton("Open its graph", symbol: "point.3.connected.trianglepath.dotted", prominent: true) {
+                ActionButton("Open its graph", symbol: "point.3.connected.trianglepath.dotted", prominent: model.pickingInput == nil) {
                     Task { await model.openGraph(of: picture.url) }
                 }
                 .help("The graph forge wrote into it, as a new flow")
@@ -351,9 +379,13 @@ struct GalleryInspector: View {
                     model.openFlow(at: flow)
                 }
             }
-            ActionButton("Use as input", symbol: "square.and.arrow.down.on.square") {}
-                .disabled(true)
-                .help("Load Image's uploads come with the next build")
+            if model.pickingInput == nil {
+                ActionButton("Use as input", symbol: "square.and.arrow.down.on.square") {
+                    Task { await model.useAsInput(picture) }
+                }
+                .disabled(model.editor == nil)
+                .help(model.editor == nil ? "Open a flow to use it in" : "Give the flow’s Load Image this picture, or add a Load Image with it")
+            }
             ActionButton("Send to Canvas", symbol: "paintbrush.pointed") {}
                 .disabled(true)
                 .help("The Canvas workspace isn't built yet")

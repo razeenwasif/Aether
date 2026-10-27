@@ -49,6 +49,19 @@ struct FlowCanvas: View {
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
             .contentShape(Rectangle())
+            .dropDestination(for: URL.self) { urls, location in
+                let pictures = urls.filter(DiffuseWorkspaceModel.isPicture)
+                guard !pictures.isEmpty else { return false }
+                let point = toFlow(location)
+                // Dropped on a Load Image: its picture.
+                let onto = editor.flow.nodes.last { node in
+                    guard editor.pictureField(of: node) != nil else { return false }
+                    let height = NodeGeometry(node: node, type: catalogue.node(node.type)).bodyHeight
+                    return CGRect(origin: node.position, size: CGSize(width: NodeMetrics.width, height: height)).contains(point)
+                }
+                Task { await model.dropped(pictures, at: point, onto: onto?.id) }
+                return true
+            }
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):

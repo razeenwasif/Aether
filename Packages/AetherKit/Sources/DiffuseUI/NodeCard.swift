@@ -1,5 +1,6 @@
 import AetherDesign
 import AppKit
+import DiffuseBridge
 import DiffuseCore
 import SwiftUI
 
@@ -162,7 +163,16 @@ struct NodeCard: View {
                 .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
                 .padding(.bottom, 10)
                 .accessibilityLabel("Output picture")
+        } else if let picture = pictureOnDisk {
+            CardPicture(url: picture, key: model.sealKey)
         }
+    }
+
+    /// A Load Image's picture, where it is on disk, when it is there.
+    private var pictureOnDisk: URL? {
+        guard let field = editor.pictureField(of: node), let name = node.values[field]?.stringValue, !name.isEmpty else { return nil }
+        let url = FlowInputs.onDisk(name, flow: editor.url)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     private var mediaImage: NSImage? {
@@ -303,4 +313,34 @@ private struct FieldRow: View {
 
 extension Array {
     subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
+}
+
+/// A Load Image's picture on its card, sized from the picture like an
+/// output's, once its thumbnail is made.
+private struct CardPicture: View {
+    let url: URL
+    let key: SealKey?
+    @State private var image: CGImage?
+
+    var body: some View {
+        Group {
+            if let image, image.width > 0 {
+                let width = NodeMetrics.width - 20
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: width, height: min(260, width * CGFloat(image.height) / CGFloat(image.width)))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
+                    .padding(.bottom, 10)
+                    .accessibilityLabel("Input picture")
+            } else {
+                // Something to appear, so the thumbnail is asked for.
+                Color.clear.frame(height: 0)
+            }
+        }
+        .task(id: HeadRequest(url: url, unlocked: key != nil)) {
+            image = await Thumbnails.shared.image(url, side: 480, key: key)
+        }
+    }
 }

@@ -156,5 +156,6 @@ private struct OneImageBackend: ImageBackend {
         }
     }
     func image(_ id: String) async throws -> Data { picture }
+    func upload(_ picture: Data) async throws -> String { "upload1" }
     func cancel(run: String) async throws {}
 }
