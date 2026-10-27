@@ -82,10 +82,23 @@ private struct NodeInspector: View {
                                     }
                                     .labelsHidden()
                                     .pickerStyle(.segmented)
+                                    .controlSize(.small)
+                                    .fixedSize()
+                                    Spacer(minLength: 0)
                                 }
                             }
                             LabeledRow("Bypass") {
                                 Toggle("Leave out of runs", isOn: bypass).toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                                Spacer()
+                            }
+                            HStack {
+                                Button { model.runTo(node.id) } label: {
+                                    Label("Run to here", systemImage: "play.fill").font(.system(size: 12))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(node.isBypassed)
+                                .help("Run only what this node needs, and show what it makes on it (⇧⌘↩)")
                                 Spacer()
                             }
                         }
@@ -94,8 +107,8 @@ private struct NodeInspector: View {
                     if !problems.isEmpty {
                         PanelSection("Problems") { ProblemList(problems: problems, editor: editor) }
                     }
-                    if type?.isOutput == true, let output = model.latestOutput(at: node.id) {
-                        PanelSection("Latest output") { OutputView(output: output) }
+                    if let output = model.latestOutput(at: node.id) {
+                        PanelSection(type?.isOutput == true ? "Latest output" : "Latest run to here") { OutputView(output: output) }
                     }
                 }
             }

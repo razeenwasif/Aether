@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use proton_diffuse::client::Events;
-use proton_diffuse::{check, doc, layout, png, seal, templates, Catalogue, Client, FlowDoc, Graph, Key, Kind, Models, Op, Seal};
+use proton_diffuse::{check, doc, layout, png, seal, templates, Catalogue, Client, Flow, FlowDoc, Graph, Key, Kind, Models, Op, Port, Problem, Seal};
 
 uniffi::setup_scaffolding!();
 
@@ -348,20 +348,117 @@ impl FlowDocument {
     /// The graph a run sends, as JSON, or the problems that stop it.
     pub fn graph(&self, catalogue: Arc<NodeCatalogue>, models_json: Option<String>) -> Result<String, DiffuseError> {
         let models = models(models_json)?;
-        match lock(&self.doc).get().graph(&catalogue.inner, models.as_ref()) {
-            Ok(graph) => Ok(json(&graph)),
-            Err(problems) => {
-                let each: Vec<String> = problems
-                    .iter()
-                    .map(|p| match &p.node {
-                        Some(node) => format!("node {node}: {}", p.message),
-                        None => p.message.clone(),
-                    })
-                    .collect();
-                Err(failed(each.join("; ")))
+        let graph = lock(&self.doc).get().graph(&catalogue.inner, models.as_ref()).map_err(refused)?;
+        Ok(json(&graph))
+    }
+
+    /// The graph a run to `node` sends: only what that node needs, every
+    /// other output left out. A node that is not an output itself is
+    /// followed by a Preview Image — after a VAE Decode when it makes a
+    /// latent — so the run shows what it makes. The flow itself is not
+    /// changed.
+    pub fn graph_to(&self, node: String, catalogue: Arc<NodeCatalogue>, models_json: Option<String>) -> Result<GraphTo, DiffuseError> {
+        let models = models(models_json)?;
+        let catalogue = &catalogue.inner;
+        let flow = lock(&self.doc).get().clone();
+        let target = flow.nodes.iter().find(|n| n.id == node).ok_or_else(|| failed(format!("there is no node {node}")))?;
+        if target.bypass.0 {
+            return Err(failed(format!("node {node} is bypassed: restore it to run to it")));
+        }
+        let kind = catalogue.node(&target.kind).ok_or_else(|| failed(format!("the server has no {} node", target.kind)))?;
+        let mut run = FlowDoc::fresh(Path::new("run-to-here.flow.json"), flow.clone());
+        // Every other output bypassed, not removed: a removed node's id
+        // would be free for a node added here, and the run's news about
+        // it would land on the flow's own node of that id.
+        let others: Vec<Op> = flow
+            .nodes
+            .iter()
+            .filter(|n| n.id != node && catalogue.node(&n.kind).is_some_and(|k| k.is_output()))
+            .map(|n| Op::Bypass { id: n.id.clone(), on: true })
+            .collect();
+        if !others.is_empty() {
+            run.apply(&others, catalogue).map_err(failed)?;
+        }
+        let mut shows = node.clone();
+        if !kind.is_output() {
+            let output = |socket: &str| kind.outputs.iter().find(|o| o.socket == socket).map(|o| format!("{node}:{}", o.name));
+            let right = [target.at[0] + 260.0, target.at[1]];
+            let add = |run: &mut FlowDoc, kind: &str, at: [f64; 2]| -> Result<String, DiffuseError> {
+                let op = Op::Add { kind: kind.into(), at, values: Default::default() };
+                run.apply(&[op], catalogue).map_err(failed)?.added.pop().ok_or_else(|| failed(format!("no {kind} was added")))
+            };
+            let image = if let Some(image) = output("IMAGE") {
+                image
+            } else if let Some(latent) = output("LATENT") {
+                let vae = vae_for(&flow, catalogue, &node)
+                    .ok_or_else(|| failed("a latent is shown through a VAE: the flow needs a Load Checkpoint or a VAE loader"))?;
+                let decode = add(&mut run, "VAEDecode", right)?;
+                run.apply(
+                    &[Op::Connect { from: vae, to: format!("{decode}:vae") }, Op::Connect { from: latent, to: format!("{decode}:latent") }],
+                    catalogue,
+                )
+                .map_err(failed)?;
+                format!("{decode}:image")
+            } else {
+                return Err(failed(format!("Run to here shows a picture, and node {node} makes neither an image nor a latent")));
+            };
+            let preview = add(&mut run, "PreviewImage", [right[0] + 260.0, right[1]])?;
+            run.apply(&[Op::Connect { from: image, to: format!("{preview}:images") }], catalogue).map_err(failed)?;
+            shows = preview;
+        }
+        let graph = run.get().graph(catalogue, models.as_ref()).map_err(refused)?;
+        Ok(GraphTo { graph: json(&graph), shows })
+    }
+}
+
+/// A run to one node: the graph it sends, as JSON, and the node in it whose
+/// picture is that node's — a Preview Image added after it, or itself.
+#[derive(uniffi::Record)]
+pub struct GraphTo {
+    pub graph: String,
+    pub shows: String,
+}
+
+/// What stops a flow running, in a line: each problem with its node.
+fn refused(problems: Vec<Problem>) -> DiffuseError {
+    let each: Vec<String> = problems
+        .iter()
+        .map(|p| match &p.node {
+            Some(node) => format!("node {node}: {}", p.message),
+            None => p.message.clone(),
+        })
+        .collect();
+    failed(each.join("; "))
+}
+
+/// Where a latent from `from` is decoded from: the nearest node upstream of
+/// it with a VAE out, else any in the flow.
+fn vae_for(flow: &Flow, catalogue: &Catalogue, from: &str) -> Option<String> {
+    let vae_of = |id: &str| {
+        let node = flow.nodes.iter().find(|n| n.id == id)?;
+        let output = catalogue.node(&node.kind)?.outputs.iter().find(|o| o.socket == "VAE")?;
+        Some(format!("{id}:{}", output.name))
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    let mut queue = std::collections::VecDeque::from([from.to_string()]);
+    while let Some(id) = queue.pop_front() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        if id != from {
+            if let Some(vae) = vae_of(&id) {
+                return Some(vae);
+            }
+        }
+        for link in &flow.links {
+            if let (Some(f), Some(t)) = (Port::parse(&link.from), Port::parse(&link.to)) {
+                if t.node == id {
+                    queue.push_back(f.node);
+                }
             }
         }
     }
+    flow.nodes.iter().find_map(|n| vae_of(&n.id))
 }
 
 // MARK: - Starter flows and layout
@@ -638,6 +735,55 @@ mod tests {
         assert_eq!(listed, r#"[{"field":"image","node":"1","value":"inputs/photo.png"}]"#);
         let named = graph_with_uploads(graph.into(), r#"[{"node":"1","field":"image","id":"up_1.png"}]"#.into()).unwrap();
         assert!(named.contains(r#""image":"up_1.png""#) && named.contains(r#""cfg":1.0"#), "{named}");
+    }
+
+    /// A run to a node's graph, read back, and what shows its picture.
+    fn graph_of(answer: GraphTo) -> (Graph, String) {
+        (serde_json::from_str(&answer.graph).unwrap(), answer.shows)
+    }
+
+    #[test]
+    fn a_run_to_a_sampler_decodes_and_previews_only_what_it_needs() {
+        let catalogue = NodeCatalogue::parse(CATALOGUE.into()).unwrap();
+        let doc = FlowDocument::create("/tmp/aether-to-here.flow.json".into(), FLOW.into()).unwrap();
+        let before = doc.flow_json();
+        // Node 5 is the KSampler; 6 and 7 decode and save what it makes.
+        let (graph, shows) = graph_of(doc.graph_to("5".into(), catalogue.clone(), None).unwrap());
+        let kinds: Vec<&str> = graph.nodes.iter().map(|n| n.kind.as_str()).collect();
+        assert!(!kinds.contains(&"SaveImage"), "{kinds:?}");
+        // The flow's own decode fed only the Save Image left out, so the
+        // graph has just the one added.
+        assert_eq!(graph.nodes.iter().filter(|n| n.kind == "VAEDecode").map(|n| n.id.as_str()).collect::<Vec<_>>().len(), 1, "{kinds:?}");
+        let decode = graph.nodes.iter().find(|n| n.kind == "VAEDecode").unwrap();
+        let ids: Vec<u32> = serde_json::from_str::<serde_json::Value>(&before).unwrap()["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().parse().unwrap())
+            .collect();
+        let highest = *ids.iter().max().unwrap();
+        assert!(decode.id.parse::<u32>().unwrap() > highest && shows.parse::<u32>().unwrap() > highest, "an added node took a flow node's id");
+        assert!(graph.links.iter().any(|l| l.from.starts_with("5:") && l.to == format!("{}:latent", decode.id)));
+        assert!(kinds.contains(&"PreviewImage") && kinds.contains(&"KSampler"));
+        let preview = graph.nodes.iter().find(|n| n.kind == "PreviewImage").unwrap();
+        assert_eq!(shows, preview.id);
+        assert!(graph.links.iter().any(|l| l.from == "1:vae" && l.to == format!("{}:vae", decode.id)), "decoded with the checkpoint's VAE");
+        assert_eq!(doc.flow_json(), before, "the flow itself is not changed");
+    }
+
+    #[test]
+    fn a_run_to_an_image_or_an_output_adds_what_it_must() {
+        let catalogue = NodeCatalogue::parse(CATALOGUE.into()).unwrap();
+        let doc = FlowDocument::create("/tmp/aether-to-here.flow.json".into(), FLOW.into()).unwrap();
+        let (graph, shows) = graph_of(doc.graph_to("6".into(), catalogue.clone(), None).unwrap());
+        assert_eq!(graph.nodes.iter().filter(|n| n.kind == "VAEDecode").count(), 1, "an image needs no decode");
+        assert!(graph.links.iter().any(|l| l.from == "6:image" && l.to == format!("{shows}:images")));
+        let (graph, shows) = graph_of(doc.graph_to("7".into(), catalogue.clone(), None).unwrap());
+        assert_eq!(shows, "7");
+        assert!(!graph.nodes.iter().any(|n| n.kind == "PreviewImage"));
+        let refused = doc.graph_to("2".into(), catalogue.clone(), None).err().unwrap().to_string();
+        assert!(refused.contains("neither an image nor a latent"), "{refused}");
+        assert!(doc.graph_to("99".into(), catalogue, None).is_err());
     }
 
     #[test]

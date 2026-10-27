@@ -217,8 +217,11 @@ private struct RunHUD: View {
 
     private var title: String {
         if case .running = run.phase, let node = run.runningNode {
-            let type = model.editor?.flow.node(node).flatMap { model.editor?.library.catalogue.node($0.type)?.title }
-            return "Running \(type ?? "node \(node)")"
+            // A node a run to here added, such as its decode, is named by
+            // the node it runs to.
+            let shown = model.editor?.flow.node(node) != nil ? node : (run.target ?? node)
+            let type = model.editor?.flow.node(shown).flatMap { model.editor?.library.catalogue.node($0.type)?.title }
+            return "Running \(type ?? "node \(shown)")"
         }
         return RunStyle.label(run.phase)
     }

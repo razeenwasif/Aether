@@ -34,6 +34,11 @@ struct FlowCanvas: View {
     @State private var size: CGSize = .zero
     @State private var hoverLocation: CGPoint?
     @State private var scrollMonitor: Any?
+    @State private var marquee: Marquee?
+    /// The keys held at the last press in the window: a drag boxes or pans
+    /// by the keys it began with.
+    @State private var pressKeys: NSEvent.ModifierFlags = []
+    @State private var pressMonitor: Any?
     @FocusState private var focused: Bool
 
     private var catalogue: Catalogue { editor.library.catalogue }
@@ -45,6 +50,14 @@ struct FlowCanvas: View {
                 content
                     .scaleEffect(zoom, anchor: .topLeading)
                     .offset(pan)
+                if let box = marquee?.rect {
+                    Rectangle()
+                        .fill(Color.ice.opacity(0.08))
+                        .overlay(Rectangle().strokeBorder(Color.ice.opacity(0.7), lineWidth: 1))
+                        .frame(width: box.width, height: box.height)
+                        .offset(x: box.minX, y: box.minY)
+                        .allowsHitTesting(false)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
@@ -93,7 +106,30 @@ struct FlowCanvas: View {
 
     // MARK: Layers
 
-    /// The dotted ground. Dragging it pans; a click clears the selection.
+    /// A box being drawn over the ground, in the view's points: the nodes it
+    /// touches are chosen, added to `base` (those chosen before, with ⇧).
+    private struct Marquee {
+        var start: CGPoint
+        var end: CGPoint
+        var base: Set<String>
+        var rect: CGRect {
+            CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+        }
+    }
+
+    /// The nodes a box in the view's points touches.
+    private func nodes(touching box: CGRect) -> Set<String> {
+        let a = toFlow(box.origin), b = toFlow(CGPoint(x: box.maxX, y: box.maxY))
+        let area = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+        return Set(editor.flow.nodes.filter { node in
+            let height = NodeGeometry(node: node, type: catalogue.node(node.type)).bodyHeight
+            return area.intersects(CGRect(origin: node.position, size: CGSize(width: NodeMetrics.width, height: height)))
+        }.map(\.id))
+    }
+
+    /// The dotted ground. Dragging it pans; ⌘- or ⇧-dragging draws a box
+    /// that chooses the nodes it touches (⇧ adding to those chosen); a
+    /// click clears the selection.
     private var ground: some View {
         Canvas { context, canvasSize in
             let spacing = 20 * zoom
@@ -118,11 +154,31 @@ struct FlowCanvas: View {
         .gesture(
             DragGesture(minimumDistance: 2)
                 .onChanged { value in
-                    if panStart == nil { panStart = pan }
+                    if panStart == nil && marquee == nil {
+                        // The keys the drag began with, so one begun with ⌘ or ⇧ boxes.
+                        let keys = pressKeys.union(NSApp.currentEvent?.modifierFlags ?? [])
+                        if keys.contains(.command) || keys.contains(.shift) {
+                            focused = true
+                            marquee = Marquee(start: value.startLocation, end: value.location,
+                                              base: keys.contains(.shift) ? editor.selection : [])
+                        } else {
+                            panStart = pan
+                        }
+                    }
+                    if var box = marquee {
+                        box.end = value.location
+                        marquee = box
+                        editor.selection = box.base.union(nodes(touching: box.rect))
+                        return
+                    }
                     pan = CGSize(width: (panStart?.width ?? 0) + value.translation.width,
                                  height: (panStart?.height ?? 0) + value.translation.height)
                 }
                 .onEnded { _ in
+                    if marquee != nil {
+                        marquee = nil
+                        return
+                    }
                     panStart = nil
                     publishCentre()
                 }
@@ -155,6 +211,9 @@ struct FlowCanvas: View {
                     onPortDragEnd: { location in finishWire(at: location) }
                 )
                 .offset(x: node.position.x + offset.width, y: node.position.y + offset.height)
+                // A node chosen is drawn over its neighbours, so a picture
+                // that makes its card taller (a run to here's) shows whole.
+                .zIndex(editor.selection.contains(node.id) ? 1 : 0)
             }
         }
         .frame(width: max(bounds.maxX, 1), height: max(bounds.maxY, 1), alignment: .topLeading)
@@ -318,6 +377,12 @@ struct FlowCanvas: View {
 
     /// Two-finger scroll pans; ⌘-scroll or a mouse wheel zooms.
     private func installScrollMonitor() {
+        if pressMonitor == nil {
+            pressMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { event in
+                MainActor.assumeIsolated { pressKeys = event.modifierFlags }
+                return event
+            }
+        }
         guard scrollMonitor == nil else { return }
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             guard let location = hoverLocation else { return event }
@@ -338,6 +403,8 @@ struct FlowCanvas: View {
     private func removeScrollMonitor() {
         if let scrollMonitor { NSEvent.removeMonitor(scrollMonitor) }
         scrollMonitor = nil
+        if let pressMonitor { NSEvent.removeMonitor(pressMonitor) }
+        pressMonitor = nil
     }
 }
 

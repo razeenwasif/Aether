@@ -523,6 +523,25 @@ The user took the PI's recommendation on all five.
   - The Swift bindings regenerate unchanged, all 32 Swift tests pass, and the app builds and reaches the gateway.
 - History wasn't brought over. It's still in Proton's repo (`git log -- crates/proton-diffuse crates/proton-raster`).
 
+**2026-10-27 · Box selection and Run to here.** Proton had neither; both follow its design, and ComfyUI's habits where the design is silent.
+
+- **Box selection:** ⌘-drag on the ground draws a box, and ⇧-drag adds to the selection. A plain drag still pans, as in Proton, so a mouse can still pan. The keys held at the press decide, read from a mouse-down monitor beside the canvas's scroll monitor.
+- **Run to here:** the inspector's Run section, a right-click on any node, or Flow ▸ Run to Selected Node (⇧⌘↩).
+  - The bridge's `graph_to` sends only what the node needs.
+  - Every other output is bypassed for that run, not removed, so a node added for the run never takes a flow node's id.
+  - A latent gets a VAE Decode (fed by the nearest VAE upstream) and a Preview Image. An image gets a Preview Image. An output is itself. A node with neither is refused.
+  - The picture shows on the node run to, and under "Latest run to here" in its inspector. It's written to the previews (sealed for a sealed flow), not the Gallery.
+  - Seeds move only for nodes a run sent, for every run now.
+- **Smaller fixes:**
+  - The selected node draws over its neighbours, so a taller card's picture shows whole.
+  - The inspector's seed control no longer pushes the panel past its edge.
+  - The run queue's previews folder can be set, so tests write to a scratch folder.
+- **Tests:** two more Rust tests (fresh ids, wiring, refusals) and three more Swift (35 in all).
+- **Verified in the app:**
+  - A real ⌘-drag, posted as Core Graphics events with ⌘ held, chose both Text Encodes. The computer-use tool can't hold a key through a drag.
+  - ⇧⌘↩ on the KSampler ran only its ancestors and showed the decoded picture on it.
+  - Run to Here from VAE Decode's right-click menu did the same.
+
 Not yet:
 - The local Core ML backend (Q3's default), so runs go to Nexus only for now.
 - Painting a Load Image's mask (Proton's mask sheet); masks Proton painted are sent as found.
@@ -541,6 +560,7 @@ Not yet:
 **Next: Claude.** Diffuse parity, in this order (proposed 2026-10-27):
 1. ~~Sealed flows and outputs~~: done, see §10a.
 2. ~~**Inputs.**~~ Done, see §10a. Load Image's picture: choose one, drop one, or take one from the Gallery, then upload it through `Client::upload`. This turns on the Gallery's Use as input, and img2img and inpaint flows.
-3. **Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here.
+3. ~~**Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here~~: done, see §10a.
+4. **Mask painting:** Proton's mask sheet over a Load Image (brush, eraser, size, soft edge, invert, clear, undo a stroke), kept as `<flow>.<node>.mask.png`. Runs already send such masks.
 
 Then the local Core ML backend (Q3's default). It needs several GB of models, so ask before downloading. After that, the omnibar and M1's project graph, which Send to Canvas and Send to Game depend on.

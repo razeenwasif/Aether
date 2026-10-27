@@ -40,6 +40,8 @@ public final class RunItem: Identifiable {
 
     public let id = UUID()
     public let flowName: String
+    /// The node a run to here runs to; `nil` for a run of the whole flow.
+    public let target: String?
     public let started = Date.now
     public internal(set) var runID: String?
     public internal(set) var phase: Phase = .sending
@@ -48,9 +50,13 @@ public final class RunItem: Identifiable {
     /// The newest preview: the node it came from and a JPEG.
     public internal(set) var preview: (node: String, jpeg: Data)?
     public internal(set) var outputs: [Output] = []
+    /// Nodes added to the graph sent whose pictures are a flow node's: a
+    /// run to here's Preview Image, shown on the node run to.
+    var shownAs: [String: String] = [:]
 
-    init(flowName: String) {
+    init(flowName: String, target: String? = nil) {
         self.flowName = flowName
+        self.target = target
     }
 
     /// The node running now, if any.
@@ -64,6 +70,9 @@ public final class RunQueue {
     public private(set) var runs: [RunItem] = []
     public private(set) var backend: any ImageBackend
     public private(set) var health: Health = .looking
+    /// Where pictures that aren't kept go: Preview Image's, and a run to
+    /// here's. Not shown in the Gallery.
+    public var previewsFolder = LibraryCache.directory.appending(path: "previews", directoryHint: .isDirectory)
 
     public init(backend: any ImageBackend) {
         self.backend = backend
@@ -90,18 +99,29 @@ public final class RunQueue {
     /// Send `editor`'s flow, follow it to the end, and keep what it makes in
     /// the flow's outputs folder. Each picture a Load Image names is sent
     /// first, with its painted mask in its alpha, and its upload named in
-    /// the graph; `key` reads sealed pictures in a plain flow.
-    public func run(_ editor: FlowEditor, key: SealKey? = nil) {
-        let item = RunItem(flowName: editor.name)
+    /// the graph; `key` reads sealed pictures in a plain flow. With `node`,
+    /// a run to here: only what that node needs, its picture shown on it.
+    public func run(_ editor: FlowEditor, key: SealKey? = nil, upTo node: String? = nil) {
+        let item = RunItem(flowName: editor.name, target: node)
         runs.insert(item, at: 0)
         let graph: String
         do {
-            graph = try editor.graphJSON()
+            if let node {
+                let to = try editor.graphJSON(upTo: node)
+                graph = to.graph
+                if to.shows != node { item.shownAs[to.shows] = node }
+            } else {
+                graph = try editor.graphJSON()
+            }
         } catch {
             item.phase = .failed(describe(error))
             return
         }
+        let sent = Self.nodes(of: graph)
         let places = outputPlaces(for: editor)
+        // A node the graph gained (a run to here's Preview Image) keeps its
+        // picture with the previews, sealed if the flow is.
+        let fallback = OutputPlace(folder: previewsFolder, prefix: "preview", key: editor.isSealed ? editor.sealKey : nil)
         let pictures: [GraphPicture]
         do {
             pictures = try JSONDecoder().decode([GraphPicture].self, from: Data(graphPictures(graphJson: graph, catalogue: editor.library.core).utf8))
@@ -119,9 +139,9 @@ public final class RunQueue {
                 item.runID = queued.run
                 item.phase = .queued(position: queued.position)
                 // The graph went with this run's seeds; move them for the next.
-                editor.apply(editor.seedsAfterRun())
+                editor.apply(editor.seedsAfterRun(in: sent))
                 for try await event in backend.events(run: queued.run) {
-                    await handle(event, in: item, backend: backend, places: places)
+                    await handle(event, in: item, backend: backend, places: places, fallback: fallback)
                 }
                 if item.phase.isLive { item.phase = .failed("The run's progress stopped before it ended") }
             } catch {
@@ -153,7 +173,16 @@ public final class RunQueue {
         Task { try? await backend.cancel(run: run) }
     }
 
-    private func handle(_ event: RunEvent, in item: RunItem, backend: any ImageBackend, places: [String: OutputPlace]) async {
+    /// The ids of the nodes a graph sends.
+    private static func nodes(of graph: String) -> Set<String> {
+        struct Sent: Decodable {
+            struct Node: Decodable { var id: String }
+            var nodes: [Node]
+        }
+        return Set((try? JSONDecoder().decode(Sent.self, from: Data(graph.utf8)))?.nodes.map(\.id) ?? [])
+    }
+
+    private func handle(_ event: RunEvent, in item: RunItem, backend: any ImageBackend, places: [String: OutputPlace], fallback: OutputPlace) async {
         switch event {
         case .queued(let position):
             item.phase = .queued(position: position)
@@ -168,11 +197,11 @@ public final class RunQueue {
             if let data = Data(base64Encoded: jpeg) { item.preview = (id, data) }
         case let .image(id, image, _, width, height):
             guard let data = try? await backend.image(image) else { return }
-            let place = places[id] ?? OutputPlace(folder: LibraryCache.directory.appending(path: "previews"), prefix: "image", key: nil)
+            let place = places[id] ?? fallback
             let file = OutputNaming.next(in: place.folder, prefix: place.prefix)
             // A sealed flow's pictures are sealed too, as Proton keeps them.
             let kept = (try? writeFile(path: file.path, bytes: data, key: place.key)).map { URL(fileURLWithPath: $0) }
-            item.outputs.append(.init(node: id, image: image, file: kept, data: data, width: width, height: height))
+            item.outputs.append(.init(node: item.shownAs[id] ?? id, image: image, file: kept, data: data, width: width, height: height))
         case let .error(id, _, message):
             item.phase = .failed(id.map { "Node \($0): \(message)" } ?? message)
         case .done(let seconds):
@@ -193,7 +222,7 @@ public final class RunQueue {
         } else {
             outputs = base.appending(path: "outputs/\(editor.name)", directoryHint: .isDirectory)
         }
-        let previews = LibraryCache.directory.appending(path: "previews", directoryHint: .isDirectory)
+        let previews = previewsFolder
         let key = editor.isSealed ? editor.sealKey : nil
         var places: [String: OutputPlace] = [:]
         for node in editor.flow.nodes {

@@ -54,4 +54,4 @@ python3 scripts/fake-gateway.py --image build/fake/output.png --preview build/fa
 AETHER_GATEWAY=http://127.0.0.1:7421/img/v1 NEXUS_KEY=dev build/DerivedData/Build/Products/Debug/Aether.app/Contents/MacOS/Aether
 ```
 
-Keys: `⌘↩` generate · `⇧⌘G` graph / gallery · `⇥` add a node · `⌫` delete · `⌘D` duplicate · `⌘B` bypass · `⌘Z` / `⇧⌘Z` undo, redo · `⌘S` save · `⇧1` fit · `⌘0` / `⌘\` panels · pinch or `⌘`-scroll to zoom, two fingers to pan.
+Keys: `⌘↩` generate · `⇧⌘↩` run to the selected node · `⇧⌘G` graph / gallery · `⌘`-drag to box-select (`⇧`-drag adds) · `⇥` add a node · `⌫` delete · `⌘D` duplicate · `⌘B` bypass · `⌘Z` / `⇧⌘Z` undo, redo · `⌘S` save · `⇧1` fit · `⌘0` / `⌘\` panels · pinch or `⌘`-scroll to zoom, two fingers to pan.

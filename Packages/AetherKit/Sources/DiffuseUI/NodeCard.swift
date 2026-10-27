@@ -65,6 +65,25 @@ struct NodeCard: View {
             editor.selection = [node.id]
             model.toggleBypass()
         }
+        .accessibilityAction(named: "Run to here") { model.runTo(node.id) }
+        .contextMenu {
+            Button("Run to Here") { model.runTo(node.id) }
+                .disabled(node.isBypassed)
+            Divider()
+            Button("Duplicate") {
+                editor.selection = [node.id]
+                model.duplicateSelection()
+            }
+            Button(node.isBypassed ? "Restore" : "Bypass") {
+                editor.selection = [node.id]
+                model.toggleBypass()
+            }
+            Divider()
+            Button("Delete", role: .destructive) {
+                editor.selection = [node.id]
+                model.deleteSelection()
+            }
+        }
     }
 
     // MARK: Parts
@@ -179,7 +198,8 @@ struct NodeCard: View {
         if let run, run.phase.isLive, let preview = run.preview, preview.node == node.id {
             return NSImage(data: preview.jpeg)
         }
-        if type?.isOutput == true, let output = model.latestOutput(at: node.id) {
+        // An output's newest picture, or a run to here's on the node run to.
+        if let output = model.latestOutput(at: node.id) {
             return NSImage(data: output.data)
         }
         return nil

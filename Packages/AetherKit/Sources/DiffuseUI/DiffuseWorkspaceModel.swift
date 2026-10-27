@@ -312,6 +312,22 @@ public final class DiffuseWorkspaceModel {
         queue.run(editor, key: sealKey)
     }
 
+    /// Run only what `node` needs and show what it makes on it.
+    public func runTo(_ node: String) {
+        guard let editor else { return }
+        if queue.health.state != .serving && queue.health.state != .looking {
+            notice = queue.health.message
+        }
+        editor.selection = [node]
+        queue.run(editor, key: sealKey, upTo: node)
+    }
+
+    /// The one node selected, which Run to Here runs to.
+    public var runTarget: String? {
+        guard let editor, editor.selection.count == 1 else { return nil }
+        return editor.selection.first
+    }
+
     // MARK: Pictures for Load Image
 
     /// Whether a file is a picture a Load Image can take, sealed or not.

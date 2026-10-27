@@ -596,6 +596,15 @@ public protocol FlowDocumentProtocol: AnyObject, Sendable {
      */
     func graph(catalogue: NodeCatalogue, modelsJson: String?) throws  -> String
     
+    /**
+     * The graph a run to `node` sends: only what that node needs, every
+     * other output left out. A node that is not an output itself is
+     * followed by a Preview Image — after a VAE Decode when it makes a
+     * latent — so the run shows what it makes. The flow itself is not
+     * changed.
+     */
+    func graphTo(node: String, catalogue: NodeCatalogue, modelsJson: String?) throws  -> GraphTo
+    
     func isDirty()  -> Bool
     
     /**
@@ -783,6 +792,25 @@ open func graph(catalogue: NodeCatalogue, modelsJson: String?)throws  -> String 
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_method_flowdocument_graph(
             self.uniffiCloneHandle(),
+        FfiConverterTypeNodeCatalogue_lower(catalogue),
+        FfiConverterOptionString.lower(modelsJson),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The graph a run to `node` sends: only what that node needs, every
+     * other output left out. A node that is not an output itself is
+     * followed by a Preview Image — after a VAE Decode when it makes a
+     * latent — so the run shows what it makes. The flow itself is not
+     * changed.
+     */
+open func graphTo(node: String, catalogue: NodeCatalogue, modelsJson: String?)throws  -> GraphTo  {
+    return try  FfiConverterTypeGraphTo_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_flowdocument_graph_to(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(node),
         FfiConverterTypeNodeCatalogue_lower(catalogue),
         FfiConverterOptionString.lower(modelsJson),uniffiCallStatus
     )
@@ -1638,6 +1666,64 @@ public func FfiConverterTypeSealKey_lower(_ value: SealKey) -> UInt64 {
 
 
 /**
+ * A run to one node: the graph it sends, as JSON, and the node in it whose
+ * picture is that node's — a Preview Image added after it, or itself.
+ */
+public struct GraphTo: Equatable, Hashable {
+    public var graph: String
+    public var shows: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(graph: String, shows: String) {
+        self.graph = graph
+        self.shows = shows
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension GraphTo: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGraphTo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GraphTo {
+        return
+            try GraphTo(
+                graph: FfiConverterString.read(from: &buf), 
+                shows: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GraphTo, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.graph, into: &buf)
+        FfiConverterString.write(value.shows, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphTo_lift(_ buf: RustBuffer) throws -> GraphTo {
+    return try FfiConverterTypeGraphTo.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGraphTo_lower(_ value: GraphTo) -> RustBuffer {
+    return FfiConverterTypeGraphTo.lower(value)
+}
+
+
+/**
  * A starter flow: what the editor calls it and what it is for.
  */
 public struct Template: Equatable, Hashable {
@@ -2100,6 +2186,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_graph() != 9326) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_flowdocument_graph_to() != 24056) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_is_dirty() != 50050) {

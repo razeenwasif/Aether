@@ -52,6 +52,9 @@ public struct AetherCommands: Commands {
         CommandMenu("Flow") {
             Button("Generate") { model.run() }
                 .keyboardShortcut(.return)
+            Button("Run to Selected Node") { if let node = diffuse.runTarget { diffuse.runTo(node) } }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(diffuse.runTarget == nil || diffuse.stage != .graph)
             Button("Cancel Run") { if let run = diffuse.queue.active { diffuse.queue.cancel(run) } }
                 .keyboardShortcut(".")
             Divider()

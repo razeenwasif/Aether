@@ -182,11 +182,20 @@ public final class FlowEditor {
         try document.graph(catalogue: library.core, modelsJson: library.modelsJSON)
     }
 
+    /// The graph a run to `node` sends — only what it needs, the other
+    /// outputs left out, and a Preview Image after it when it isn't an
+    /// output — with the node in that graph whose picture is `node`'s.
+    public func graphJSON(upTo node: String) throws -> GraphTo {
+        try document.graphTo(node: node, catalogue: library.core, modelsJson: library.modelsJSON)
+    }
+
     /// What each node's seed does after a run: a batch that moves the seeds
-    /// of nodes set to increment or random, applied once a run is queued.
-    public func seedsAfterRun() -> [FlowOp] {
+    /// of nodes set to increment or random — of those in `ids`, the nodes a
+    /// run sent, when given — applied once a run is queued.
+    public func seedsAfterRun(in ids: Set<String>? = nil) -> [FlowOp] {
         flow.nodes.compactMap { node in
-            guard let mode = node.seed, mode != .fixed,
+            guard ids?.contains(node.id) ?? true,
+                  let mode = node.seed, mode != .fixed,
                   let kind = library.catalogue.node(node.type),
                   let field = kind.fields.first(where: { $0.fieldKind == .seed })
             else { return nil }
