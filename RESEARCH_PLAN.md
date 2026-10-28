@@ -1,6 +1,6 @@
 # RESEARCH_PLAN.md — Aether: a native creative studio for macOS
 
-Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **Design approved and Q1–Q5 settled 27 Oct; the Diffuse workspace is built (see §10a), and the other five are designed and waiting**
+Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **Design approved and Q1–Q5 settled 27 Oct; Diffuse and Canvas are built, and M1's project graph links them (see §10a); the other four are designed and waiting**
 
 Design canvas (12 boards, click-through prototype): https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv
 Status & Plan (run order with live statuses, renders of every board): https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7
@@ -353,6 +353,30 @@ actor AssetPool {
 }
 ```
 
+### 6.4a Transaction rules (settled 2026-10-28, built in `AetherGraph`)
+
+These rules were the LE's open task; Claude wrote them with M1 and the code follows them.
+
+1. **Only transactions change the graph.** A transaction is a value: a list of ops, the workspace it came from, a label for the Undo menu, and the document it belongs to. It is `Sendable` and `Codable`, and `ProjectGraph.log` keeps the last 200, for the agent to read.
+2. **Whole or not at all.** Every op is checked against a copy of the graph before anything is kept. When one is refused, the graph is as it was, and the error names the op and the reason. The checks are:
+   - a link needs an asset that exists, and can keep only a version that exists;
+   - an asset can't be removed while anything links to it;
+   - versions are numbered one after another;
+   - only the newest version can be taken off, and only when nothing keeps it.
+3. **Every op has an inverse,** worked out as it's applied: insert and remove, set and set-back, publish and retract. An undo step is that inverse, applied as a transaction.
+4. **The graph holds what crosses workspaces.** That means assets, their versions, and the links that use them. A document's own edits (a stroke, a moved node) stay in its core and its core's undo, as Proton's formats and determinism need.
+5. **One history, walked document by document.** Every step of every document goes on the project's history in order, and the project's own steps go among them. ⌘Z undoes the newest step of the document on screen, whichever kind it is.
+   - A project change made with a document step, like the link made when a picture comes in as a layer, is attached to that step, so one ⌘Z takes both back.
+   - A new step drops what could be redone in that document only. That includes a project step: once you've unlinked, the canvas's core still holds its old redo, but Redo won't reach it, so the two histories never part.
+   - A closed document's steps leave the history, as its core's did.
+6. **Publishing isn't an undo step,** just as saving isn't. Versions only grow. A link either follows the newest version or keeps one. Undo never takes a version away from under a link.
+7. **Consumers hear on the main actor, in the same turn.** `onPublish` listeners run as the transaction lands. Bytes are read from the `AssetPool` actor, off the main actor, and each version is decoded once and shared by every view.
+8. **Paths name documents:**
+   - inside the project, a path relative to its folder; outside it, the whole path;
+   - Save As moves a document's links, assets and steps with it.
+
+The package is the project folder: `project.json` holds the nodes, sorted with keys in order so it diffs cleanly, and `blobs/<sha256>.png` holds each version's bytes, once. A blob is cloned on APFS when it comes from a file. The default project is `~/Documents/Aether`, which already holds `Canvases/` and `Flows/`, so nothing moved.
+
 ### 6.5 Traffic lights stacked vertically (AppKit)
 
 `.hiddenTitleBar` keeps the system buttons, but their container is about 28 pt tall, so moving them down a 32 pt rail means either:
@@ -401,6 +425,20 @@ Frame budget at 120 Hz is **8.33 ms**. Working split, which the LE should valida
 - No `AnyView` in hot paths.
 - Keep the Metal draw loop entirely outside SwiftUI's update cycle.
 
+### 7a. The budget's rules, and what M1 measured (2026-10-28)
+
+The LE was to validate the split above. There's no Metal viewport yet (Canvas draws with CALayers, and the Metal work is M2's), so the GPU half waits for M2. Until then these rules hold, and what M1 added was measured against them:
+
+- **No file work on the main actor while someone draws.** Asset bytes are read and written by the `AssetPool` actor, and a linked Load Image's file is written off the main actor. A canvas's PNG is still made on the main actor when it's saved or published, as saving already did.
+- **Transactions are cheap enough to apply during a frame.** In release, a 1,000-op transaction applies in about 0.9 ms. A single op on a graph of 1,000 nodes takes 0.08 to 0.21 ms, most of it the copy that makes rule 2 of §6.4a whole-or-nothing. A test fails if those pass 50 ms and 5 ms. Applying is wrapped in an `os_signpost` interval, under `dev.razeen.aether` / `graph`, for Instruments.
+- **Listeners do their pixel work on the next turn.** A linked layer's update reads its bytes off the main actor, then applies one core op.
+- **Nothing the chrome draws reads the disk.** The omnibar's flows list and the Load Image's canvas list are read off the main actor. Before that, an `open()` there froze the app behind a macOS privacy prompt (§10a).
+- **The omnibar filters on every keystroke, from a snapshot.** It used to rebuild its list on every keystroke, reading the flows folder each time. Filtering 2,000 items took 2.7 ms in release, over the chrome's 2 ms.
+  - Now it takes its items once as it opens and prepares each title's letters then. A keystroke only scores, and the last result is kept.
+  - 2,000 items now take 1.3 ms in release.
+  - Real lists are about 80 items: the built-in catalogue has 16 nodes, and forge's may have more.
+  - A test fails past 20 ms, since test builds are slower. It hasn't been timed in the app.
+
 ---
 
 ## 8. Milestones
@@ -427,6 +465,43 @@ The user took the PI's recommendation on all five.
 | **Q3** | Diffuse's default backend? | **Local Core ML by default; Nexus on forge per flow.** | Flows run offline and privately unless a flow picks forge. The Run button names the backend in use. |
 | **Q4** | Plugin runtime? | **Wasmtime.** | It follows Q1: Rust is in the build anyway, and Wasmtime is the mature runtime. |
 | **Q5** | Stacked traffic lights? | **Stacked, as designed.** | The M0 spike must hold through resize, full screen and appearance changes. Only if it fails do the lights go horizontal in the top-left corner. |
+
+---
+
+## 9a. Backlog
+
+Ideas the user has asked to keep, not yet scheduled. Each needs the user's go-ahead before it's built.
+
+### B1 · World mode: a picture to a 3D model to an interactive world (proposed 2026-10-28)
+
+**The idea (the user's):** a seventh mode for world simulation models, fed by a pipeline across workspaces:
+
+```
+Diffuse (a picture of a scene or character) ──▶ Model (a 3D mesh) ──▶ World (an interactive world from it)
+```
+
+**How it fits:** each step is an asset with versions, and the next step links to it, using M1's live links (§6.4a) unchanged.
+- A link that follows the newest version rebuilds downstream when the picture is regenerated upstream.
+- A link that keeps a version holds the world steady while the upstream step is reworked.
+
+**The steps:**
+1. **Diffuse → Model.** An image-to-3D node (Hunyuan3D or TRELLIS class) runs on forge's RTX 4090 and outputs a mesh asset. A first Model workspace only needs to show and inspect a mesh, far less than M2's editor. This step is useful on its own and gives Model its first real input.
+2. **Model → World.** A world model generates an interactive scene from the mesh, the picture or both, streaming frames in reply to input. This is the risky step: the strong world models are mostly research demos or closed APIs, open ones need large GPUs, and Claude's knowledge stops in mid-2026.
+
+**Against Game (M4):** Game is authored and deterministic (rooms, behaviour, replay checks). World is generated and not deterministic, so Game's guarantees can't cover it. Options:
+- a separate seventh workspace, which needs a rail slot and changes the six-workspace layout;
+- a source inside Game: a generated world to walk, then turned into authored rooms.
+
+The PI leans to a separate mode, decided after the spike.
+
+**Open questions:**
+- Which world model can run on forge, or through an API, and at what latency per frame?
+- What does it take as input: a picture, a mesh, or both? If only a picture, the Model step becomes optional.
+- How does a generated world come back as an asset others can use (a recording, a scene, frames)?
+
+**First step, a spike (no mode yet):** survey runnable world models, measure one on forge, and write the result here. Build the Diffuse image-to-3D node either way.
+
+**Depends on:** M1 (live links), forge, and a mesh viewer in Model.
 
 ---
 
@@ -781,17 +856,86 @@ The user took the PI's recommendation on all five.
 - **Not ported yet:** Proton's Make panel (generators and filters), Scale2x and Scale3x upscaling, exporting at ×2 to ×8, as a sprite sheet with its JSON and as PSD, and vector booleans.
 
 Not yet:
-- Dropping a PNG on the graph to open its graph (the Gallery takes drops).
-- Marquee selection.
-- The rest of the shell's omnibar.
+- ~~Dropping a PNG on the graph to open its graph (the Gallery takes drops).~~ Done.
+- ~~Marquee selection.~~ Done.
+- ~~The rest of the shell's omnibar.~~ Done with M1, below.
+
+**2026-10-28 · M1: the project graph, live links and the omnibar.** The user asked to "start M1: the transaction rules, the project graph with live links, and the omnibar".
+
+- **The rules** are §6.4a, written first and followed by the code: transactions only, whole or not at all, an inverse for every op, one history walked document by document, publishing not an undo step, consumers told on the main actor. The frame budget's rules and what M1 measured are §7a.
+- **`AetherGraph`,** a new module with no dependencies:
+  - `ProjectGraph` holds nodes (assets and links), applies transactions against a copy, keeps the last 200 in `log`, and writes `project.json` 300 ms after the last change (and on quit).
+  - `History` keeps every document's steps and the project's in one order. A project change made with a document step is attached to it.
+  - `AssetPool`, an actor, keeps each version's bytes once in `blobs/<sha256>.png` (cloned on APFS when they come from a file) and decodes each picture once for every view.
+  - `Workspace` moved here from the shell. `Link` became `AssetLink`, and SwiftUI files say `AetherGraph.Transaction`, since SwiftUI has both names.
+- **The project** is `~/Documents/Aether`, which already held `Canvases/` and `Flows/`, so nothing moved. A `project.json` that can't be read is never written over: the session keeps links in memory and says so.
+- **Every step goes on the project's history.** `CanvasDocument` and `FlowEditor` tell the project of each new step (`onStep`), and their `undo`/`redo` now answer whether there was a step. ⌘Z in Canvas or Diffuse goes through the project, and the Edit menu names the step ("Undo Update Key art to v2"). Closing or switching a document drops its steps; Save As moves them.
+- **Diffuse → Canvas, live.**
+  - Send to Canvas makes the flow an asset, publishes the picture as its newest version, and the new canvas's layer follows it. Linking is part of making the canvas, so it isn't an undo step.
+  - From then on each finished run publishes its first picture kept for the Gallery, and the layer takes it as one canvas step ("Update Key art to v3").
+  - A layer can keep a version instead: the picture and the pin are one step. Unlink is a step of its own. A canvas that was shut catches up when it opens.
+  - Sealed pictures and sealed flows are sent as copies, as before, since versions are kept plain.
+  - A layer that follows an asset can't be painted on, cleared, cut or moved; the notice says to unlink it.
+  - The core gained `put_picture`: one undo step that makes a cel a picture's, centred when smaller and cut when bigger. Locked or not, since the link owns the layer.
+- **Canvas → Diffuse, live.**
+  - A Load Image's inspector has From a Canvas, listing the project's canvases. The canvas is published as it is now, its picture written to the flow's `inputs/`, and the node takes it with its link as one step.
+  - Each save of that canvas publishes again. Every following Load Image has its file written again, whether its flow is open or not, and its card and thumbnail redraw.
+  - Keep a version, Follow the newest, Unlink and Show sit in the Load Image's inspector, with a live dot. Undo puts a kept version back, and its file follows.
+  - A sealed flow can't take a live picture, since its inputs would be written plain.
+- **Canvas → Canvas.** Publish as an Asset (from the omnibar) makes the canvas open an asset. Another canvas can place it as a layer that follows it. A canvas can't follow itself.
+- **The inspectors** show where a linked layer or picture comes from, with a mint live dot or a grey kept one (inspector rule 5). They also show the version, the version picker, Unlink and Show the Source, and, for a canvas others use, Used elsewhere. The Layers list has the dot as well.
+- **The omnibar (⌘K, or the rail's Search):**
+  - One list in four groups: Here (Canvas's tools, frames, grid, transform and export; Diffuse's Generate, Gallery and Fit), Actions, Assets and Go to (workspaces, every canvas and flow, the Gallery).
+  - Every node in the catalogue is there to add once something is typed.
+  - An asset does what fits the workspace on screen: Place as a layer in a canvas, Use in a Load Image in a flow, otherwise Open.
+  - Letters in order match, scored up at the start and at word starts. ↑↓ choose, ↩ runs, ⇥ narrows to one group and on, esc or a click outside closes.
+  - It takes its items once as it opens, so typing never reads a folder. The flows folder (for Go to) and the project's canvases (for From a Canvas) are read in the background, so opening never waits on the disk either (§7a).
+- **Tests:**
+  - The bridge has 1 more: a linked layer takes a picture as one step, centred and undone whole.
+  - Swift has 15 more:
+    - The graph (6): whole or nothing, versions and listeners, undo walking one document's steps, the package and its blobs, Save As, and a 1,000-op transaction inside a frame.
+    - The canvas's links (4): placing, following, keeping, undoing (which takes back the version shown), taking the newest again, unlinking, redo not reaching past a project step; Send to Canvas and catching up after reopening; a canvas published on save; every step in the project's history.
+    - The flow editor (2): its steps, and the picture target.
+    - The omnibar (3): groups and scopes, matching, and a keystroke over 2,000 items.
+  - 159 Rust and 107 Swift tests pass.
+- **The first look in the app,** once the screen was unlocked:
+  - ⌘K opened the omnibar over Diffuse, its groups and shortcuts as designed.
+  - Two faults were found and fixed:
+    - Typing redrew the list's first row stale, showing Generate for "load im". Each row carried an extra `.id(index)` for scrolling, which fought the list's own identity; scrolling now goes by the item's id.
+    - Opening the omnibar listed the flows folder on the main thread. With this rebuild's new ad-hoc signature, macOS asked again whether Aether may read Documents, and the app froze behind the dialog. That list, and the Load Image's canvas list, are now read in the background.
+- **Checked in the app** once the user had answered the dialog. Two canvases were made for the check and moved to the Trash after, with the `project.json` and `blobs/` they made, so `~/Documents/Aether` is as it was.
+  - **The omnibar:**
+    - "load im" finds Add Load Image, and "canvas" lists Canvas (Go to) above New Canvas….
+    - ↓ moves the choice, and running New Canvas… switches to Canvas with the form open.
+    - "publish" finds Publish as an Asset. "link check a" finds the asset ("Place as a layer · Canvas v1", with its live dot) and the canvas under Go to.
+  - **Canvas → canvas, live:**
+    - A (red) published as an asset wrote `project.json` (one asset, version 1) and one blob.
+    - Placed in B, it became a layer named after A, with a live dot in Layers. The Linked section read "Live: shows v1 of 1" with the version picker, Unlink and Show the Source.
+    - A showed Used elsewhere: Link check B.
+    - Painting on the linked layer was refused with the notice to unlink it.
+  - **Undo:**
+    - The Edit menu read "Undo Bring in Link check A". Undo took away the layer and its link together (`project.json` had no link left), and Redo brought both back.
+  - **Following:**
+    - A turned blue and saved published v2 (two blobs).
+    - B, shut meanwhile, caught up when it opened: blue, "v2 of 2", "Undo Update Link check A to v2".
+    - The same again with green made v3.
+    - Unlink took the link away, and "Undo Unlink" was offered.
+  - **Three more faults found, all fixed and seen fixed:**
+    - Omnibar rows answered only a mouse tap, so accessibility's Press, and VoiceOver, couldn't run them. They're buttons now.
+    - After undoing an update, the Linked section still said "shows v2" while the layer showed v1. Which version a layer shows is now part of the update step. The section reads "Live, but shows v2 of 3: undo put it back" with a Take v3 button, which put v3 back.
+    - After Unlink, the Edit menu still offered the canvas core's stale redo. Redo now reaches only what the project's history undid.
+  - **Not checked in the app:**
+    - Send to Canvas and From a Canvas: the Gallery asks for Touch ID, and the check didn't touch the user's flows.
+    - Keeping a version from the picker, which the automation can't open; tests cover it.
+- **Not done:** opening another project (New Project/Open Project), and a Metal capture for the "no copy" exit criterion. Today each version is decoded once and shared, but the raster core holds its own tiles, as Proton's determinism needs, and there's no Metal viewport until M2. Diffuse's link code is covered only by the canvas side's tests and the flow editor's, because `DiffuseWorkspaceModel` reaches the gateway when made.
 
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). The other four workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). The other four workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
-**Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, move to Claude. They're due before M1, since nothing built so far depends on them.
+**Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, moved to Claude, and were done with M1 (§7a, §6.4a).
 
 **Next: Claude.** Diffuse parity, in this order (proposed 2026-10-27):
 1. ~~Sealed flows and outputs~~: done, see §10a.
@@ -801,4 +945,6 @@ Not yet:
 
 Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import. ~~Canvas selections, move and transform, copy and paste~~: done, see §10a. ~~The palette, the pixel grid, mirror drawing and resize~~: done, see §10a. ~~Animation: frames, onion skin and tags~~: done, see §10a.
 
-**Next, proposed:** the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.
+~~M1: the transaction rules, the project graph with live links, and the omnibar~~: done, see §10a. Checked in the app with two canvases. Send to Canvas and From a Canvas are covered by tests only.
+
+**Next, proposed:** finish M1: New Project and Open Project (other `.aether` folders), and the Metal capture for the exit criterion once M2's viewport exists. After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD).

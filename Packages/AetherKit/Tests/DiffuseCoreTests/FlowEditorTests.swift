@@ -50,6 +50,27 @@ struct FlowEditorTests {
         #expect(!editor.isDirty && editor.canRedo)
     }
 
+    @Test func eachStepIsToldByNameWithTheNodesItAdded() throws {
+        let editor = try FlowEditor.open(Fixture.lighthouse(), library: Fixture.library())
+        var told: [(String, [String])] = []
+        editor.onStep = { told.append(($0, $1)) }
+        editor.apply([.place(id: "5", at: CGPoint(x: 500, y: 40))])
+        let added = try #require(editor.apply([.add(type: "PreviewImage", at: CGPoint(x: 800, y: 16))]))
+        editor.apply([.place(id: "1", at: CGPoint(x: 99, y: 99)), .connect(from: "6:image", to: "1:checkpoint")])
+        #expect(told.map(\.0) == ["Move", "Add a Node"] && told[1].1 == added, "a refused batch is no step")
+        #expect(editor.undo() && editor.undo() && !editor.undo(), "undo answers whether there was a step")
+        #expect(told.count == 2, "undoing isn't a new step")
+    }
+
+    @Test func thePictureTargetIsTheNodeUsePictureWouldChoose() throws {
+        let editor = try FlowEditor.open(Fixture.lighthouse(), library: Fixture.library())
+        #expect(editor.pictureTarget(nil, field: nil) == nil, "no Load Image: one would be added")
+        let added = try #require(editor.apply([.add(type: "LoadImage", at: .zero)])?.first)
+        let target = try #require(editor.pictureTarget(nil, field: nil))
+        #expect(target.node == added && target.field == "image")
+        #expect(editor.usePicture("inputs/a.png") == added)
+    }
+
     @Test func aRefusedBatchChangesNothing() throws {
         let editor = try FlowEditor.open(Fixture.lighthouse(), library: Fixture.library())
         let before = editor.flow

@@ -27,6 +27,10 @@ public final class CanvasDocument {
     /// knows to draw its thumbnails again: which ones, `takeStaleFrames`.
     public private(set) var framesDrawn = 0
 
+    /// Told of each new step in its history, by name, and what it did: so
+    /// the project can keep every document's steps in one history.
+    @ObservationIgnored public var onStep: ((String, Applied) -> Void)?
+
     @ObservationIgnored let editor: CanvasEditor
     @ObservationIgnored private let encoder = JSONEncoder()
     @ObservationIgnored private var selectionVersion = UInt64.max
@@ -77,6 +81,7 @@ public final class CanvasDocument {
             refusal = nil
             refresh()
             stale(applied)
+            stepped(applied)
             return applied
         } catch {
             refusal = Self.describe(error)
@@ -84,16 +89,21 @@ public final class CanvasDocument {
         }
     }
 
-    public func undo() {
-        guard let step = editor.undo() else { return }
+    /// Take back the newest step; answers whether there was one.
+    @discardableResult
+    public func undo() -> Bool {
+        guard let step = editor.undo() else { return false }
         refresh()
         stale(try? JSONDecoder().decode(Applied.self, from: Data(step.utf8)))
+        return true
     }
 
-    public func redo() {
-        guard let step = editor.redo() else { return }
+    @discardableResult
+    public func redo() -> Bool {
+        guard let step = editor.redo() else { return false }
         refresh()
         stale(try? JSONDecoder().decode(Applied.self, from: Data(step.utf8)))
+        return true
     }
 
     // MARK: Strokes, drawn as the pen moves
@@ -117,9 +127,10 @@ public final class CanvasDocument {
     }
 
     public func endStroke(label: String) {
-        let ended = try? editor.strokeEnd(label: label)
+        let ended = (try? editor.strokeEnd(label: label)).flatMap { try? JSONDecoder().decode(Applied.self, from: Data($0.utf8)) }
         refresh()
-        stale(ended.flatMap { try? JSONDecoder().decode(Applied.self, from: Data($0.utf8)) })
+        stale(ended)
+        stepped(ended)
     }
 
     public func cancelStroke() {
@@ -193,6 +204,24 @@ public final class CanvasDocument {
             refusal = nil
             refresh()
             stale(applied)
+            stepped(applied)
+            return applied
+        } catch {
+            refusal = Self.describe(error)
+            return nil
+        }
+    }
+
+    /// Cel `cel`'s pixels made a picture's: a linked layer taking a newer
+    /// version of its asset. One undo step, named `label`.
+    @discardableResult
+    public func putPicture(_ bytes: Data, into cel: UInt32, named name: String, label: String) -> Applied? {
+        do {
+            let applied = try JSONDecoder().decode(Applied.self, from: Data(editor.putPicture(cel: cel, bytes: bytes, name: name, label: label).utf8))
+            refusal = nil
+            refresh()
+            stale(applied)
+            stepped(applied)
             return applied
         } catch {
             refusal = Self.describe(error)
@@ -234,6 +263,12 @@ public final class CanvasDocument {
             staleAll = false
         }
         return staleAll ? nil : staleFrames
+    }
+
+    /// A change that made a step: the step's name, to whoever is told.
+    private func stepped(_ applied: Applied?) {
+        guard let applied, applied.changed == true, let label = state.undo else { return }
+        onStep?(label, applied)
     }
 
     /// What a change touched, as the frames whose thumbnails are stale.

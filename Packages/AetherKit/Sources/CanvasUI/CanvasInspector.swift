@@ -1,4 +1,5 @@
 import AetherDesign
+import AetherGraph
 import CanvasCore
 import SwiftUI
 
@@ -11,6 +12,7 @@ struct CanvasInspector: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
+                    LinkSection(model: model)
                     ColourSection(model: model)
                     PaletteSection(model: model)
                     ToolSection(model: model)
@@ -23,6 +25,72 @@ struct CanvasInspector: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .aeGlass(.panel)
+    }
+}
+
+// MARK: - Links
+
+/// Where the layer comes from when it follows another workspace's asset,
+/// with a live dot (inspector rule 5), and who uses the canvas when it is
+/// an asset itself.
+private struct LinkSection: View {
+    @Bindable var model: CanvasWorkspaceModel
+
+    var body: some View {
+        if let project = model.project, let layer = model.currentLayer, let link = model.link(of: layer), let asset = project.asset(link.asset) {
+            // What the layer shows, which undo may have put back behind.
+            let shown = link.shown ?? project.version(for: link)?.number ?? 0
+            let newest = asset.newest?.number ?? 0
+            PanelSection("Linked") {
+                HStack(spacing: 7) {
+                    Circle().fill(link.pinned == nil ? Color.live : Color.ink3).frame(width: 7, height: 7)
+                    Text(asset.name).font(.aeBodyStrong).foregroundStyle(Color.inkHi).lineLimit(1)
+                    Text(asset.source.title).font(.aeSmall).foregroundStyle(Color.ink2)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(asset.name), from \(asset.source.title), \(link.pinned == nil ? "live" : "kept")")
+                Text(link.pinned != nil
+                    ? "Keeps v\(shown) of \(asset.versions.count), whatever \(asset.source.title) makes next."
+                    : shown < newest
+                    ? "Live, but shows v\(shown) of \(asset.versions.count): undo put it back. The next version replaces it."
+                    : "Live: shows v\(shown) of \(asset.versions.count). A newer picture from \(asset.source.title) replaces this layer.")
+                    .font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+                if link.pinned == nil, shown < newest {
+                    Button("Take v\(newest)") { model.takeNewest(link) }
+                        .controlSize(.small)
+                        .help("Show the newest version again")
+                }
+                Picker("Version", selection: Binding(get: { link.pinned ?? 0 }, set: { model.keep($0 == 0 ? nil : $0, for: link) })) {
+                    Text("The newest").tag(0)
+                    ForEach(asset.versions.reversed(), id: \.number) { version in
+                        Text("v\(version.number)" + (version.note.map { " · \($0)" } ?? "")).tag(version.number)
+                    }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+                .help("Follow the newest version, or keep one")
+                HStack(spacing: 8) {
+                    Button("Unlink") { model.unlink(link) }
+                        .help("Keep what the layer shows, to paint on, and stop following")
+                    Button("Show the Source") { model.showSource?(asset) }
+                        .help("Open what makes \(asset.name) in \(asset.source.title)")
+                }
+                .controlSize(.small)
+            }
+        }
+        let users = model.usedBy
+        if let project = model.project, !users.isEmpty {
+            PanelSection("Used elsewhere") {
+                ForEach(users) { link in
+                    HStack(spacing: 7) {
+                        Circle().fill(link.pinned == nil ? Color.live : Color.ink3).frame(width: 7, height: 7)
+                        Text(project.url(of: link.document).deletingPathExtension().deletingPathExtension().lastPathComponent).font(.aeBody).foregroundStyle(Color.inkHi).lineLimit(1)
+                        Text(link.consumer.title).font(.aeSmall).foregroundStyle(Color.ink2)
+                    }
+                }
+                Text("Saving publishes a new version to each.").font(.aeSmall).foregroundStyle(Color.ink2)
+            }
+        }
     }
 }
 
@@ -472,6 +540,11 @@ private struct LayersSection: View {
             }
             if layer.opacity < 255 {
                 Text("\(Int((Double(layer.opacity) / 255 * 100).rounded()))%").font(.aeMono).foregroundStyle(Color.ink3)
+            }
+            if let link = model.link(of: layer) {
+                Circle().fill(link.pinned == nil ? Color.live : Color.ink3).frame(width: 6, height: 6)
+                    .help(link.pinned == nil ? "Follows an asset: live" : "Follows an asset: a version kept")
+                    .accessibilityLabel(link.pinned == nil ? "Linked, live" : "Linked, a version kept")
             }
             Button {
                 model.setLayer(layer.id, locked: !layer.locked, label: layer.locked ? "Unlock \(layer.name)" : "Lock \(layer.name)")

@@ -184,6 +184,7 @@ struct NodeCard: View {
                 .accessibilityLabel("Output picture")
         } else if let picture = pictureOnDisk {
             CardPicture(url: picture, key: model.sealKey)
+                .id(model.pictureRevision)
         }
     }
 

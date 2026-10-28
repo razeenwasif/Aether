@@ -1,4 +1,5 @@
 import AetherDesign
+import AetherGraph
 import AppKit
 import DiffuseCore
 import SwiftUI
@@ -166,6 +167,7 @@ private struct PictureField: View {
                 let onDisk = FlowInputs.onDisk(name, flow: editor.url)
                 HStack(spacing: 10) {
                     Thumbnail(url: onDisk, side: 200, key: model.sealKey)
+                        .id(model.pictureRevision)
                         .frame(width: 52, height: 52)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.white.opacity(0.08)))
@@ -181,9 +183,21 @@ private struct PictureField: View {
                 Text("No picture yet: choose one, take one from the Gallery, or drop one here or on the graph.")
                     .font(.system(size: 11.5)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
             }
+            if let project = model.project, let link = model.link(node: node.id, field: field), let asset = project.asset(link.asset) {
+                LinkedPicture(model: model, project: project, link: link, asset: asset)
+            }
             HStack(spacing: 6) {
                 Button("Choose…") { model.choosePicture(node: node.id, field: field) }
                 Button("From the Gallery") { model.pickFromGallery(node: node.id, field: field) }
+                if !model.projectCanvases.isEmpty, !editor.isSealed {
+                    Menu("From a Canvas") {
+                        ForEach(model.projectCanvases, id: \.self) { url in
+                            Button(url.deletingPathExtension().lastPathComponent) { model.useCanvas(at: url, node: node.id, field: field) }
+                        }
+                    }
+                    .fixedSize()
+                    .help("A canvas, live: each time it's saved, this picture follows")
+                }
             }
             .controlSize(.small)
             if name != nil {
@@ -207,6 +221,46 @@ private struct PictureField: View {
         } isTargeted: { dropping = $0 }
         .task(id: MaskRead(node: node.id, painted: model.maskShares.count, unlocked: model.sealKey != nil)) {
             maskShare = await model.maskShare(node: node.id)
+        }
+        .task(id: node.id) { await model.refreshProjectCanvases() }
+    }
+}
+
+/// A Load Image's picture that follows an asset: where it comes from, with a
+/// live dot (inspector rule 5), and whether it keeps a version.
+private struct LinkedPicture: View {
+    @Bindable var model: DiffuseWorkspaceModel
+    let project: ProjectGraph
+    let link: AssetLink
+    let asset: Asset
+
+    var body: some View {
+        let shown = project.version(for: link)?.number ?? 0
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Circle().fill(link.pinned == nil ? Color.live : Color.ink3).frame(width: 7, height: 7)
+                Text(asset.name).font(.aeBodyStrong).foregroundStyle(Color.inkHi).lineLimit(1)
+                Text(asset.source.title).font(.aeSmall).foregroundStyle(Color.ink2)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(asset.name), from \(asset.source.title), \(link.pinned == nil ? "live" : "kept")")
+            Text(link.pinned == nil ? "Live: v\(shown) of \(asset.versions.count). Saving it in \(asset.source.title) updates this picture." : "Keeps v\(shown) of \(asset.versions.count).")
+                .font(.system(size: 11)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Picker("Version", selection: Binding(get: { link.pinned ?? 0 }, set: { model.keep($0 == 0 ? nil : $0, for: link) })) {
+                    Text("The newest").tag(0)
+                    ForEach(asset.versions.reversed(), id: \.number) { version in
+                        Text("v\(version.number)" + (version.note.map { " · \($0)" } ?? "")).tag(version.number)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                Button("Unlink") { model.unlink(link) }
+                    .help("Keep this picture and stop following")
+                Button("Show") { model.showSource?(asset) }
+                    .help("Open \(asset.name) in \(asset.source.title)")
+            }
+            .controlSize(.small)
         }
     }
 }

@@ -36,10 +36,15 @@ public final class RunItem: Identifiable {
         public var data: Data
         public var width: Int
         public var height: Int
+        /// Written where the Gallery shows it, as a Save Image's is; not a
+        /// preview's.
+        public var kept: Bool = false
     }
 
     public let id = UUID()
     public let flowName: String
+    /// The flow's file, when the run was sent: what publishes its pictures.
+    public let flow: URL?
     /// The node a run to here runs to; `nil` for a run of the whole flow.
     public let target: String?
     /// Where it runs: forge through Nexus, or this Mac.
@@ -56,8 +61,9 @@ public final class RunItem: Identifiable {
     /// run to here's Preview Image, shown on the node run to.
     var shownAs: [String: String] = [:]
 
-    init(flowName: String, target: String? = nil, backend: any ImageBackend) {
+    init(flowName: String, flow: URL? = nil, target: String? = nil, backend: any ImageBackend) {
         self.flowName = flowName
+        self.flow = flow
         self.target = target
         self.backend = backend
     }
@@ -76,6 +82,8 @@ public final class RunQueue {
     /// Where pictures that aren't kept go: Preview Image's, and a run to
     /// here's. Not shown in the Gallery.
     public var previewsFolder = LibraryCache.directory.appending(path: "previews", directoryHint: .isDirectory)
+    /// Told when a run finishes, its pictures written.
+    @ObservationIgnored public var onFinished: ((RunItem) -> Void)?
 
     public init(backend: any ImageBackend) {
         self.backend = backend
@@ -122,7 +130,7 @@ public final class RunQueue {
     /// With `place`, on that backend instead of the queue's (this Mac's).
     public func run(_ editor: FlowEditor, key: SealKey? = nil, upTo node: String? = nil, on place: (any ImageBackend)? = nil) {
         let backend = place ?? self.backend
-        let item = RunItem(flowName: editor.name, target: node, backend: backend)
+        let item = RunItem(flowName: editor.name, flow: editor.url, target: node, backend: backend)
         runs.insert(item, at: 0)
         let graph: String
         do {
@@ -220,11 +228,12 @@ public final class RunQueue {
             let file = OutputNaming.next(in: place.folder, prefix: place.prefix)
             // A sealed flow's pictures are sealed too, as Proton keeps them.
             let kept = (try? writeFile(path: file.path, bytes: data, key: place.key)).map { URL(fileURLWithPath: $0) }
-            item.outputs.append(.init(node: item.shownAs[id] ?? id, image: image, file: kept, data: data, width: width, height: height))
+            item.outputs.append(.init(node: item.shownAs[id] ?? id, image: image, file: kept, data: data, width: width, height: height, kept: place.folder != previewsFolder))
         case let .error(id, _, message):
             item.phase = .failed(id.map { "Node \($0): \(message)" } ?? message)
         case .done(let seconds):
             item.phase = .done(seconds: seconds)
+            onFinished?(item)
         case .cancelled:
             item.phase = .cancelled
         }

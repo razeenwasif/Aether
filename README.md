@@ -2,7 +2,7 @@
 
 A native macOS creative studio: Proton's Design, Model, Game, Canvas, Diffuse and Video modes as one app, in Swift, SwiftUI and Metal. The plan is [RESEARCH_PLAN.md](RESEARCH_PLAN.md); the design is the [canvas](https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv) and the [Status & Plan](https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7) page.
 
-**Diffuse and Canvas are built.** The other four are designed and show a placeholder until their milestones.
+**Diffuse and Canvas are built, and the project graph links them (M1).** The other four are designed and show a placeholder until their milestones.
 
 ## Building
 
@@ -21,7 +21,7 @@ Tests:
 
 ```bash
 cargo test --manifest-path cores/Cargo.toml        # the bridge
-swift test --package-path Packages/AetherKit       # flows, edits, undo, the wire format
+swift test --package-path Packages/AetherKit       # the graph, flows, canvases, links, undo, the omnibar
 ```
 
 ## Layout
@@ -31,9 +31,28 @@ swift test --package-path Packages/AetherKit       # flows, edits, undo, the wir
 | `cores/aether-diffuse` | UniFFI bridge over `proton-diffuse` and `proton-raster`: flows, edits and undo, checks, sealed files, pictures, the Nexus client, and `CanvasEditor` (a canvas painted and composited live) |
 | `cores/proton-diffuse`, `cores/proton-raster` | Proton's Diffuse core and raster engine, brought from Proton at `1e1aeb7`, without their TypeScript bindings. The file formats stay Proton's |
 | `docs/DIFFUSE.md` | Proton's Diffuse design and the `/img/v1` contract, which `proton-diffuse` cites and tests against |
-| `Packages/AetherKit` | Everything Swift: `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `CanvasCore` (a canvas open for editing, its tiles), `CanvasUI` (the Canvas workspace), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands) |
+| `Packages/AetherKit` | Everything Swift: `AetherGraph` (the project: assets, links, transactions, one history, the package), `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `CanvasCore` (a canvas open for editing, its tiles), `CanvasUI` (the Canvas workspace), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands, the omnibar) |
 | `App/` | The app's entry point and icon |
 | `scripts/` | Build scripts, the icon renderer, and a stand-in image gateway |
+
+## The project
+
+Every workspace views one project: `~/Documents/Aether`, which holds `Canvases/` and `Flows/`. Its `project.json` keeps what crosses workspaces:
+- assets: something one workspace makes for others to use
+- their versions, whose bytes are kept once each in `blobs/`
+- links: the places that use an asset
+
+The rules are RESEARCH_PLAN.md §6.4a.
+
+**Live links.** A link follows its asset's newest version, or keeps one. Either way it shows a mint dot (live) or a grey one (kept), with a version picker, Unlink, and Show the Source. After undo puts an older version back, it says so and offers Take vN.
+- Send to Canvas in Diffuse's Gallery makes a canvas whose layer follows the flow's newest picture. Each run of that flow replaces the layer, as one undo step. A layer that follows can't be painted on until it's unlinked.
+- In Diffuse, a Load Image's From a Canvas takes a canvas live: each time that canvas is saved, the picture follows, even when the flow isn't open.
+- In Canvas, Publish as an Asset (from the omnibar) lets another canvas place this one as a layer that follows it.
+- Sealed pictures and flows are never linked, since versions are kept plain. They're copied, as before.
+
+**One history.** `⌘Z` undoes the newest step of the document on screen, whether it's the document's own or a project step made in it (keeping a version, unlinking). A step and the link made with it, like a layer placed from an asset, undo together. A new step, of either kind, drops what could be redone. The Edit menu names the step.
+
+**The omnibar** (`⌘K`, or Search in the rail) lists tools, actions, assets and places to go, the workspace's own first. Type a few letters in order ("cf" finds Copy the Frame). `↑` `↓` choose, `↩` runs, `⇥` narrows to one group, and esc closes. In a flow it can add any node. An asset is placed as a layer in a canvas, or taken by a Load Image in a flow.
 
 ## Diffuse
 
@@ -72,6 +91,6 @@ A stroke is painted as the pen moves and kept as one undo step. Only the 64 × 6
 
 **Animation**, as in Proton: the timeline above the dock shows every frame small. Click one to show it and draw in it, and drag one to move it. The buttons step back and forward and play. There's a field for how long the frame shows in milliseconds, and buttons to add a clear frame, copy this one after it (`⇧N`) and take it out. Onion skin (`⇧O`) shows the frames either side faintly under each layer, before tinted red and after blue. The inspector sets how many either way and whether they're tinted. Tags name a run of frames ("idle", "walk"), set in the inspector to play on, back, or to the end and back. Click a tag over the frames (or choose it in the timeline) to play only that run. Every frame change is one undo step. Exporting a PNG exports the frame shown.
 
-**Send to Canvas** in Diffuse's Gallery (the inspector or the context menu) opens the picture as a new canvas named after it. A plain picture's canvas is written into Canvases at once. A sealed picture is unlocked first, and its canvas isn't written until you save it, since canvases are saved plain.
+**Send to Canvas** in Diffuse's Gallery (the inspector or the context menu) opens the picture as a new canvas named after it, whose layer follows the flow's newest picture (see The project). A plain picture's canvas is written into Canvases at once. A sealed picture is unlocked first and sent as a copy, and its canvas isn't written until you save it, since canvases are saved plain.
 
 Keys: `b` brush (pencil on a Pixel canvas) · `n` the other · `e` eraser · `g` fill · `i` pick (or `⌥`-click) · `l` `r` `o` line, rectangle, ellipse (`⇧` squares them) · `s` select · `w` magic wand · `v` move · `⌘T` scale and turn · `⌘A` `⌘D` `⇧⌘I` select all, nothing, the rest · `⌫` clear what is selected · `⌘C` `⌘X` `⌘V` copy, cut, paste · `[` `]` size · `p` pixel-perfect · `m` `⇧M` mirror across, down · `⇧G` the pixel grid · `,` `.` the frame before, after · `↩` play or stop · `⇧N` copy the frame · `⇧O` onion skin · `f` fit · `1` 100% · space-drag, or two fingers, to pan · pinch or `⌘`-scroll to zoom · Esc cancels a stroke · `⌘S` save · `⌘E` export a PNG · `⇧⌘N` add a layer · `⇧⌘W` back to all canvases.

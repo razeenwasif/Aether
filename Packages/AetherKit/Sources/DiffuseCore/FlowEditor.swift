@@ -25,6 +25,10 @@ public final class FlowEditor {
     /// The key it is sealed with; `nil` for a plain flow.
     @ObservationIgnored public private(set) var sealKey: SealKey?
 
+    /// Told of each new step in its history, by name, with the nodes it
+    /// added: so the project can keep every document's steps in one history.
+    @ObservationIgnored public var onStep: ((String, [String]) -> Void)?
+
     @ObservationIgnored private var document: FlowDocument
     @ObservationIgnored private let decoder = JSONDecoder()
     @ObservationIgnored private let encoder = JSONEncoder()
@@ -88,7 +92,10 @@ public final class FlowEditor {
             let json = String(decoding: try encoder.encode(ops), as: UTF8.self)
             let applied = try decoder.decode(Applied.self, from: Data(document.apply(opsJson: json, catalogue: library.core).utf8))
             refusal = nil
-            if applied.changed { refresh() }
+            if applied.changed {
+                refresh()
+                onStep?(FlowOp.label(of: ops), applied.added)
+            }
             return applied.added
         } catch {
             refusal = describe(error)
@@ -96,12 +103,19 @@ public final class FlowEditor {
         }
     }
 
-    public func undo() {
-        if document.undo() { refresh() }
+    /// Take back the newest step; answers whether there was one.
+    @discardableResult
+    public func undo() -> Bool {
+        guard document.undo() else { return false }
+        refresh()
+        return true
     }
 
-    public func redo() {
-        if document.redo() { refresh() }
+    @discardableResult
+    public func redo() -> Bool {
+        guard document.redo() else { return false }
+        refresh()
+        return true
     }
 
     public func clearRefusal() { refusal = nil }
@@ -143,12 +157,10 @@ public final class FlowEditor {
     /// node's id, or `nil` when the core refused (and says why in `refusal`).
     @discardableResult
     public func usePicture(_ name: String, node target: String? = nil, field: String? = nil, at: CGPoint? = nil) -> String? {
-        let loads = flow.nodes.filter { pictureField(of: $0) != nil }
-        let node = target.flatMap { flow.node($0) } ?? loads.first { selection.contains($0.id) } ?? loads.first
-        if let node, let field = field ?? pictureField(of: node) {
-            guard apply([.set(id: node.id, name: field, value: .string(name))]) != nil else { return nil }
-            selection = [node.id]
-            return node.id
+        if let (node, field) = pictureTarget(target, field: field) {
+            guard apply([.set(id: node, name: field, value: .string(name))]) != nil else { return nil }
+            selection = [node]
+            return node
         }
         guard library.catalogue.node("LoadImage") != nil else {
             refusal = "The server has no Load Image node to take the picture."
@@ -159,6 +171,16 @@ public final class FlowEditor {
         guard let added = apply([.add(type: "LoadImage", at: place, values: ["image": .string(name)])]) else { return nil }
         selection = Set(added)
         return added.first
+    }
+
+    /// The node and field `usePicture` gives a picture to: the node given,
+    /// else the Load Image selected, else the first; `nil` when it would add
+    /// a Load Image.
+    public func pictureTarget(_ target: String?, field: String?) -> (node: String, field: String)? {
+        let loads = flow.nodes.filter { pictureField(of: $0) != nil }
+        guard let node = target.flatMap({ flow.node($0) }) ?? loads.first(where: { selection.contains($0.id) }) ?? loads.first,
+              let field = field ?? pictureField(of: node) else { return nil }
+        return (node.id, field)
     }
 
     /// A picture a node names that isn't in the flow's folder, sealed or

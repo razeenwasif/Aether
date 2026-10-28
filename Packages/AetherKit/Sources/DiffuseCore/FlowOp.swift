@@ -74,3 +74,23 @@ extension FlowOp: Encodable {
         }
     }
 }
+
+extension FlowOp {
+    /// A batch's name in the Undo menu, from its first op.
+    public static func label(of ops: [FlowOp]) -> String {
+        switch ops.first {
+        case .add: ops.count > 1 ? "Add Nodes" : "Add a Node"
+        case .remove: "Remove"
+        case .place: "Move"
+        case .set(_, let name, _): "Set \(name)"
+        case .connect: "Connect"
+        case .disconnect: "Disconnect"
+        case .seed: "Seed"
+        case .bypass(_, let on): on ? "Bypass" : "Stop Bypassing"
+        case .duplicate: "Duplicate"
+        case .note: "Note"
+        case .outputs: "Outputs Folder"
+        case nil: "Edit"
+        }
+    }
+}

@@ -798,6 +798,41 @@ impl CanvasEditor {
         held.changed(&applied.touched, applied.meta);
         Ok(json(&serde_json::json!({ "changed": applied.changed, "touched": applied.touched, "meta": applied.meta, "made": applied.made, "notes": notes })))
     }
+
+    /// Cel `cel`'s pixels made a picture's (a PNG, one layer), one undo step
+    /// named `label`: a linked layer taking its asset's newer version. A
+    /// picture smaller than the canvas goes in its middle; a bigger one is cut
+    /// at its right and bottom. Locked or not, as the link owns the layer.
+    pub fn put_picture(&self, cel: u32, bytes: Vec<u8>, name: String, label: String) -> Result<String, DiffuseError> {
+        let picture = port::read(&bytes, &name).map_err(failed)?;
+        let image = match picture.parts.as_slice() {
+            [part] => part.cels.first().and_then(|c| c.as_ref()).ok_or_else(|| failed(format!("{name} is empty")))?,
+            parts => return Err(failed(format!("{name} has {} layers; a linked picture has one", parts.len()))),
+        };
+        let mut h = lock(&self.held);
+        h.cancel();
+        h.clear_preview();
+        let held = &mut *h;
+        let (w, ht) = (held.canvas.width, held.canvas.height);
+        let at = if image.width <= w && image.height <= ht { [(w - image.width) as i32 / 2, (ht - image.height) as i32 / 2] } else { [0, 0] };
+        let grid = port::grid_of(image, w, ht, at);
+        let applied = held
+            .history
+            .record(&mut held.canvas, &label, |c| {
+                let patch = Patch { layers: Some((c.layers.clone(), c.next_id)), ..Patch::default() };
+                let target = c.grid_mut(cel).ok_or_else(|| format!("there is no layer {cel}"))?;
+                let changed = *target != grid;
+                let touched = (0..grid.cols * grid.rows).map(|i| (cel, i)).collect();
+                *target = grid;
+                if changed {
+                    c.advance();
+                }
+                Ok((proton_raster::Applied { changed, touched, meta: false, made: None }, patch))
+            })
+            .map_err(failed)?;
+        held.changed(&applied.touched, applied.meta);
+        Ok(json(&serde_json::json!({ "changed": applied.changed, "touched": applied.touched, "meta": applied.meta, "made": applied.made })))
+    }
 }
 
 impl CanvasEditor {
@@ -944,6 +979,25 @@ mod tests {
         editor.undo().unwrap();
         let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
         assert_eq!(view["layers"].as_array().unwrap().len(), 1, "one undo step");
+    }
+
+    #[test]
+    fn a_linked_layer_takes_a_newer_picture_as_one_step() {
+        let editor = CanvasEditor::create(64, 64, "pixel".into()).unwrap();
+        editor.apply(r#"{"op": "fillRect", "layer": 1, "rect": [0, 0, 64, 64], "color": [255, 0, 0, 255]}"#.into(), "Fill".into()).unwrap();
+        let other = CanvasEditor::create(8, 8, "pixel".into()).unwrap();
+        other.apply(r#"{"op": "fillRect", "layer": 1, "rect": [0, 0, 8, 8], "color": [0, 0, 255, 255]}"#.into(), "Fill".into()).unwrap();
+        let applied: serde_json::Value = serde_json::from_str(&editor.put_picture(1, other.png().unwrap(), "v2.png".into(), "Update".into()).unwrap()).unwrap();
+        assert_eq!(applied["changed"], true);
+        editor.lay(u64::MAX);
+        // Smaller: in the middle, and the rest clear.
+        assert_eq!((editor.pick(30, 30).unwrap(), editor.pick(1, 1).unwrap()[3]), (vec![0, 0, 255, 255], 0));
+        let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
+        assert_eq!(view["undo"], "Update");
+        editor.undo().unwrap();
+        editor.lay(u64::MAX);
+        assert_eq!(editor.pick(1, 1).unwrap(), vec![255, 0, 0, 255], "one undo step");
+        assert!(editor.put_picture(9, other.png().unwrap(), "v2.png".into(), "Update".into()).is_err(), "no layer 9");
     }
 
     #[test]

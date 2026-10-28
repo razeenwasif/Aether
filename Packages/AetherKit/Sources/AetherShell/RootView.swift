@@ -1,4 +1,5 @@
 import AetherDesign
+import AetherGraph
 import CanvasUI
 import DiffuseCore
 import DiffuseUI
@@ -15,14 +16,27 @@ public struct RootView: View {
     public var body: some View {
         HStack(spacing: 0) {
             WorkspaceRail(model: model)
-            Group {
-                switch model.active {
-                case .diffuse: DiffuseWorkspace(model: model.diffuse)
-                case .canvas: CanvasWorkspace(model: model.canvas)
-                default: PlannedWorkspace(workspace: model.active)
+            ZStack(alignment: .top) {
+                Group {
+                    switch model.active {
+                    case .diffuse: DiffuseWorkspace(model: model.diffuse)
+                    case .canvas: CanvasWorkspace(model: model.canvas)
+                    default: PlannedWorkspace(workspace: model.active)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if model.omnibar.isOpen {
+                    // A click anywhere else closes it.
+                    Color.black.opacity(0.18)
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.omnibar.close() }
+                        .transition(.opacity)
+                    Omnibar(model: model, omnibar: model.omnibar)
+                        .padding(.top, 72)
+                        .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.spring(response: 0.32, dampingFraction: 0.8), value: model.omnibar.isOpen)
         }
         .background(Color.obsidian0)
         .ignoresSafeArea()
@@ -56,8 +70,8 @@ struct WorkspaceRail: View {
             runButton
             divider
             VStack(spacing: 2) {
-                RailButton("Search", style: .field, help: model.active == .diffuse ? "Find a node  ⇥" : "Search") {
-                    if model.active == .diffuse { model.diffuse.openLibrary() }
+                RailButton("Search", style: .field, isOn: model.omnibar.isOpen, help: "Tools, actions, assets, go to  ⌘K") {
+                    model.toggleOmnibar()
                 }
                 RailButton(model.active.navigatorLabel, isOn: model.navigatorOpen, help: "\(model.active.navigatorLabel)  ⌘0") {
                     model.toggleNavigator()

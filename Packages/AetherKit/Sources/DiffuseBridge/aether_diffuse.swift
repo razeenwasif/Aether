@@ -677,6 +677,14 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
     
     func previewClear() 
     
+    /**
+     * Cel `cel`'s pixels made a picture's (a PNG, one layer), one undo step
+     * named `label`: a linked layer taking its asset's newer version. A
+     * picture smaller than the canvas goes in its middle; a bigger one is cut
+     * at its right and bottom. Locked or not, as the link owns the layer.
+     */
+    func putPicture(cel: UInt32, bytes: Data, name: String, label: String) throws  -> String
+    
     func redo()  -> String?
     
     /**
@@ -1014,6 +1022,25 @@ open func previewClear()  {try! rustCall() {
             self.uniffiCloneHandle(),uniffiCallStatus
     )
 }
+}
+    
+    /**
+     * Cel `cel`'s pixels made a picture's (a PNG, one layer), one undo step
+     * named `label`: a linked layer taking its asset's newer version. A
+     * picture smaller than the canvas goes in its middle; a bigger one is cut
+     * at its right and bottom. Locked or not, as the link owns the layer.
+     */
+open func putPicture(cel: UInt32, bytes: Data, name: String, label: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_put_picture(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(cel),
+        FfiConverterData.lower(bytes),
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(label),uniffiCallStatus
+    )
+})
 }
     
 open func redo() -> String?  {
@@ -3380,6 +3407,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_preview_clear() != 4669) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_put_picture() != 61487) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_redo() != 4047) {

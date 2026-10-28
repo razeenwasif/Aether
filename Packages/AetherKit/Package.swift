@@ -8,6 +8,7 @@
 //   aether-local-bench  times local runs, and the text encoders on each compute unit
 //   CanvasCore        a canvas open for editing (proton-raster via the bridge), its pixels in tiles
 //   CanvasUI          the Canvas workspace: the canvas, layers, tools
+//   AetherGraph       the project: one graph of assets and links, transactions, undo, the package
 //   AetherDesign      Velvet Obsidian: tokens, glass, controls
 //   DiffuseUI         the Diffuse workspace: the flow canvas, node library, inspector
 //   AetherShell       the window: the rail, panels and workspaces
@@ -52,15 +53,18 @@ let package = Package(
             path: "Sources/LocalBench"
         ),
         .target(name: "CanvasCore", dependencies: ["DiffuseBridge"]),
-        .target(name: "CanvasUI", dependencies: ["CanvasCore", "AetherDesign"]),
+        .target(name: "AetherGraph"),
+        .target(name: "CanvasUI", dependencies: ["CanvasCore", "AetherDesign", "AetherGraph"]),
         .target(name: "AetherDesign"),
-        .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "DiffuseLocal", "AetherDesign"]),
-        .target(name: "AetherShell", dependencies: ["AetherDesign", "CanvasCore", "CanvasUI", "DiffuseBridge", "DiffuseCore", "DiffuseUI"]),
+        .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "DiffuseLocal", "AetherDesign", "AetherGraph"]),
+        .target(name: "AetherShell", dependencies: ["AetherDesign", "AetherGraph", "CanvasCore", "CanvasUI", "DiffuseBridge", "DiffuseCore", "DiffuseUI"]),
+        .testTarget(name: "AetherGraphTests", dependencies: ["AetherGraph"]),
         .testTarget(
             name: "DiffuseLocalTests",
             dependencies: ["DiffuseLocal", .product(name: "StableDiffusion", package: "ml-stable-diffusion")]
         ),
-        .testTarget(name: "CanvasCoreTests", dependencies: ["CanvasCore", "CanvasUI"]),
+        .testTarget(name: "CanvasCoreTests", dependencies: ["CanvasCore", "CanvasUI", "AetherGraph"]),
+        .testTarget(name: "AetherShellTests", dependencies: ["AetherShell", "AetherGraph"]),
         .testTarget(
             name: "DiffuseCoreTests",
             dependencies: ["DiffuseCore"],

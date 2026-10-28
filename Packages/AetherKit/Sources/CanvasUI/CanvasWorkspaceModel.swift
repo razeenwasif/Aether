@@ -1,3 +1,4 @@
+import AetherGraph
 import AppKit
 import CanvasCore
 import Foundation
@@ -218,6 +219,22 @@ public final class CanvasWorkspaceModel {
 
     public let folder: URL
 
+    /// The project the canvas belongs to: its links, and every document's
+    /// steps in one history. Set by the window; tests may leave it out.
+    public var project: ProjectGraph? {
+        didSet { listen() }
+    }
+    @ObservationIgnored var listening: Listening?
+    /// The project change to make with the next step, given what it did.
+    @ObservationIgnored var attaching: ((CanvasDocument.Applied) -> AetherGraph.Transaction?)?
+    /// A linked layer taking a version, or an asset being placed, while its
+    /// bytes are read.
+    @ObservationIgnored public internal(set) var following: Task<Void, Never>?
+    /// The canvas being published after a save.
+    @ObservationIgnored public internal(set) var publishing: Task<Void, Never>?
+    /// Where Show the Source goes: the asset's document, in its workspace.
+    @ObservationIgnored public var showSource: ((Asset) -> Void)?
+
     /// Where settings kept between launches go; tests use their own.
     @ObservationIgnored let defaults: UserDefaults
 
@@ -310,7 +327,8 @@ public final class CanvasWorkspaceModel {
     /// A picture as a new canvas named after it: written into the folder at
     /// once when `keep`, otherwise only when saved (as for a sealed picture,
     /// since canvases are saved plain).
-    public func receive(_ bytes: Data, named name: String, keep: Bool) {
+    /// Linking `asset`, the layer follows it: a new version replaces it.
+    public func receive(_ bytes: Data, named name: String, keep: Bool, linking asset: Asset? = nil) {
         leave {
             let stem = (name as NSString).deletingPathExtension
             do {
@@ -318,6 +336,11 @@ public final class CanvasWorkspaceModel {
                 if keep { try doc.save() }
                 self.show(doc)
                 self.refreshList()
+                // Part of making the canvas, so not an undo step.
+                if let asset, keep, let project = self.project, let layer = doc.state.layers.first {
+                    let path = project.path(of: doc.url)
+                    try project.apply(AetherGraph.Transaction([project.linkOp(asset.id, into: path, slot: Slot.layer(layer.id), by: .canvas)], origin: .canvas, label: "Link \(asset.name)", document: path, undoable: false))
+                }
                 if !keep {
                     self.notice = "\(doc.name) came from a sealed picture: it isn’t written until you save it, and canvases are saved plain."
                 }
@@ -333,6 +356,7 @@ public final class CanvasWorkspaceModel {
         do {
             try document.save()
             refreshList()
+            publishIfUsed()
         } catch {
             notice = "Couldn’t save \(document.name): \(Self.describe(error))"
         }
@@ -348,7 +372,9 @@ public final class CanvasWorkspaceModel {
         guard panel.runModal() == .OK, var url = panel.url else { return }
         if url.pathExtension != "canvas" { url = url.appendingPathExtension("canvas") }
         do {
+            let was = documentPath
             try document.save(as: url)
+            if let project, let was { project.move(document: was, to: project.path(of: url), by: .canvas) }
             refreshList()
         } catch {
             notice = "Couldn’t save \(url.lastPathComponent): \(Self.describe(error))"
@@ -375,6 +401,7 @@ public final class CanvasWorkspaceModel {
     public func close() {
         leave {
             self.stop()
+            if let path = self.documentPath { self.project?.forget(document: path) }
             self.document = nil
             self.layer = nil
             self.refreshList()
@@ -405,13 +432,17 @@ public final class CanvasWorkspaceModel {
         moving = nil
         swatch = nil
         thumbs = [:]
+        // Its history goes with it, so its steps leave the project's.
+        if let path = documentPath, document !== doc { project?.forget(document: path) }
         document = doc
+        doc.onStep = { [weak self, weak doc] label, applied in self?.stepped(label, applied, in: doc) }
         applyOnion()
         layer = doc.state.layers.last?.id
         if doc.state.preset == .pixel, tool == .brush { tool = .pencil }
         if doc.state.preset == .paint, tool == .pencil { tool = .brush }
         if doc.state.preset == .pixel, recent.isEmpty, let first = doc.state.palette.first { color = RGBA(first) }
         fit()
+        catchUp()
     }
 
     /// `name`.canvas in the folder, or `name 2`.canvas and on, whichever isn't taken.
@@ -481,15 +512,28 @@ public final class CanvasWorkspaceModel {
         if document.apply(op, label: label) == nil { notice = document.refusal }
     }
 
-    /// Undo; while something is being moved, that move is left instead.
+    /// Undo the canvas's newest step, its own or a project step made in it
+    /// (a link kept or let go); while something is being moved, that move
+    /// is left instead.
     public func undo() {
         if moving != nil { return leaveTransform() }
-        document?.undo()
+        guard let document else { return }
+        stop()
+        if let project { project.undo(in: project.path(of: document.url)) { document.undo() } } else { document.undo() }
     }
 
     public func redo() {
         if moving != nil { return leaveTransform() }
-        document?.redo()
+        guard let document else { return }
+        stop()
+        if let project { project.redo(in: project.path(of: document.url)) { document.redo() } } else { document.redo() }
+    }
+
+    /// What ⌘Z would undo, and ⇧⌘Z redo, for the Edit menu.
+    public var undoLabel: String? { project.flatMap { p in documentPath.flatMap { p.undoLabel(in: $0) } } ?? document?.state.undo }
+    public var redoLabel: String? {
+        guard let project else { return document?.state.redo }
+        return documentPath.flatMap { project.redoLabel(in: $0) }
     }
 
     // MARK: Selections
@@ -554,6 +598,7 @@ public final class CanvasWorkspaceModel {
     /// selected.
     public func clearSelected() {
         guard let layer = currentLayer else { return }
+        if let refusal = linkedRefusal(layer) { return notice = refusal }
         change(.clear(layer: cel(layer)), label: "Clear")
     }
 
@@ -564,6 +609,7 @@ public final class CanvasWorkspaceModel {
     public func copy(cut: Bool = false) {
         guard let document, let layer = currentLayer else { return }
         finishTransform()
+        if cut, let refusal = linkedRefusal(layer) { return notice = refusal }
         guard document.apply(.copy(layer: cel(layer), cut: cut), label: cut ? "Cut" : "Copy") != nil else {
             notice = document.refusal
             return
@@ -627,6 +673,10 @@ public final class CanvasWorkspaceModel {
         guard let document, let layer = currentLayer else { return false }
         guard !layer.locked else {
             notice = "\(layer.name) is locked."
+            return false
+        }
+        if let refusal = linkedRefusal(layer) {
+            notice = refusal
             return false
         }
         guard let lifted = document.lift(cel(layer)) else {

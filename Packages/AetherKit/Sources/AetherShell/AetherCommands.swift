@@ -1,3 +1,4 @@
+import AetherGraph
 import AppKit
 import CanvasUI
 import DiffuseBridge
@@ -55,9 +56,9 @@ public struct AetherCommands: Commands {
             }
         }
         CommandGroup(replacing: .undoRedo) {
-            Button("Undo") { textHasKeys ? send("undo:") : (onCanvas ? canvas.undo() : diffuse.editor?.undo()) }
+            Button(model.undoLabel.map { "Undo \($0)" } ?? "Undo") { textHasKeys ? send("undo:") : model.undo() }
                 .keyboardShortcut("z")
-            Button("Redo") { textHasKeys ? send("redo:") : (onCanvas ? canvas.redo() : diffuse.editor?.redo()) }
+            Button(model.redoLabel.map { "Redo \($0)" } ?? "Redo") { textHasKeys ? send("redo:") : model.redo() }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .pasteboard) {
@@ -177,6 +178,9 @@ public struct AetherCommands: Commands {
             Button("Look for the Server Again") { Task { await diffuse.lookAgain() } }
         }
         CommandGroup(before: .sidebar) {
+            Button("Search Tools, Actions and Assets…") { model.toggleOmnibar() }
+                .keyboardShortcut("k")
+            Divider()
             ForEach(Workspace.allCases) { workspace in
                 Button(workspace.title) { model.active = workspace }
                     .keyboardShortcut(workspace.shortcut)

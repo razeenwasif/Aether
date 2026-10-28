@@ -588,6 +588,9 @@ final class Thumbnails {
 
     func forget() { kept = [:] }
 
+    /// Let go of one picture's thumbnails, at every size: it was written again.
+    func forget(_ url: URL) { kept = kept.filter { !$0.key.hasSuffix(":\(url.path)") } }
+
     /// Let go of every sealed picture's thumbnail: sealed files locked.
     func forgetSealed() { kept = kept.filter { !$0.key.hasSuffix(SealedFiles.suffix) } }
 }

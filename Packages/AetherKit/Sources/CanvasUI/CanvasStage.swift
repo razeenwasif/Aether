@@ -503,6 +503,11 @@ final class CanvasStageView: NSView {
         // it takes away. The pen's eraser end erases.
         let selects = [.select, .wand, .move].contains(model.tool)
         let tool: CanvasTool = event.modifierFlags.contains(.option) && !selects ? .pick : (event.pointingDeviceType == .eraser ? .eraser : model.tool)
+        // A layer following another workspace's asset isn't painted on.
+        if ![.select, .wand, .pick, .move].contains(tool), let layer = model.currentLayer, let refusal = model.linkedRefusal(layer) {
+            model.notice = refusal
+            return
+        }
         switch tool {
         case .select:
             drag = .select(from: c, to: c, points: [c], mode: mode)

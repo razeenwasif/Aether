@@ -1,3 +1,4 @@
+import AetherGraph
 import AppKit
 import DiffuseBridge
 import DiffuseCore
@@ -13,7 +14,9 @@ import UniformTypeIdentifiers
 @MainActor
 @Observable
 public final class DiffuseWorkspaceModel {
-    public private(set) var editor: FlowEditor?
+    public private(set) var editor: FlowEditor? {
+        didSet { editorChanged(from: oldValue) }
+    }
     public let queue: RunQueue
     public private(set) var library: NodeLibrary
     public private(set) var settings: GatewaySettings
@@ -61,7 +64,7 @@ public final class DiffuseWorkspaceModel {
         public let node: String
         public let field: String
     }
-    public private(set) var pickingInput: PictureTarget?
+    public internal(set) var pickingInput: PictureTarget?
 
     /// The mask being painted over a Load Image's picture, while its sheet
     /// is open.
@@ -82,11 +85,35 @@ public final class DiffuseWorkspaceModel {
 
     @ObservationIgnored private var key: String?
 
+    /// The project the flow belongs to: its assets and links, and every
+    /// document's steps in one history. Set by the window; tests may leave
+    /// it out.
+    public var project: ProjectGraph? {
+        didSet { listen() }
+    }
+    @ObservationIgnored var listening: Listening?
+    /// The project change to make with the next step, given the nodes added.
+    @ObservationIgnored var attaching: (([String]) -> AetherGraph.Transaction?)?
+    /// Publishing a run's picture, or writing a linked picture, while it
+    /// happens.
+    @ObservationIgnored public internal(set) var linking: Task<Void, Never>?
+    /// Bumped when a linked picture is written again, so its thumbnails are
+    /// drawn again.
+    public internal(set) var pictureRevision = 0
+    /// The canvases in the project, by name, for a Load Image to take.
+    public internal(set) var projectCanvases: [URL] = []
+    /// A canvas made an asset with a version, for a Load Image to follow:
+    /// the window lends the Canvas workspace's.
+    @ObservationIgnored public var canvasAsset: ((URL) async throws -> Asset)?
+    /// Where Show the Source goes: the asset's document, in its workspace.
+    @ObservationIgnored public var showSource: ((Asset) -> Void)?
+
     public init() {
         let settings = GatewaySettings.current()
         library = NodeLibrary.saved()
         self.settings = settings
         queue = RunQueue(backend: NexusBackend(settings: settings, key: nil))
+        queue.onFinished = { [weak self] item in self?.finished(item) }
         openInitialFlow()
         Task { await connect() }
         // forge again every 30 s, as Proton looks, so Automatic falls back to
@@ -535,12 +562,14 @@ public final class DiffuseWorkspaceModel {
         show(.graph)
     }
 
-    /// Where Send to Canvas hands a picture: its plain bytes, its name, and
-    /// whether it may be written plain (it may not when it was sealed).
-    @ObservationIgnored public var canvasReceiver: ((Data, String, Bool) -> Void)?
+    /// Where Send to Canvas hands a picture: its plain bytes, its name,
+    /// whether it may be written plain (it may not when it was sealed), and
+    /// the asset it is a version of, for the canvas to follow.
+    @ObservationIgnored public var canvasReceiver: ((Data, String, Bool, Asset?) -> Void)?
 
-    /// Send a Gallery picture to the Canvas, as a new canvas named after it.
-    /// A sealed one is unlocked first, and isn't written plain until the
+    /// Send a Gallery picture to the Canvas, as a new canvas named after it,
+    /// whose layer follows the flow's newest picture. A sealed one is
+    /// unlocked first, sent as a copy, and isn't written plain until the
     /// person saves the canvas.
     public func sendToCanvas(_ picture: GalleryPicture) async {
         guard let receive = canvasReceiver else { return }
@@ -556,7 +585,7 @@ public final class DiffuseWorkspaceModel {
         }
         do {
             let bytes = try await Task.detached { [key] in sealed ? try readFile(path: url.path, key: key) : try Data(contentsOf: url) }.value
-            receive(bytes, picture.name, !sealed)
+            receive(bytes, picture.name, !sealed, await publishForCanvas(picture, bytes: bytes))
         } catch {
             notice = "Couldn’t send \(picture.name) to the Canvas: \(describe(error))"
         }
