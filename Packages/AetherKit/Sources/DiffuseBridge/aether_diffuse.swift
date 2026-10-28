@@ -628,6 +628,24 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
     func clipPng()  -> Data?
     
     /**
+     * Frame `frame` laid together, each pixel `scale` pixels square (1 to
+     * 16), as a PNG.
+     */
+    func exportPng(frame: UInt32, scale: UInt32) throws  -> Data
+    
+    /**
+     * Frame `frame` as a layered Photoshop file.
+     */
+    func exportPsd(frame: UInt32)  -> Data
+    
+    /**
+     * Every frame on one sheet, `columns` to a row (0: as near a square as
+     * they make), each pixel `scale` pixels square, and the JSON Aseprite
+     * writes beside it, naming `image`, the sheet's file name.
+     */
+    func exportSheet(image: String, columns: UInt32, scale: UInt32) throws  -> CanvasSheet
+    
+    /**
      * Lay together what changed, as much as `budget` pixel-layers allow
      * (the rest waits for the next call): the parts laid, with pixels.
      */
@@ -901,6 +919,51 @@ open func clipPng() -> Data?  {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_method_canvaseditor_clip_png(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Frame `frame` laid together, each pixel `scale` pixels square (1 to
+     * 16), as a PNG.
+     */
+open func exportPng(frame: UInt32, scale: UInt32)throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_export_png(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(frame),
+        FfiConverterUInt32.lower(scale),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Frame `frame` as a layered Photoshop file.
+     */
+open func exportPsd(frame: UInt32) -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_export_psd(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(frame),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Every frame on one sheet, `columns` to a row (0: as near a square as
+     * they make), each pixel `scale` pixels square, and the JSON Aseprite
+     * writes beside it, naming `image`, the sheet's file name.
+     */
+open func exportSheet(image: String, columns: UInt32, scale: UInt32)throws  -> CanvasSheet  {
+    return try  FfiConverterTypeCanvasSheet_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_export_sheet(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(image),
+        FfiConverterUInt32.lower(columns),
+        FfiConverterUInt32.lower(scale),uniffiCallStatus
     )
 })
 }
@@ -2359,6 +2422,63 @@ public func FfiConverterTypeSealKey_lower(_ value: SealKey) -> UInt64 {
 
 
 /**
+ * A sprite sheet: its PNG, and the JSON that says where each frame is.
+ */
+public struct CanvasSheet: Equatable, Hashable {
+    public var png: Data
+    public var json: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(png: Data, json: String) {
+        self.png = png
+        self.json = json
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension CanvasSheet: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCanvasSheet: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CanvasSheet {
+        return
+            try CanvasSheet(
+                png: FfiConverterData.read(from: &buf), 
+                json: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CanvasSheet, into buf: inout [UInt8]) {
+        FfiConverterData.write(value.png, into: &buf)
+        FfiConverterString.write(value.json, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCanvasSheet_lift(_ buf: RustBuffer) throws -> CanvasSheet {
+    return try FfiConverterTypeCanvasSheet.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCanvasSheet_lower(_ value: CanvasSheet) -> RustBuffer {
+    return FfiConverterTypeCanvasSheet.lower(value)
+}
+
+
+/**
  * A run to one node: the graph it sends, as JSON, and the node in it whose
  * picture is that node's — a Preview Image added after it, or itself.
  */
@@ -3380,6 +3500,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_clip_png() != 35767) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_export_png() != 10694) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_export_psd() != 58270) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_export_sheet() != 46507) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_lay() != 42866) {

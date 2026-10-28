@@ -54,8 +54,10 @@ extension AppModel {
             OmniItem(.here, "Turn Left") { c.turn(quarters: 3) },
             OmniItem(.here, "Mirror Across") { c.mirror(across: true) },
             OmniItem(.here, "Resize…") { c.askingToResize = true },
+            OmniItem(.here, "Grow ×2", detail: "Scale2x, edges kept crisp") { c.grow(by: 2) },
+            OmniItem(.here, "Grow ×3", detail: "Scale3x") { c.grow(by: 3) },
             OmniItem(.here, "Fit in View", detail: "f") { c.fit() },
-            OmniItem(.here, "Export a PNG…", detail: "⌘E") { c.exportPNG() },
+            OmniItem(.here, "Export…", detail: "PNG, sprite sheet or Photoshop · ⌘E") { c.exportPNG() },
             OmniItem(.here, "Publish as an Asset", detail: "for other canvases and flows to follow") { c.publishAsAsset() },
         ]
         return items

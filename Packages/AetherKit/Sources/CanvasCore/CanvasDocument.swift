@@ -23,6 +23,9 @@ public final class CanvasDocument {
     public private(set) var outline: [Int32] = []
     /// The rectangle round what is selected, in canvas pixels.
     public private(set) var selected: CGRect?
+    /// Whether an op is shown and not kept: the core lets go of it with any
+    /// edit, undo or stroke.
+    public private(set) var previewing = false
     /// Bumped whenever a frame's picture may have changed, so the timeline
     /// knows to draw its thumbnails again: which ones, `takeStaleFrames`.
     public private(set) var framesDrawn = 0
@@ -139,13 +142,26 @@ public final class CanvasDocument {
     }
 
     /// An op shown and not kept: a shape being dragged.
-    public func preview(_ op: CanvasOp) {
-        guard let json = try? encoder.encode(op) else { return }
-        try? editor.preview(opJson: String(decoding: json, as: UTF8.self))
-        lay()
+    /// Answers whether it could be shown, with the reason in `refusal` when
+    /// not.
+    @discardableResult
+    public func preview(_ op: CanvasOp) -> Bool {
+        do {
+            try editor.preview(opJson: String(decoding: try encoder.encode(op), as: UTF8.self))
+            refusal = nil
+            previewing = true
+            lay()
+            return true
+        } catch {
+            refusal = Self.describe(error)
+            previewing = false
+            lay()
+            return false
+        }
     }
 
     public func clearPreview() {
+        previewing = false
         editor.previewClear()
         lay()
     }
@@ -172,6 +188,23 @@ public final class CanvasDocument {
 
     /// Everything laid together as a PNG.
     public func png() throws -> Data { try editor.png() }
+
+    /// Frame `frame` laid together, each pixel `scale` pixels square.
+    public func exportPNG(frame: Int, scale: Int) throws -> Data {
+        try editor.exportPng(frame: UInt32(max(0, frame)), scale: UInt32(max(1, scale)))
+    }
+
+    /// Every frame on one sheet, `columns` to a row (0: near a square), each
+    /// pixel `scale` square; and Aseprite's JSON, naming `image`.
+    public func exportSheet(image: String, columns: Int, scale: Int) throws -> (png: Data, json: String) {
+        let sheet = try editor.exportSheet(image: image, columns: UInt32(max(0, columns)), scale: UInt32(max(1, scale)))
+        return (sheet.png, sheet.json)
+    }
+
+    /// Frame `frame` as a layered Photoshop file.
+    public func exportPSD(frame: Int) -> Data {
+        editor.exportPsd(frame: UInt32(max(0, frame)))
+    }
 
     // MARK: Selections, moving pixels, the clipboard
 
@@ -288,6 +321,7 @@ public final class CanvasDocument {
 
     /// What the core says the canvas is now, and its pixels laid again.
     private func refresh() {
+        previewing = false
         if let fresh = try? JSONDecoder().decode(CanvasState.self, from: Data(editor.view().utf8)) {
             if fresh.width != state.width || fresh.height != state.height {
                 pixels.resize(width: Int(fresh.width), height: Int(fresh.height))

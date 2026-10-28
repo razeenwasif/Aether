@@ -297,6 +297,13 @@ impl Held {
     }
 }
 
+/// A sprite sheet: its PNG, and the JSON that says where each frame is.
+#[derive(uniffi::Record)]
+pub struct CanvasSheet {
+    pub png: Vec<u8>,
+    pub json: String,
+}
+
 /// A part of the canvas laid together again: where, and its pixels,
 /// premultiplied RGBA row by row.
 #[derive(uniffi::Record)]
@@ -648,6 +655,28 @@ impl CanvasEditor {
         port::png(&h.canvas, h.shown, 1).map_err(failed)
     }
 
+    /// Frame `frame` laid together, each pixel `scale` pixels square (1 to
+    /// 16), as a PNG.
+    pub fn export_png(&self, frame: u32, scale: u32) -> Result<Vec<u8>, DiffuseError> {
+        let h = lock(&self.held);
+        port::png(&h.canvas, frame.min(h.canvas.frames.len() as u32 - 1), scale).map_err(failed)
+    }
+
+    /// Every frame on one sheet, `columns` to a row (0: as near a square as
+    /// they make), each pixel `scale` pixels square, and the JSON Aseprite
+    /// writes beside it, naming `image`, the sheet's file name.
+    pub fn export_sheet(&self, image: String, columns: u32, scale: u32) -> Result<CanvasSheet, DiffuseError> {
+        let h = lock(&self.held);
+        let (png, json) = port::sheet(&h.canvas, &image, columns, scale).map_err(failed)?;
+        Ok(CanvasSheet { png, json })
+    }
+
+    /// Frame `frame` as a layered Photoshop file.
+    pub fn export_psd(&self, frame: u32) -> Vec<u8> {
+        let h = lock(&self.held);
+        port::psd(&h.canvas, frame.min(h.canvas.frames.len() as u32 - 1))
+    }
+
     // Frames and onion skin.
 
     /// Show frame `frame` (from 0, held to the frames there are): laid
@@ -979,6 +1008,27 @@ mod tests {
         editor.undo().unwrap();
         let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
         assert_eq!(view["layers"].as_array().unwrap().len(), 1, "one undo step");
+    }
+
+    #[test]
+    fn it_exports_larger_as_a_sheet_and_as_photoshop() {
+        let editor = CanvasEditor::create(8, 4, "pixel".into()).unwrap();
+        editor.apply(r#"{"op": "fillRect", "layer": 1, "rect": [0, 0, 2, 2], "color": [255, 0, 0, 255]}"#.into(), "Fill".into()).unwrap();
+        let (w, h, rgba) = file::decode_png(&editor.export_png(0, 4).unwrap()).unwrap();
+        assert_eq!((w, h, &rgba[..4]), (32, 16, &[255, 0, 0, 255][..]), "each pixel four square");
+        assert_eq!(&rgba[(7 * 32 + 7) * 4..(7 * 32 + 7) * 4 + 4], &[255, 0, 0, 255], "the corner pixel grown");
+        editor.apply(r#"{"op": "addFrame"}"#.into(), "New frame".into()).unwrap();
+        editor.apply(r#"{"op": "addFrame"}"#.into(), "New frame".into()).unwrap();
+        let sheet = editor.export_sheet("hero.png".into(), 0, 2).unwrap();
+        let (w, h, _) = file::decode_png(&sheet.png).unwrap();
+        assert_eq!((w, h), (32, 16), "three frames, two to a row, twice the size");
+        let json: serde_json::Value = serde_json::from_str(&sheet.json).unwrap();
+        assert_eq!((json["frames"].as_array().unwrap().len(), json["meta"]["image"].as_str()), (3, Some("hero.png")));
+        let row = editor.export_sheet("hero.png".into(), 3, 1).unwrap();
+        assert_eq!(file::decode_png(&row.png).unwrap().0, 24, "in a row");
+        let psd = editor.export_psd(0);
+        assert_eq!(&psd[..4], b"8BPS");
+        assert!(editor.export_png(9, 1).is_ok(), "a frame past the end: the last");
     }
 
     #[test]

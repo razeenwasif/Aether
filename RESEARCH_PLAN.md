@@ -983,6 +983,48 @@ Not yet:
   - a switch taking an unsaved link out of the old project's file
   - ↩ running nothing until something is chosen
 
+**2026-10-28 · Canvas: the Make panel, growing, and export.** The user asked to "continue with it": the rest of Canvas. Ported from Proton's window before `9111812` (`raster.js`'s Make panel and the Canvas panel's "Written out, beside it" and ×2/×3), on the engine's `Generate`, `Filter` and `Upscale` ops and `port`'s exporters, all already in `cores/`.
+
+- **The Make panel** is an inspector section, folded shut by default so the inspector stays short.
+  - **A generator:**
+    - a sprite (a ship, a creature or an item, scale 1–16, in a ramp of the colour drawn with or a hue of its seed), in the middle of what is selected or of the canvas
+    - noise (gradient or value; cell, octaves; a ramp of the colour or the palette; dithered 2×2, 4×4 or 8×8, banded or smooth)
+    - caves (rock %, rounds, cell, repeating as a tile)
+    - Each takes a seed, with a button for another.
+  - **A filter:**
+    - outline (across corners, or on its own edge)
+    - shadow (across, down, blur, strength)
+    - pixelate
+    - fewer colours (how many, or the palette's; dithered or not; kept as the palette)
+  - **Show, keep or leave:** any change shows the result on the layer chosen, held to what is selected and not kept. The note says so ("Showing the outline on Sprite, not kept yet."). Keep it makes what's shown one edit, named for the Undo menu ("Undo Sprite"); Leave it takes it away.
+  - **What's shown goes when it should:** with any edit, undo or stroke, and on a mouse-down on the canvas. Exports and publishing never include it. The document now says whether a preview is showing, so the panel can't believe one is shown after the core has let it go.
+- **Grow ×2 and ×3** (Canvas menu, and the omnibar) use Scale2x and Scale3x, a pixel picture's edges kept crisp, and refit the view. Past a preset's most, the change is refused and the notice says why.
+- **Export…** (`⌘E`, and the rail's Export) opens a form:
+  - PNG, the frame shown flattened, with each pixel ×1, ×2, ×4 or ×8.
+  - Sprite sheet: every frame at that size, as near a square as they make or in a row, with the JSON Aseprite writes beside it (where each frame is, how long it shows, the tags, the layers).
+  - Photoshop: the frame shown, each layer trimmed with its opacity, visibility and blend.
+  - Its note says what will be written and how large. The save panel suggests a name ("Make check ×4", "Make check sheet").
+  - The bridge gained `export_png(frame, scale)`, `export_sheet(image, columns, scale)` and `export_psd(frame)`.
+- **Checked in the app,** on a throwaway canvas and with exports to my scratchpad, all deleted after:
+  - The Make section opened. Show it put a ship in the middle, unkept. Another seed gave another; Keep it made it an edit.
+  - Ticking "Across corners too" showed an outline at once, with the note, and Keep it kept it.
+  - Export ×4 wrote a 256 × 256 PNG of the outlined ship, its pixels crisp.
+  - Grow ×2 made 128 × 128, its edges smoothed by Scale2x.
+  - A two-frame sheet in a row wrote a 256 × 128 PNG and a JSON naming it, with both frames' places.
+  - That look found three things, all fixed: growing didn't refit the view, and the form's notes said "its 1 layers" and "All 2 frames". Seen fixed: growing refits, and the Photoshop note reads "its layer kept, with its opacity and blend".
+- **Tests:**
+  - The bridge has 1 more: export larger, a sheet in a grid and a row with its JSON, Photoshop's header, a frame past the end.
+  - Swift has 5 more:
+    - a generator shown, left, and kept as one edit
+    - noise filling the canvas, and caves held to the selection
+    - outline, shadow, and fewer colours kept as the palette
+    - growing ×2 and ×3, refused past a preset's most
+    - the three exports with their names and sizes; what's shown, not kept, isn't exported; an edit lets go of what's shown
+  - 160 Rust and 121 Swift tests pass.
+- **Not ported:**
+  - vector layers and booleans (new in Aether's plan, not in Proton)
+  - Proton's "To a game" send, which waits for the Game workspace
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1003,4 +1045,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~New Project and Open Project~~: done and checked in the app, see §10a.
 
-**Next, proposed:** M1's last item, the Metal capture for the exit criterion, waits for M2's viewport. After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD). After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD).
+~~The rest of Canvas: the Make panel's generators and filters, and export at ×2 to ×8, as a sprite sheet and as PSD~~: done, see §10a. Canvas now matches Proton's, apart from sending to a game.
+
+**Next, proposed:** M1's last item, the Metal capture for the exit criterion, waits for M2's viewport. Then M2's other half, Model, starting with what Proton's Modeling had: the scene format, the outliner and the modifier stack, on a Metal viewport. That viewport would also give M0 its frame-time measurements, and M1 its Metal capture. After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD).

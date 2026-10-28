@@ -16,6 +16,7 @@ struct CanvasInspector: View {
                     ColourSection(model: model)
                     PaletteSection(model: model)
                     ToolSection(model: model)
+                    MakeSection(model: model)
                     AnimationSection(model: model, document: document)
                 }
             }

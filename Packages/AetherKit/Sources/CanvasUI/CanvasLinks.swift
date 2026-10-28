@@ -160,6 +160,7 @@ extension CanvasWorkspaceModel {
 
     /// Saved, the canvas is published when something uses it.
     func publishIfUsed() {
+        leaveMade()
         guard let project, let document, let path = documentPath, let asset = project.asset(madeBy: path), let png = try? document.png() else { return }
         let (width, height) = (document.width, document.height)
         publishing = Task { [weak self] in
@@ -178,6 +179,7 @@ extension CanvasWorkspaceModel {
         guard let project else { throw CocoaError(.featureUnsupported) }
         let path = project.path(of: url)
         let open = document.flatMap { project.path(of: $0.url) == path ? $0 : nil }
+        if open != nil { leaveMade() }
         let doc = try open ?? CanvasDocument.open(url)
         let png = try doc.png()
         let asset = try project.asset(madeBy: path, named: doc.name, in: .canvas)

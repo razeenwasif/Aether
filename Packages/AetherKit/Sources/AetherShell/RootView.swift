@@ -111,7 +111,7 @@ struct WorkspaceRail: View {
                 RailButton("Generate", style: .run, help: "Generate  ⌘↩") { model.run() }
             }
         } else if model.active == .canvas {
-            RailButton("Export", style: .run, help: "Export a PNG  ⌘E") { model.run() }
+            RailButton("Export", style: .run, help: "Export: a PNG, a sprite sheet or Photoshop  ⌘E") { model.run() }
                 .opacity(model.canvas.document == nil ? 0.35 : 1)
                 .disabled(model.canvas.document == nil)
         } else {

@@ -194,6 +194,13 @@ public final class CanvasWorkspaceModel {
     public var swatch: Int?
     /// The resize form.
     public var askingToResize = false
+    /// The Make panel's settings: which generator and filter, and each one's.
+    public var make = CanvasMakeSettings()
+    /// What the Make panel last showed; `making` while the core still shows it.
+    var shownMake: CanvasMaking?
+    /// The export form, and how it was last set.
+    public var askingToExport = false
+    public var export = CanvasExportSettings()
     /// The system clipboard's change count when this canvas last put its
     /// copy there: pasting it again pastes the copy where it was.
     @ObservationIgnored private var ownClipboard: Int?
@@ -384,20 +391,11 @@ public final class CanvasWorkspaceModel {
         }
     }
 
-    /// Everything laid together, written as a PNG.
+    /// The export form: a PNG, a sprite sheet or a Photoshop file.
     public func exportPNG() {
-        guard let document else { return }
+        guard document != nil else { return }
         finishTransform()
-        let panel = NSSavePanel()
-        panel.title = "Export a PNG"
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = document.name + ".png"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try document.png().write(to: url, options: .atomic)
-        } catch {
-            notice = "Couldn’t export \(url.lastPathComponent): \(Self.describe(error))"
-        }
+        askingToExport = true
     }
 
     /// Another project's canvases: the canvas open is shut without asking
@@ -448,6 +446,7 @@ public final class CanvasWorkspaceModel {
     private func show(_ doc: CanvasDocument) {
         stop()
         moving = nil
+        shownMake = nil
         swatch = nil
         thumbs = [:]
         if document !== doc { letGo() }
@@ -526,6 +525,7 @@ public final class CanvasWorkspaceModel {
         guard let document else { return }
         stop()
         finishTransform()
+
         if document.apply(op, label: label) == nil { notice = document.refusal }
     }
 

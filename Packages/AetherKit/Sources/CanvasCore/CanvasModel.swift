@@ -235,6 +235,13 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
     case setDuration(from: UInt32, to: UInt32, duration: UInt32)
     /// The canvas's tags, all of them.
     case setTags([CanvasTag])
+    /// A generator's picture laid over a layer, held to what is selected.
+    case generate(layer: UInt32, CanvasGenerator)
+    /// A layer made over by a filter, held to what is selected.
+    case filter(layer: UInt32, CanvasFilter)
+    /// The whole canvas twice (Scale2x) or three times (Scale3x) the size, a
+    /// pixel picture's edges kept crisp.
+    case upscale(factor: UInt32)
 
     private enum Keys: String, CodingKey {
         case op, name, at, layer, to, opacity, blend, hidden, locked, alphaLock, rect, color, x, y, tolerance, contiguous
@@ -242,6 +249,7 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
         case area, mode, feather, smooth, cut, above, frame, bounds, inverse, turns, flip
         case width, height, colors, swatch
         case copy, duration, tags
+        case generator, filter, factor
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -319,6 +327,17 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
         case .crop(let rect):
             try c.encode("crop", forKey: .op)
             try c.encode(rect, forKey: .rect)
+        case let .generate(layer, generator):
+            try c.encode("generate", forKey: .op)
+            try c.encode(layer, forKey: .layer)
+            try c.encode(generator, forKey: .generator)
+        case let .filter(layer, filter):
+            try c.encode("filter", forKey: .op)
+            try c.encode(layer, forKey: .layer)
+            try c.encode(filter, forKey: .filter)
+        case .upscale(let factor):
+            try c.encode("upscale", forKey: .op)
+            try c.encode(factor, forKey: .factor)
         case let .resize(width, height, smooth):
             try c.encode("resize", forKey: .op)
             try c.encode(width, forKey: .width)

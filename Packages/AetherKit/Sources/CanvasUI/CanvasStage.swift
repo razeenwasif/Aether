@@ -508,6 +508,8 @@ final class CanvasStageView: NSView {
             model.notice = refusal
             return
         }
+        // What the Make panel shows goes as the canvas is worked on.
+        if tool != .pick { model.leaveMade() }
         switch tool {
         case .select:
             drag = .select(from: c, to: c, points: [c], mode: mode)

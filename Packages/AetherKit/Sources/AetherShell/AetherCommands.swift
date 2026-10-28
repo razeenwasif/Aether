@@ -57,7 +57,7 @@ public struct AetherCommands: Commands {
             Button("Save As…") { onCanvas ? canvas.saveAs() : diffuse.saveAs() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
             if onCanvas {
-                Button("Export a PNG…") { canvas.exportPNG() }
+                Button("Export…") { canvas.exportPNG() }
                     .keyboardShortcut("e")
                     .disabled(canvas.document == nil)
                 Button("Close the Canvas") { canvas.close() }
@@ -137,6 +137,10 @@ public struct AetherCommands: Commands {
             }
             .disabled(!onCanvas || canvas.document == nil)
             Button("Resize…") { canvas.askingToResize = true }
+                .disabled(!onCanvas || canvas.document == nil)
+            Button("Grow ×2 (Scale2x)") { canvas.grow(by: 2) }
+                .disabled(!onCanvas || canvas.document == nil)
+            Button("Grow ×3 (Scale3x)") { canvas.grow(by: 3) }
                 .disabled(!onCanvas || canvas.document == nil)
             Divider()
             Toggle("Show the Pixel Grid  (⇧G)", isOn: Binding(get: { canvas.showGrid }, set: { canvas.showGrid = $0 }))

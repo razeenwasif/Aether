@@ -82,6 +82,14 @@ public struct CanvasWorkspace: View {
                     .background(Color.obsidian1)
             }
         }
+        .sheet(isPresented: Binding(get: { model.askingToExport && model.document != nil }, set: { model.askingToExport = $0 })) {
+            if let document = model.document {
+                ExportForm(model: model, document: document)
+                    .padding(22)
+                    .frame(width: 380)
+                    .background(Color.obsidian1)
+            }
+        }
         .modifier(CanvasKeys(model: model))
     }
 }
@@ -231,6 +239,76 @@ struct Checkerboard: View {
 }
 
 /// A new canvas: a name, Pixel or Paint, a size.
+/// Writing the canvas out, as Proton's: the frame shown as a PNG, every
+/// frame on a sprite sheet with Aseprite's JSON, or the frame shown as a
+/// Photoshop file with its layers; the first two as large as asked.
+struct ExportForm: View {
+    @Bindable var model: CanvasWorkspaceModel
+    let document: CanvasDocument
+
+    private var format: CanvasExportFormat { model.export.format }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Export").font(.aeTitle).foregroundStyle(Color.inkHi)
+            Picker("As", selection: $model.export.format) {
+                ForEach(CanvasExportFormat.allCases, id: \.self) { format in
+                    Text(format.title).tag(format)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            if format != .psd {
+                HStack(spacing: 10) {
+                    Text("Each pixel").font(.aeSmall).foregroundStyle(Color.ink2)
+                    Picker("Each pixel", selection: $model.export.scale) {
+                        ForEach([1, 2, 4, 8], id: \.self) { Text(verbatim: "×\($0)").tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 180)
+                }
+            }
+            if format == .sheet {
+                Picker("Frames", selection: $model.export.inRow) {
+                    Text("As near a square as they make").tag(false)
+                    Text("In a row").tag(true)
+                }
+                .pickerStyle(.radioGroup)
+                .font(.aeBody)
+            }
+            Text(verbatim: note).font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Cancel") { model.askingToExport = false }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Export…") { model.exportChosen() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.runFill)
+                    .foregroundStyle(Color.obsidian0)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(format == .sheet && model.frameCount < 2)
+            }
+        }
+    }
+
+    private var note: String {
+        let (w, h) = (document.width * model.export.scale, document.height * model.export.scale)
+        switch format {
+        case .png:
+            return "Frame \(model.frame + 1), flattened: \(w) × \(h)."
+        case .sheet:
+            guard model.frameCount > 1 else { return "A sheet needs two frames or more." }
+            let frames = model.frameCount == 2 ? "Both frames" : "All \(model.frameCount) frames"
+            return "\(frames), each \(w) × \(h), on one PNG, and a JSON beside it of where each is, how long it shows and the tags, as Aseprite writes it."
+        case .psd:
+            let count = document.state.layers.count
+            let layers = count == 1 ? "its layer kept, with its opacity and blend" : "its \(count) layers kept, each with its opacity and blend"
+            return "Frame \(model.frame + 1), \(layers)."
+        }
+    }
+}
+
 /// The canvas made another size: every layer, by the nearest pixel on a
 /// pixel canvas and weighed on a painting.
 struct ResizeForm: View {
