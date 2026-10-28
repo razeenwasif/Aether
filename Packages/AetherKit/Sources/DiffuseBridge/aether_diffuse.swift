@@ -613,10 +613,39 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
     func apply(opJson: String, label: String) throws  -> String
     
     /**
+     * A picture — a PNG, a PSD or an Aseprite file — brought in as layers
+     * over cel `above` (on top with none), one undo step. A lone picture
+     * smaller than the canvas goes in its middle; a file's layers where its
+     * own canvas has them. Answers what `apply` does, and `notes`: what was
+     * left out.
+     */
+    func bringIn(bytes: Data, name: String, above: UInt32?) throws  -> String
+    
+    /**
+     * What was last copied, as a PNG of the part of the canvas it covers,
+     * for the system's clipboard. None if nothing was.
+     */
+    func clipPng()  -> Data?
+    
+    /**
      * Lay together what changed, as much as `budget` pixel-layers allow
      * (the rest waits for the next call): the parts laid, with pixels.
      */
     func lay(budget: UInt64)  -> [Laid]
+    
+    /**
+     * What is selected of cel `layer` — all of it, with nothing selected —
+     * cut out to the rectangle it covers, to be moved. None when there is
+     * nothing there, or the layer is locked.
+     */
+    func lift(layer: UInt32)  -> Lifted?
+    
+    /**
+     * The edges of what is selected, as segments along pixels' sides — x0,
+     * y0, x1, y1, four numbers each — for the marching ants. None when
+     * nothing is.
+     */
+    func outline()  -> [Int32]
     
     /**
      * How many parts wait to be laid together.
@@ -653,6 +682,18 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
      * there) — or where it was opened from or last saved, with none.
      */
     func save(dir: String?) throws  -> String
+    
+    /**
+     * The rectangle round what is selected — left, top, width, height — or
+     * none when nothing is.
+     */
+    func selected()  -> [UInt32]?
+    
+    /**
+     * A number that changes whenever what is selected may have: ask for
+     * the outline again when it does.
+     */
+    func selectionVersion()  -> UInt64
     
     /**
      * More of the stroke: numbers in threes — x and y in 1/256 px, and the
@@ -804,6 +845,38 @@ open func apply(opJson: String, label: String)throws  -> String  {
 }
     
     /**
+     * A picture — a PNG, a PSD or an Aseprite file — brought in as layers
+     * over cel `above` (on top with none), one undo step. A lone picture
+     * smaller than the canvas goes in its middle; a file's layers where its
+     * own canvas has them. Answers what `apply` does, and `notes`: what was
+     * left out.
+     */
+open func bringIn(bytes: Data, name: String, above: UInt32?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_bring_in(
+            self.uniffiCloneHandle(),
+        FfiConverterData.lower(bytes),
+        FfiConverterString.lower(name),
+        FfiConverterOptionUInt32.lower(above),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What was last copied, as a PNG of the part of the canvas it covers,
+     * for the system's clipboard. None if nothing was.
+     */
+open func clipPng() -> Data?  {
+    return try!  FfiConverterOptionData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_clip_png(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Lay together what changed, as much as `budget` pixel-layers allow
      * (the rest waits for the next call): the parts laid, with pixels.
      */
@@ -813,6 +886,35 @@ open func lay(budget: UInt64) -> [Laid]  {
     uniffi_aether_diffuse_fn_method_canvaseditor_lay(
             self.uniffiCloneHandle(),
         FfiConverterUInt64.lower(budget),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What is selected of cel `layer` — all of it, with nothing selected —
+     * cut out to the rectangle it covers, to be moved. None when there is
+     * nothing there, or the layer is locked.
+     */
+open func lift(layer: UInt32) -> Lifted?  {
+    return try!  FfiConverterOptionTypeLifted.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_lift(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(layer),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The edges of what is selected, as segments along pixels' sides — x0,
+     * y0, x1, y1, four numbers each — for the marching ants. None when
+     * nothing is.
+     */
+open func outline() -> [Int32]  {
+    return try!  FfiConverterSequenceInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_outline(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -906,6 +1008,32 @@ open func save(dir: String?)throws  -> String  {
     uniffi_aether_diffuse_fn_method_canvaseditor_save(
             self.uniffiCloneHandle(),
         FfiConverterOptionString.lower(dir),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The rectangle round what is selected — left, top, width, height — or
+     * none when nothing is.
+     */
+open func selected() -> [UInt32]?  {
+    return try!  FfiConverterOptionSequenceUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_selected(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * A number that changes whenever what is selected may have: ask for
+     * the outline again when it does.
+     */
+open func selectionVersion() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_selection_version(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -2262,6 +2390,76 @@ public func FfiConverterTypeLaid_lower(_ value: Laid) -> RustBuffer {
 
 
 /**
+ * What is selected of a layer, lifted to be moved: the rectangle round
+ * what it has, and its pixels, premultiplied RGBA row by row.
+ */
+public struct Lifted: Equatable, Hashable {
+    public var x: UInt32
+    public var y: UInt32
+    public var width: UInt32
+    public var height: UInt32
+    public var pixels: Data
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(x: UInt32, y: UInt32, width: UInt32, height: UInt32, pixels: Data) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.pixels = pixels
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Lifted: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLifted: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Lifted {
+        return
+            try Lifted(
+                x: FfiConverterUInt32.read(from: &buf), 
+                y: FfiConverterUInt32.read(from: &buf), 
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf), 
+                pixels: FfiConverterData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Lifted, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.x, into: &buf)
+        FfiConverterUInt32.write(value.y, into: &buf)
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+        FfiConverterData.write(value.pixels, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLifted_lift(_ buf: RustBuffer) throws -> Lifted {
+    return try FfiConverterTypeLifted.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLifted_lower(_ value: Lifted) -> RustBuffer {
+    return FfiConverterTypeLifted.lower(value)
+}
+
+
+/**
  * A mask's pixels: how painted each is, 0 to 255, row by row.
  */
 public struct MaskPixels: Equatable, Hashable {
@@ -2482,6 +2680,30 @@ public func FfiConverterTypeDiffuseError_lower(_ value: DiffuseError) -> RustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = UInt32?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -2548,6 +2770,79 @@ fileprivate struct FfiConverterOptionTypeSealKey: FfiConverterRustBuffer {
         case 1: return try FfiConverterTypeSealKey.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeLifted: FfiConverterRustBuffer {
+    typealias SwiftType = Lifted?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeLifted.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeLifted.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionSequenceUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = [UInt32]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceUInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceUInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = [UInt32]
+
+    public static func write(_ value: [UInt32], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterUInt32.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UInt32] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UInt32]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterUInt32.read(from: &buf))
+        }
+        return seq
     }
 }
 
@@ -2964,7 +3259,19 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_apply() != 65497) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_bring_in() != 34528) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_clip_png() != 35767) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_lay() != 42866) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_lift() != 58159) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_outline() != 50776) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_pending() != 16841) {
@@ -2989,6 +3296,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_save() != 59152) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_selected() != 25382) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_selection_version() != 15986) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_stroke_add() != 42638) {

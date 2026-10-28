@@ -83,6 +83,61 @@ public enum CanvasShape: String, Codable, Sendable, CaseIterable {
     public var title: String { self == .rect ? "Rectangle" : rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
 }
 
+/// What a selection is made of (`proton_raster::Area`).
+public enum CanvasArea: Encodable, Sendable, Equatable {
+    case all, nothing, invert
+    /// Whole pixels: left, top, width, height.
+    case rect([Int32])
+    /// The ellipse fitted to a rectangle of whole pixels.
+    case ellipse([Int32])
+    /// A closed outline: x, y in 1/256 px, two numbers a point.
+    case lasso([Int32])
+    /// The pixels of a layer like the one at x, y, as the bucket finds them.
+    case wand(layer: UInt32, x: Int32, y: Int32, tolerance: UInt8, contiguous: Bool, diagonal: Bool)
+
+    private enum Keys: String, CodingKey { case kind, rect, points, layer, x, y, tolerance, contiguous, diagonal }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        switch self {
+        case .all: try c.encode("all", forKey: .kind)
+        case .nothing: try c.encode("nothing", forKey: .kind)
+        case .invert: try c.encode("invert", forKey: .kind)
+        case .rect(let rect):
+            try c.encode("rect", forKey: .kind)
+            try c.encode(rect, forKey: .rect)
+        case .ellipse(let rect):
+            try c.encode("ellipse", forKey: .kind)
+            try c.encode(rect, forKey: .rect)
+        case .lasso(let points):
+            try c.encode("lasso", forKey: .kind)
+            try c.encode(points, forKey: .points)
+        case let .wand(layer, x, y, tolerance, contiguous, diagonal):
+            try c.encode("wand", forKey: .kind)
+            try c.encode(layer, forKey: .layer)
+            try c.encode(x, forKey: .x)
+            try c.encode(y, forKey: .y)
+            try c.encode(tolerance, forKey: .tolerance)
+            try c.encode(contiguous, forKey: .contiguous)
+            try c.encode(diagonal, forKey: .diagonal)
+        }
+    }
+}
+
+/// How a new selection joins what is selected.
+public enum CanvasSelectMode: String, Codable, Sendable, CaseIterable {
+    case replace, add, subtract, intersect
+
+    public var title: String {
+        switch self {
+        case .replace: "In place of what is selected"
+        case .add: "Added — ⇧"
+        case .subtract: "Taken away — ⌥"
+        case .intersect: "Where both are — ⇧⌥"
+        }
+    }
+}
+
 /// A change to a canvas, in Proton's shape (`proton_raster::Op`): applied
 /// whole or refused whole, one undo step.
 public enum CanvasOp: Encodable, Sendable, Equatable {
@@ -97,10 +152,26 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
     /// A line, rectangle or ellipse from pixel `from` to pixel `to` (x, y),
     /// drawn with a pencil's tip.
     case shape(layer: UInt32, kind: CanvasShape, from: [Int32], to: [Int32], filled: Bool = false, tip: CanvasTip, color: RGBA)
+    /// What is selected: `area` joined to it by `mode`, its edge feathered
+    /// by `feather` pixels; `smooth`, soft by a pixel (a paint canvas's).
+    case select(CanvasArea, mode: CanvasSelectMode = .replace, feather: UInt32 = 0, smooth: Bool = false)
+    /// What is selected of a layer (all of it with nothing) copied, to
+    /// paste; cut, cleared as well.
+    case copy(layer: UInt32, cut: Bool = false)
+    /// What was copied, as a new layer where it was, over `above`.
+    case paste(above: UInt32?)
+    /// What is selected of a layer moved, scaled or turned: each pixel of
+    /// `bounds` sampled from where `inverse` (1/65536) says it came from.
+    case transform(layer: UInt32, bounds: [Int32], inverse: [Int64], smooth: Bool)
+    /// The whole canvas turned clockwise by quarters, then mirrored across.
+    case orient(turns: UInt8, flip: Bool = false)
+    /// The canvas cut to a rectangle: left, top, width, height.
+    case crop([Int32])
 
     private enum Keys: String, CodingKey {
         case op, name, at, layer, to, opacity, blend, hidden, locked, alphaLock, rect, color, x, y, tolerance, contiguous
         case shape, from, filled, tip
+        case area, mode, feather, smooth, cut, above, frame, bounds, inverse, turns, flip
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -151,6 +222,33 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
             try c.encode(filled, forKey: .filled)
             try c.encode(tip, forKey: .tip)
             try c.encode(color, forKey: .color)
+        case let .select(area, mode, feather, smooth):
+            try c.encode("select", forKey: .op)
+            try c.encode(area, forKey: .area)
+            try c.encode(mode, forKey: .mode)
+            try c.encode(feather, forKey: .feather)
+            try c.encode(smooth, forKey: .smooth)
+        case let .copy(layer, cut):
+            try c.encode("copy", forKey: .op)
+            try c.encode(layer, forKey: .layer)
+            try c.encode(cut, forKey: .cut)
+        case .paste(let above):
+            try c.encode("paste", forKey: .op)
+            try c.encodeIfPresent(above, forKey: .above)
+            try c.encode(0, forKey: .frame)
+        case let .transform(layer, bounds, inverse, smooth):
+            try c.encode("transform", forKey: .op)
+            try c.encode(layer, forKey: .layer)
+            try c.encode(bounds, forKey: .bounds)
+            try c.encode(inverse, forKey: .inverse)
+            try c.encode(smooth, forKey: .smooth)
+        case let .orient(turns, flip):
+            try c.encode("orient", forKey: .op)
+            try c.encode(turns, forKey: .turns)
+            try c.encode(flip, forKey: .flip)
+        case .crop(let rect):
+            try c.encode("crop", forKey: .op)
+            try c.encode(rect, forKey: .rect)
         }
     }
 }

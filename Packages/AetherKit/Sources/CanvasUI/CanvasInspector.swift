@@ -72,8 +72,56 @@ private struct ToolSection: View {
     @Bindable var model: CanvasWorkspaceModel
 
     var body: some View {
+        if let moving = model.moving, moving.free {
+            transformRows
+        } else {
+            toolRows
+        }
+    }
+
+    /// ⌘T's: keep it, leave it, mirror it.
+    private var transformRows: some View {
+        PanelSection("Transform") {
+            hint("Drag inside to move it, a handle to scale it, outside to turn it. ⇧ scales it freely and turns it by 15°.")
+            HStack(spacing: 6) {
+                Button("Keep it") { model.finishTransform() }
+                    .buttonStyle(.borderedProminent)
+                    .help("↩")
+                Button("Leave it") { model.leaveTransform() }
+                    .help("⎋")
+                Spacer()
+                Button { model.mirrorMoving(across: true) } label: { Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right") }
+                    .help("Mirror it across")
+                    .accessibilityLabel("Mirror it across")
+                Button { model.mirrorMoving(across: false) } label: { Image(systemName: "arrow.up.and.down.righttriangle.up.righttriangle.down") }
+                    .help("Mirror it down")
+                    .accessibilityLabel("Mirror it down")
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var toolRows: some View {
         PanelSection(model.tool.title) {
             switch model.tool {
+            case .select:
+                HStack(spacing: 8) {
+                    Text("Shape").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 92, alignment: .leading)
+                    Picker("Shape", selection: $model.selectShape) {
+                        ForEach(CanvasSelectShape.allCases, id: \.self) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                    }
+                    .labelsHidden()
+                    .controlSize(.small)
+                }
+                selectRows
+            case .wand:
+                slider("Tolerance", value: $model.wandTolerance, range: 0...255, shown: "\(model.wandTolerance)")
+                Toggle("Only what touches it", isOn: $model.wandContiguous).toggleStyle(.checkbox).font(.aeBody)
+                Toggle("Across corners too", isOn: $model.wandDiagonal).toggleStyle(.checkbox).font(.aeBody)
+                    .disabled(!model.wandContiguous)
+                selectRows
+            case .move:
+                hint("Drag to move what is selected — all of the layer when nothing is. ⌘T scales and turns it.")
             case .pick:
                 hint("Click the canvas to take its colour. ⌥-click does it with any tool.")
             case .fill:
@@ -97,6 +145,20 @@ private struct ToolSection: View {
                 }
             }
         }
+    }
+
+    /// How a selection joins what is selected, and its feather.
+    @ViewBuilder private var selectRows: some View {
+        HStack(spacing: 8) {
+            Text("Joins").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 92, alignment: .leading)
+            Picker("Joins", selection: $model.selectMode) {
+                ForEach(CanvasSelectMode.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+        }
+        slider("Feather", value: $model.feather, range: 0...250, shown: "\(model.feather) px")
+        hint("⌘A selects all, ⌘D nothing, ⇧⌘I the rest. ⌫ clears it; ⌘C, ⌘X and ⌘V copy, cut and paste.")
     }
 
     @ViewBuilder private var tipRows: some View {

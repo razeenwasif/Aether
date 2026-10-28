@@ -6,8 +6,8 @@ import DiffuseUI
 import SwiftUI
 
 /// The menu bar, for the workspace on screen. Undo and Redo go to the flow
-/// or the canvas unless a text field has the keys, so ⌘Z still undoes
-/// typing in a prompt.
+/// or the canvas, and Cut, Copy, Paste and Select All to the canvas, unless
+/// a text field has the keys, so ⌘Z still undoes typing in a prompt.
 public struct AetherCommands: Commands {
     let model: AppModel
 
@@ -60,6 +60,27 @@ public struct AetherCommands: Commands {
             Button("Redo") { textHasKeys ? send("redo:") : (onCanvas ? canvas.redo() : diffuse.editor?.redo()) }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
         }
+        CommandGroup(replacing: .pasteboard) {
+            Button("Cut") { pasteboard("cut:") { canvas.copy(cut: true) } }
+                .keyboardShortcut("x")
+            Button("Copy") { pasteboard("copy:") { canvas.copy() } }
+                .keyboardShortcut("c")
+            Button("Paste") { pasteboard("paste:") { canvas.paste() } }
+                .keyboardShortcut("v")
+            Button("Delete") { pasteboard("delete:") { canvas.clearSelected() } }
+            Button("Select All") {
+                if model.active == .diffuse, diffuse.stage == .graph, !textHasKeys { diffuse.selectAll() } else { pasteboard("selectAll:") { canvas.selectAll() } }
+            }
+            .keyboardShortcut("a")
+            if onCanvas {
+                Button("Select Nothing") { canvas.selectNothing() }
+                    .keyboardShortcut("d")
+                    .disabled(canvas.document == nil)
+                Button("Select the Rest") { canvas.invertSelection() }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                    .disabled(canvas.document == nil)
+            }
+        }
         CommandGroup(after: .pasteboard) {
             if model.active == .diffuse {
                 Divider()
@@ -89,6 +110,21 @@ public struct AetherCommands: Commands {
                 .disabled(!onCanvas || canvas.document == nil)
             Button("Remove the Layer") { canvas.removeLayer() }
                 .disabled(!onCanvas || canvas.document == nil)
+            Divider()
+            Button("Free Transform") { canvas.startTransform(free: true) }
+                .keyboardShortcut("t")
+                .disabled(!onCanvas || canvas.document == nil)
+            Button("Crop to the Selection") { canvas.cropToSelection() }
+                .disabled(!onCanvas || canvas.document?.selected == nil)
+            Menu("Turn and Mirror") {
+                Button("Turn Left") { canvas.turn(quarters: 3) }
+                Button("Turn Right") { canvas.turn(quarters: 1) }
+                Button("Turn Round") { canvas.turn(quarters: 2) }
+                Divider()
+                Button("Mirror Across") { canvas.mirror(across: true) }
+                Button("Mirror Down") { canvas.mirror(across: false) }
+            }
+            .disabled(!onCanvas || canvas.document == nil)
             Divider()
             Button("All Canvases") { canvas.close() }
                 .disabled(!onCanvas || canvas.document == nil)
@@ -136,5 +172,11 @@ public struct AetherCommands: Commands {
 
     private func send(_ action: String) {
         NSApp.sendAction(Selector(action), to: nil, from: nil)
+    }
+
+    /// An Edit command for the canvas open, unless a text field has the
+    /// keys or the canvas isn't on screen: then to whatever has them.
+    private func pasteboard(_ action: String, canvas then: () -> Void) {
+        if onCanvas, canvas.document != nil, !textHasKeys { then() } else { send(action) }
     }
 }

@@ -18,9 +18,15 @@ public final class CanvasDocument {
     @ObservationIgnored public let pixels: CanvasPixels
     /// Bumped whenever pixels change, so a view knows to draw again.
     public private(set) var drawn = 0
+    /// The edges of what is selected, for the marching ants: segments along
+    /// pixels' sides, x0, y0, x1, y1 each. Empty when nothing is.
+    public private(set) var outline: [Int32] = []
+    /// The rectangle round what is selected, in canvas pixels.
+    public private(set) var selected: CGRect?
 
     @ObservationIgnored let editor: CanvasEditor
     @ObservationIgnored private let encoder = JSONEncoder()
+    @ObservationIgnored private var selectionVersion = UInt64.max
 
     private init(editor: CanvasEditor, url: URL) throws {
         self.editor = editor
@@ -29,6 +35,7 @@ public final class CanvasDocument {
         self.state = state
         pixels = CanvasPixels(width: Int(state.width), height: Int(state.height))
         layAll()
+        readSelection()
     }
 
     /// A new canvas, not written until saved.
@@ -142,6 +149,35 @@ public final class CanvasDocument {
     /// Everything laid together as a PNG.
     public func png() throws -> Data { try editor.png() }
 
+    // MARK: Selections, moving pixels, the clipboard
+
+    /// What is selected of a layer — all of it, with nothing selected — as
+    /// a picture and the rectangle it came from, to be moved. None when
+    /// there is nothing there or the layer is locked.
+    public func lift(_ layer: UInt32) -> (rect: CGRect, image: CGImage)? {
+        guard let lifted = editor.lift(layer: layer),
+              let image = CanvasPixels.image(lifted.pixels, width: Int(lifted.width), height: Int(lifted.height)) else { return nil }
+        return (CGRect(x: Int(lifted.x), y: Int(lifted.y), width: Int(lifted.width), height: Int(lifted.height)), image)
+    }
+
+    /// What was last copied, as a PNG of the part it covers.
+    public func clipPNG() -> Data? { editor.clipPng() }
+
+    /// A picture (PNG, PSD or Aseprite) brought in as layers over `above`,
+    /// one undo step. What was left out of it is in the answer's `notes`.
+    @discardableResult
+    public func bringIn(_ bytes: Data, named name: String, above: UInt32?) -> Applied? {
+        do {
+            let applied = try JSONDecoder().decode(Applied.self, from: Data(editor.bringIn(bytes: bytes, name: name, above: above).utf8))
+            refusal = nil
+            refresh()
+            return applied
+        } catch {
+            refusal = Self.describe(error)
+            return nil
+        }
+    }
+
     // MARK: Reading back
 
     /// What the core says the canvas is now, and its pixels laid again.
@@ -152,7 +188,17 @@ public final class CanvasDocument {
             }
             state = fresh
         }
+        readSelection()
         lay()
+    }
+
+    /// The selection's edges again, when the core says they may have moved.
+    private func readSelection() {
+        let version = editor.selectionVersion()
+        guard version != selectionVersion else { return }
+        selectionVersion = version
+        outline = editor.outline()
+        selected = editor.selected().map { CGRect(x: Int($0[0]), y: Int($0[1]), width: Int($0[2]), height: Int($0[3])) }
     }
 
     /// Lay together what changed and hand it to the pixels.
@@ -175,6 +221,8 @@ public final class CanvasDocument {
         public var changed: Bool
         public var meta: Bool
         public var made: UInt32?
+        /// What a picture brought in left out.
+        public var notes: [String]?
     }
 
     public static func describe(_ error: Error) -> String {

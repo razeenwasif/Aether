@@ -684,6 +684,37 @@ The user took the PI's recommendation on all five.
 - **Not checked:** a pen's pressure (no tablet was used), shapes and fill in the app (covered by tests), and very large Paint canvases (4096², 4096 tile layers) for speed.
 - **Not ported yet:** selections (rect, ellipse, lasso, wand), move and transform, copy and paste, the palette editor, animation (frames, onion skin, tags), the pixel grid (`⇧G`), mirror (`m`), and dropping a picture on an open canvas as a layer.
 
+**2026-10-28 · Canvas: selections, move and transform, copy and paste.** The user asked to "continue Canvas: selections, move and transform, and copy and paste". The port follows Proton's commit `102b454` (canvas P4) and its window code as it stood before `9111812` (`raster.js`, `raster-transform.js`), read from git history: the user's Proton checkout is on another branch and was left alone.
+
+- **The engine already had it all:** `Select` (rect, ellipse, lasso, wand; replace, add, subtract, intersect; feather; soft by a pixel on a Paint canvas), `Clear`, `Copy` and `Paste`, `Transform` (an inverse in 1/65536, sampled nearest on Pixel and bilinear on Paint, the selection carried with it), `Orient`, `Crop`, and `bring_in` for pictures as layers. Every edit already keeps to the selection.
+- **The bridge (`CanvasEditor`) gained:**
+  - `selection_version` and `outline`, which gives the edges as segments for the marching ants.
+  - `selected`, the bounds, for crop.
+  - `lift`, which cuts out what is selected of a layer (all of it with nothing selected), premultiplied, for drawing while it moves.
+  - `clip_png`, which gives what was copied, cut to its bounds, for the system clipboard.
+  - `bring_in`, which takes a PNG, PSD or Aseprite file as layers over the current one, one undo step. A lone picture smaller than the canvas goes in its middle, as in Proton.
+- **Swift:**
+  - `CanvasOp` gained `select`, `copy`, `paste`, `transform`, `orient` and `crop`, and there are `CanvasArea` and `CanvasSelectMode`.
+  - `CanvasTransform` is Proton's transform arithmetic, ported: drag a handle, the opposite corner stays, in proportion unless ⇧; sides scale one way; turns snap to 15° with ⇧. Each transform becomes one op, made once in the window.
+  - The model gained the select tool (`s`, again for the next shape), the wand (`w`) and move (`v`), plus ⌘T, ↩ to keep and ⎋ to leave. Undo while moving leaves the move, and any other edit, tool change, save or leave keeps it first, as in Proton.
+  - ⌫ clears what is selected. ⌘A, ⌘D and ⇧⌘I select all, nothing and the rest.
+  - On the stage, the ants march by animating the dash phase in stage points, so they stay one point wide at any zoom. A selection being dragged shows its shape. What is being moved is drawn as one layer with the transform's affine matrix over the cleared layer (a preview), with a box and, with ⌘T, eight handles and system resize cursors.
+  - The inspector gained the select and wand settings (shape, joins, feather, tolerance, contiguous, diagonal) and a Transform section (Keep it, Leave it, mirror across or down).
+  - The Edit menu's Cut, Copy, Paste, Delete and Select All go to the canvas when it's on screen and no text field has the keys, and to the focused field otherwise. Select All also reaches Diffuse's graph now: `DiffuseWorkspaceModel.selectAll()` existed but had no menu.
+  - The Canvas menu gained Free Transform, Crop to the Selection, and Turn and Mirror.
+- **The clipboard, as Proton does it:** ⌘C or ⌘X writes a PNG of what was copied. ⌘V pastes the canvas's own copy as a layer where it was when the clipboard still holds it (by change count). Otherwise it brings in another app's picture as a new layer: a PNG, a TIFF, or an image file copied in the Finder. Dropping a picture on an open canvas does the same. JPEG, TIFF, HEIC and other formats are turned into PNG first, which also fixes Make a Canvas of a Picture for JPEGs: the engine reads only PNG, PSD and Aseprite.
+- **Tests:** the bridge has 2 more: outline, lift and move with the selection carried and undone; a copy as a PNG cut to its bounds, and a picture brought in, centred, one undo step. Swift has 7 more:
+  - 4 for the transform arithmetic: a whole move's inverse, a corner scale in proportion and free, a snapped quarter turn swapping the sides, finding handles.
+  - 3 for the model, on a private pasteboard: select, move, leave and ⌘T as one step each; copy, paste where it was, another app's picture brought in, and cut; crop, turn and the keys.
+  - 156 Rust and 80 Swift tests pass.
+- **Checked in the app,** on `image_0007` (Paint, 1024²), closed without saving:
+  - A rectangle dragged with the select tool, with its ants; Select All's ants round the canvas.
+  - The move tool dragging the lighthouse, leaving its place clear, the selection with it.
+  - ⌘T's handles, a corner dragged to scale it up and a drag outside to turn it, then Keep it. What was kept matched what was shown, and the selection turned with it.
+  - The automation's drag sent an extra click at its end, which selected nothing (a click selects nothing, as in Proton). Undo showed the rectangle had been made.
+- **Not checked in the app:** copy and paste, so as not to overwrite the user's clipboard (the tests use a private one). Also not checked: the lasso, the wand, dropping a picture on an open canvas, crop and turn (all covered by tests), and moving on a 4096² canvas.
+- **Not ported yet:** the palette editor, animation (frames, onion skin, tags), the pixel grid (`⇧G`), mirror drawing (`m`), resizing the canvas, and Proton's Make panel (generators and filters).
+
 Not yet:
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
@@ -692,7 +723,7 @@ Not yet:
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with Send to Canvas (§10a). The other four workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, and Send to Canvas (§10a). The other four workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, move to Claude. They're due before M1, since nothing built so far depends on them.
@@ -703,6 +734,6 @@ Not yet:
 3. ~~**Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here~~: done, see §10a.
 4. ~~**Mask painting**~~: done, see §10a. With it, Diffuse matches Proton's window, apart from Send to Canvas and Send to Game, which wait on those workspaces.
 
-Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import.
+Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import. ~~Canvas selections, move and transform, copy and paste~~: done, see §10a.
 
-**Next, proposed:** the rest of Canvas (selections, move and transform, copy and paste, the palette, the pixel grid and mirror, then animation), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.
+**Next, proposed:** the rest of Canvas (the palette editor, the pixel grid and mirror drawing, resize, then animation), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.

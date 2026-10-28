@@ -440,6 +440,10 @@ private struct CanvasDock: View {
                 toolButton(tool)
             }
             Divider().frame(height: 20).padding(.horizontal, 4)
+            ForEach([CanvasTool.select, .wand, .move], id: \.self) { tool in
+                toolButton(tool)
+            }
+            Divider().frame(height: 20).padding(.horizontal, 4)
             ColorWell(model: model).padding(.horizontal, 4)
             Divider().frame(height: 20).padding(.horizontal, 4)
             IconButton("arrow.uturn.backward", label: "Undo \(model.document?.state.undo ?? "") (⌘Z)", action: model.undo)
@@ -456,7 +460,10 @@ private struct CanvasDock: View {
 
     private func toolButton(_ tool: CanvasTool) -> some View {
         let key = tool == drawingTool ? "b" : tool == otherTool ? "n" : tool.key
-        return IconButton(tool.symbol, label: "\(tool.title) (\(key))", isOn: model.tool == tool) { model.tool = tool }
+        // The select tool shows the shape it makes; s again steps on.
+        let symbol = tool == .select ? model.selectShape.symbol : tool.symbol
+        let title = tool == .select ? "Select — \(model.selectShape.title.lowercased()) (s; s again for the next shape)" : "\(tool.title) (\(key))"
+        return IconButton(symbol, label: title, isOn: model.tool == tool) { model.tool = tool }
     }
 }
 

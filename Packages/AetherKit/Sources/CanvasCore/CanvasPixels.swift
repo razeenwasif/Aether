@@ -85,7 +85,12 @@ public final class CanvasPixels: @unchecked Sendable {
                 }
             }
         }
-        guard let provider = CGDataProvider(data: Data(bytes) as CFData) else { return nil }
+        return Self.image(Data(bytes), width: w, height: h)
+    }
+
+    /// Premultiplied RGBA, row by row, as a picture.
+    public static func image(_ bytes: Data, width w: Int, height h: Int) -> CGImage? {
+        guard let provider = CGDataProvider(data: bytes as CFData) else { return nil }
         return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)

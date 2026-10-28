@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 
 /// What the pointer does on the canvas.
 public enum CanvasTool: String, CaseIterable, Identifiable, Sendable {
-    case brush, pencil, eraser, fill, pick, line, rect, ellipse
+    case brush, pencil, eraser, fill, pick, line, rect, ellipse, select, wand, move
 
     public var id: String { rawValue }
 
@@ -22,6 +22,9 @@ public enum CanvasTool: String, CaseIterable, Identifiable, Sendable {
         case .line: "Line"
         case .rect: "Rectangle"
         case .ellipse: "Ellipse"
+        case .select: "Select"
+        case .wand: "Magic wand"
+        case .move: "Move"
         }
     }
 
@@ -35,6 +38,9 @@ public enum CanvasTool: String, CaseIterable, Identifiable, Sendable {
         case .line: "line.diagonal"
         case .rect: "rectangle"
         case .ellipse: "circle"
+        case .select: "rectangle.dashed"
+        case .wand: "wand.and.stars"
+        case .move: "arrow.up.and.down.and.arrow.left.and.right"
         }
     }
 
@@ -49,6 +55,9 @@ public enum CanvasTool: String, CaseIterable, Identifiable, Sendable {
         case .line: "l"
         case .rect: "r"
         case .ellipse: "o"
+        case .select: "s"
+        case .wand: "w"
+        case .move: "v"
         }
     }
 
@@ -60,6 +69,40 @@ public enum CanvasTool: String, CaseIterable, Identifiable, Sendable {
         default: nil
         }
     }
+}
+
+/// The shapes the select tool makes, in the order s steps through them.
+public enum CanvasSelectShape: String, CaseIterable, Sendable {
+    case rect, ellipse, lasso
+
+    public var title: String {
+        switch self {
+        case .rect: "Rectangle"
+        case .ellipse: "Ellipse"
+        case .lasso: "Lasso"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .rect: "rectangle.dashed"
+        case .ellipse: "circle.dashed"
+        case .lasso: "lasso"
+        }
+    }
+}
+
+/// What is selected of a layer, lifted and being moved — scaled and turned
+/// too when `free` — until it is kept as one op or left.
+public struct CanvasMoving {
+    public var layer: UInt32
+    /// Where it was lifted from, in canvas pixels.
+    public var rect: CGRect
+    public var transform: CanvasTransform
+    /// ⌘T's: with handles, and kept with ↩ rather than when let go.
+    public var free: Bool
+    /// What was lifted, premultiplied.
+    public var image: CGImage
 }
 
 /// Where the canvas sits in the stage: points per canvas pixel, and where
@@ -116,7 +159,10 @@ public struct CanvasFile: Identifiable, Hashable, Sendable {
 @Observable
 public final class CanvasWorkspaceModel {
     public private(set) var document: CanvasDocument?
-    public var tool: CanvasTool = .brush
+    public var tool: CanvasTool = .brush {
+        // Another tool keeps what is being moved, as Proton does.
+        didSet { if tool != oldValue { finishTransform() } }
+    }
     public var color = RGBA(24, 24, 28)
     /// Colours used lately, newest first.
     public private(set) var recent: [RGBA] = []
@@ -126,6 +172,22 @@ public final class CanvasWorkspaceModel {
     public var shapeFilled = false
     public var tolerance: UInt8 = 0
     public var contiguous = true
+    /// The select tool's shape; how a selection joins what is selected,
+    /// unless ⇧ or ⌥ say; and how many pixels its edge is feathered by.
+    public var selectShape: CanvasSelectShape = .rect
+    public var selectMode: CanvasSelectMode = .replace
+    public var feather: UInt32 = 0
+    /// The magic wand's own.
+    public var wandTolerance: UInt8 = 16
+    public var wandContiguous = true
+    public var wandDiagonal = false
+    /// What is being moved, until it is kept or left.
+    public internal(set) var moving: CanvasMoving?
+    /// The system clipboard's change count when this canvas last put its
+    /// copy there: pasting it again pastes the copy where it was.
+    @ObservationIgnored private var ownClipboard: Int?
+    /// The system's clipboard; tests use one of their own.
+    @ObservationIgnored public var clipboard = NSPasteboard.general
     /// The layer drawn on.
     public var layer: UInt32?
     public var viewport = CanvasViewport()
@@ -237,7 +299,7 @@ public final class CanvasWorkspaceModel {
         leave {
             let stem = (name as NSString).deletingPathExtension
             do {
-                let doc = try CanvasDocument.importing(bytes, named: name, at: self.unique(stem.isEmpty ? "Picture" : stem))
+                let doc = try CanvasDocument.importing(CanvasPicture.readable(bytes), named: name, at: self.unique(stem.isEmpty ? "Picture" : stem))
                 if keep { try doc.save() }
                 self.show(doc)
                 self.refreshList()
@@ -252,6 +314,7 @@ public final class CanvasWorkspaceModel {
 
     public func save() {
         guard let document else { return }
+        finishTransform()
         do {
             try document.save()
             refreshList()
@@ -262,6 +325,7 @@ public final class CanvasWorkspaceModel {
 
     public func saveAs() {
         guard let document else { return }
+        finishTransform()
         let panel = NSSavePanel()
         panel.title = "Save the Canvas As"
         panel.directoryURL = folder
@@ -279,6 +343,7 @@ public final class CanvasWorkspaceModel {
     /// Everything laid together, written as a PNG.
     public func exportPNG() {
         guard let document else { return }
+        finishTransform()
         let panel = NSSavePanel()
         panel.title = "Export a PNG"
         panel.allowedContentTypes = [.png]
@@ -302,6 +367,7 @@ public final class CanvasWorkspaceModel {
 
     /// Do `then`, but first ask what to do with changes not saved.
     func leave(then: @escaping () -> Void) {
+        finishTransform()
         guard let document, document.state.dirty else { return then() }
         leaving = then
     }
@@ -319,6 +385,7 @@ public final class CanvasWorkspaceModel {
     }
 
     private func show(_ doc: CanvasDocument) {
+        moving = nil
         document = doc
         layer = doc.state.layers.last?.id
         if doc.state.preset == .pixel, tool == .brush { tool = .pencil }
@@ -385,14 +452,226 @@ public final class CanvasWorkspaceModel {
         change(.setLayer(id, name: name, opacity: opacity, blend: blend, hidden: hidden, locked: locked, alphaLock: alphaLock), label: label)
     }
 
-    /// Apply a change, saying why when it is refused.
+    /// Apply a change, saying why when it is refused. What is being moved is
+    /// kept first: it is what the person sees.
     public func change(_ op: CanvasOp, label: String) {
         guard let document else { return }
+        finishTransform()
         if document.apply(op, label: label) == nil { notice = document.refusal }
     }
 
-    public func undo() { document?.undo() }
-    public func redo() { document?.redo() }
+    /// Undo; while something is being moved, that move is left instead.
+    public func undo() {
+        if moving != nil { return leaveTransform() }
+        document?.undo()
+    }
+
+    public func redo() {
+        if moving != nil { return leaveTransform() }
+        document?.redo()
+    }
+
+    // MARK: Selections
+
+    /// A selection made: `area` joined to what is selected by `mode`.
+    public func select(_ area: CanvasArea, mode: CanvasSelectMode = .replace) {
+        guard let document else { return }
+        let label = switch area {
+        case .all: "Select all"
+        case .nothing: "Select nothing"
+        case .invert: "Select the rest"
+        default: "Select"
+        }
+        change(.select(area, mode: mode, feather: feather, smooth: document.state.preset == .paint), label: label)
+    }
+
+    public func selectAll() { select(.all) }
+    public func selectNothing() { select(.nothing) }
+    public func invertSelection() { select(.invert) }
+
+    /// How a selection joins what is selected: ⇧ adds, ⌥ takes away, both
+    /// keep only where both are; otherwise as the inspector says.
+    func mode(shift: Bool, option: Bool) -> CanvasSelectMode {
+        shift && option ? .intersect : shift ? .add : option ? .subtract : selectMode
+    }
+
+    /// A selection dragged from `a` to `b` (canvas points) — or a lasso
+    /// through `points` — made. A click selects nothing, as Proton's does.
+    public func selectDragged(from a: CGPoint, to b: CGPoint, lasso points: [CGPoint], mode: CanvasSelectMode) {
+        let small = hypot((b.x - a.x) * viewport.scale, (b.y - a.y) * viewport.scale) < 3
+        if selectShape == .lasso {
+            if points.count >= 3, !small {
+                select(.lasso(points.flatMap { [Int32(($0.x * 256).rounded()), Int32(($0.y * 256).rounded())] }), mode: mode)
+            } else if mode == .replace {
+                select(.nothing)
+            }
+            return
+        }
+        guard !small else {
+            if mode == .replace { select(.nothing) }
+            return
+        }
+        let rect = Self.pixelRect(a, b)
+        select(selectShape == .ellipse ? .ellipse(rect) : .rect(rect), mode: mode)
+    }
+
+    /// The magic wand at a canvas point, on the layer drawn on.
+    public func selectLike(at c: CGPoint, mode: CanvasSelectMode) {
+        guard let layer = currentLayer else { return }
+        select(.wand(layer: layer.id, x: Int32(floor(c.x)), y: Int32(floor(c.y)), tolerance: wandTolerance, contiguous: wandContiguous, diagonal: wandDiagonal), mode: mode)
+    }
+
+    /// The whole pixels from one point's to another's, both in: left, top,
+    /// width, height.
+    static func pixelRect(_ a: CGPoint, _ b: CGPoint) -> [Int32] {
+        let (x0, y0) = (floor(min(a.x, b.x)), floor(min(a.y, b.y)))
+        let (x1, y1) = (floor(max(a.x, b.x)), floor(max(a.y, b.y)))
+        return [Int32(x0), Int32(y0), Int32(x1 - x0 + 1), Int32(y1 - y0 + 1)]
+    }
+
+    /// ⌫: what is selected of the layer cleared — all of it, with nothing
+    /// selected.
+    public func clearSelected() {
+        guard let layer = currentLayer else { return }
+        change(.clear(layer: layer.id), label: "Clear")
+    }
+
+    // MARK: The clipboard
+
+    /// What is selected of the layer — all of it, with nothing selected —
+    /// copied, and put on the system's clipboard as a PNG; cut, cleared too.
+    public func copy(cut: Bool = false) {
+        guard let document, let layer = currentLayer else { return }
+        finishTransform()
+        guard document.apply(.copy(layer: layer.id, cut: cut), label: cut ? "Cut" : "Copy") != nil else {
+            notice = document.refusal
+            return
+        }
+        guard let png = document.clipPNG() else {
+            notice = "There’s nothing there to copy."
+            return
+        }
+        let board = clipboard
+        board.clearContents()
+        board.setData(png, forType: .png)
+        ownClipboard = board.changeCount
+    }
+
+    /// ⌘V: a picture another app copied, brought in as a layer — or, when
+    /// the clipboard holds this canvas's own copy or no picture, that copy
+    /// pasted as a layer where it was.
+    public func paste() {
+        guard let document else { return }
+        finishTransform()
+        let board = clipboard
+        if board.changeCount != ownClipboard, let (bytes, name) = CanvasPicture.on(board) {
+            return bringIn(bytes, named: name)
+        }
+        if let made = document.apply(.paste(above: currentLayer?.id), label: "Paste")?.made {
+            layer = made
+        } else {
+            notice = document.refusal == "nothing is copied" ? "Nothing’s copied yet: select something and copy it (⌘C)." : document.refusal
+        }
+    }
+
+    /// A picture brought in as a layer over the one drawn on — pasted, or
+    /// dropped on the canvas — and drawn on next.
+    public func bringIn(_ bytes: Data, named name: String) {
+        guard let document else { return }
+        finishTransform()
+        let stem = (name as NSString).deletingPathExtension
+        guard let applied = document.bringIn(CanvasPicture.readable(bytes), named: stem.isEmpty ? "Pasted" : stem, above: currentLayer?.id) else {
+            notice = document.refusal
+            return
+        }
+        if let made = applied.made { layer = made }
+        if let notes = applied.notes, !notes.isEmpty { notice = notes.joined(separator: "; ") }
+    }
+
+    // MARK: Moving, scaling and turning
+
+    /// What is selected of the layer — all of it, with nothing selected —
+    /// lifted to be moved: shown where it is going, what is left of the
+    /// layer under it. `free`, with handles to scale and turn it (⌘T).
+    /// Whether there was anything to lift.
+    @discardableResult
+    public func startTransform(free: Bool) -> Bool {
+        if var moving {
+            if free, !moving.free {
+                moving.free = true
+                self.moving = moving
+            }
+            return true
+        }
+        guard let document, let layer = currentLayer else { return false }
+        guard !layer.locked else {
+            notice = "\(layer.name) is locked."
+            return false
+        }
+        guard let lifted = document.lift(layer.id) else {
+            notice = "There’s nothing on \(layer.name) to move."
+            return false
+        }
+        document.preview(.clear(layer: layer.id))
+        moving = CanvasMoving(layer: layer.id, rect: lifted.rect, transform: CanvasTransform(lifted.rect), free: free, image: lifted.image)
+        return true
+    }
+
+    /// What is being moved kept, as one undo step: a move by whole pixels,
+    /// or a transform sampled by the nearest pixel on a pixel canvas and
+    /// the four about it on a painting.
+    public func finishTransform() {
+        guard let moving, let document else { return }
+        self.moving = nil
+        document.clearPreview()
+        let t = moving.transform
+        guard !t.isIdentity else { return }
+        let label = t.isWholeMove ? "Move" : "Transform"
+        let op: CanvasOp = if let made = t.op(moving.rect, width: document.width, height: document.height) {
+            .transform(layer: moving.layer, bounds: made.bounds, inverse: made.inverse, smooth: document.state.preset == .paint && !t.isWholeMove)
+        } else {
+            // Moved wholly off the canvas, or squashed to nothing: gone.
+            .clear(layer: moving.layer)
+        }
+        if document.apply(op, label: label) == nil { notice = document.refusal }
+    }
+
+    /// What is being moved left: everything as it was.
+    public func leaveTransform() {
+        guard moving != nil else { return }
+        moving = nil
+        document?.clearPreview()
+    }
+
+    /// What is being moved mirrored across, or down.
+    public func mirrorMoving(across: Bool) {
+        guard var moving else { return }
+        if across { moving.transform.sx = -moving.transform.sx } else { moving.transform.sy = -moving.transform.sy }
+        self.moving = moving
+    }
+
+    // MARK: The whole canvas
+
+    /// The canvas turned a quarter clockwise or back, or half round.
+    public func turn(quarters: UInt8) {
+        change(.orient(turns: quarters), label: quarters == 1 ? "Turn right" : quarters == 3 ? "Turn left" : "Turn round")
+        fit()
+    }
+
+    /// The canvas mirrored across (left to right) or down.
+    public func mirror(across: Bool) {
+        change(across ? .orient(turns: 0, flip: true) : .orient(turns: 2, flip: true), label: across ? "Mirror across" : "Mirror down")
+    }
+
+    /// The canvas cut to the rectangle round what is selected.
+    public func cropToSelection() {
+        guard let rect = document?.selected else {
+            notice = "Select something to crop to."
+            return
+        }
+        change(.crop([Int32(rect.minX), Int32(rect.minY), Int32(rect.width), Int32(rect.height)]), label: "Crop")
+        fit()
+    }
 
     // MARK: Colour
 
@@ -452,6 +731,20 @@ public final class CanvasWorkspaceModel {
         guard mods.isEmpty, let document, let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
         let shift = event.modifierFlags.contains(.shift)
         let pixel = document.state.preset == .pixel
+        // ↩ keeps what is being moved, ⎋ leaves it; ⌫ clears what is selected.
+        let code = event.keyCode
+        if moving != nil, code == 36 || code == 76 {
+            finishTransform()
+            return true
+        }
+        if moving != nil, code == 53 {
+            leaveTransform()
+            return true
+        }
+        if code == 51 || code == 117 {
+            clearSelected()
+            return true
+        }
         switch key {
         case " ":
             panning = true
@@ -463,6 +756,15 @@ public final class CanvasWorkspaceModel {
         case "l": tool = .line
         case "r": tool = .rect
         case "o": tool = .ellipse
+        case "s":
+            // Again, the next shape: a rectangle, an ellipse, a lasso.
+            if tool == .select {
+                let all = CanvasSelectShape.allCases
+                selectShape = all[(all.firstIndex(of: selectShape)! + 1) % all.count]
+            }
+            tool = .select
+        case "w": tool = .wand
+        case "v": tool = .move
         case "[": resize(smaller: true)
         case "]": resize(smaller: false)
         case "p": pixelPerfect.toggle()
@@ -506,6 +808,32 @@ public final class CanvasWorkspaceModel {
 
     static func describe(_ error: Error) -> String {
         CanvasDocument.describe(error)
+    }
+}
+
+/// Pictures from outside — the clipboard, a file dropped — as the core
+/// reads them: PNG, Photoshop and Aseprite as they are, anything else
+/// macOS can open (a JPEG, a TIFF, a screenshot) made a PNG.
+enum CanvasPicture {
+    static func readable(_ bytes: Data) -> Data {
+        let png = bytes.starts(with: [0x89, 0x50, 0x4E, 0x47])
+        let psd = bytes.starts(with: Array("8BPS".utf8))
+        let aseprite = bytes.count >= 6 && bytes[bytes.startIndex + 4] == 0xE0 && bytes[bytes.startIndex + 5] == 0xA5
+        guard !png, !psd, !aseprite, let rep = NSBitmapImageRep(data: bytes), let made = rep.representation(using: .png, properties: [:]) else { return bytes }
+        return made
+    }
+
+    /// A picture on the clipboard and a name for it: an image file copied
+    /// in the Finder, or a picture copied in another app.
+    static func on(_ board: NSPasteboard) -> (Data, String)? {
+        let kinds: Set<String> = ["png", "jpg", "jpeg", "psd", "aseprite", "ase", "tif", "tiff", "gif", "heic", "webp", "bmp"]
+        if let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           let url = urls.first(where: { kinds.contains($0.pathExtension.lowercased()) }), let bytes = try? Data(contentsOf: url) {
+            return (bytes, url.lastPathComponent)
+        }
+        if let png = board.data(forType: .png) { return (png, "Pasted") }
+        if let tiff = board.data(forType: .tiff) { return (tiff, "Pasted") }
+        return nil
     }
 }
 

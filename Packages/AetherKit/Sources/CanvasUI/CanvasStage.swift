@@ -15,33 +15,48 @@ struct CanvasStage: NSViewRepresentable {
     }
 
     func updateNSView(_ view: CanvasStageView, context: Context) {
-        // Read so a change draws again: new pixels, the view, the tool.
+        // Read so a change draws again: new pixels, the view, the tool, what
+        // is selected and what is being moved.
         _ = document.drawn
-        _ = (model.tool, model.brush.size, model.tip.size, model.panning)
+        _ = (model.tool, model.brush.size, model.tip.size, model.panning, model.selectShape)
+        _ = (document.outline, model.moving?.transform, model.moving?.free)
         view.show(model.viewport)
         view.refreshTiles()
         view.toolChanged()
+        view.drawOverlays()
     }
 }
 
 /// The canvas's tiles as layers in canvas pixels under one layer that
 /// zooms and pans them, over a checkerboard that shows what is clear.
+/// Over them, in stage points: the marching ants round what is selected,
+/// a selection being dragged out, and the box round what is being moved.
 final class CanvasStageView: NSView {
     private let model: CanvasWorkspaceModel
     private let document: CanvasDocument
     private let world = CALayer()
     private let backdrop = CALayer()
     private let outline = CAShapeLayer()
+    /// What is being moved, drawn where the transform puts it.
+    private let floating = CALayer()
+    private let ants = Dashes(marching: true)
+    private let selecting = Dashes(marching: false)
+    private let box = CAShapeLayer()
+    private let grips = CAShapeLayer()
     private var tiles: [Int: CALayer] = [:]
     private var drag: Drag?
     private var tracking: NSTrackingArea?
     private var shown: CanvasViewport?
+    /// The outline and the view the ants were last drawn for.
+    private var antsFor: ([Int32], CanvasViewport)?
 
     private enum Drag {
         case stroke(label: String)
         case shape(CanvasShape, from: CGPoint, filled: Bool)
         case pan(from: CGPoint, offset: CGPoint)
         case pick
+        case select(from: CGPoint, to: CGPoint, points: [CGPoint], mode: CanvasSelectMode)
+        case transform(CanvasTransform.Handle, from: CGPoint, start: CanvasTransform)
     }
 
     /// No layer here animates: a canvas follows the pen.
@@ -71,10 +86,32 @@ final class CanvasStageView: NSView {
         outline.shadowOffset = .zero
         outline.actions = Self.still
         outline.isHidden = true
+        floating.actions = Self.still
+        floating.anchorPoint = .zero
+        floating.isHidden = true
+        box.fillColor = nil
+        box.strokeColor = NSColor.white.withAlphaComponent(0.9).cgColor
+        box.lineWidth = 1
+        box.shadowColor = NSColor.black.cgColor
+        box.shadowOpacity = 0.8
+        box.shadowRadius = 0.5
+        box.shadowOffset = .zero
+        grips.fillColor = NSColor.white.withAlphaComponent(0.95).cgColor
+        grips.strokeColor = NSColor.black.withAlphaComponent(0.7).cgColor
+        grips.lineWidth = 1
+        for overlay in [box, grips] {
+            overlay.actions = Self.still
+            overlay.isHidden = true
+        }
         layer?.addSublayer(backdrop)
         layer?.addSublayer(world)
+        ants.add(to: layer!)
+        selecting.add(to: layer!)
+        layer?.addSublayer(box)
+        layer?.addSublayer(grips)
         layer?.addSublayer(outline)
         buildTiles()
+        registerForDraggedTypes([.fileURL, .png, .tiff])
     }
 
     @available(*, unavailable)
@@ -115,8 +152,15 @@ final class CanvasStageView: NSView {
             world.addSublayer(tile)
             tiles[index] = tile
         }
+        // What is being moved stays over the tiles.
+        world.addSublayer(floating)
         filter()
         CATransaction.commit()
+        // A canvas turned or cropped: its backdrop and the ants again.
+        if let viewport = shown {
+            shown = nil
+            show(viewport)
+        }
     }
 
     /// The tiles the core laid again, shown.
@@ -157,7 +201,120 @@ final class CanvasStageView: NSView {
                                 width: CGFloat(document.width) * viewport.scale, height: CGFloat(document.height) * viewport.scale)
         filter()
         CATransaction.commit()
+        drawOverlays()
         if let at = window?.mouseLocationOutsideOfEventStream { place(outlineAt: convert(at, from: nil)) }
+    }
+
+    // MARK: What is selected, and what is being moved
+
+    /// The ants, the selection being dragged and what is being moved, for
+    /// the view as it is now.
+    func drawOverlays() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        drawAnts()
+        drawSelecting()
+        drawMoving()
+        CATransaction.commit()
+    }
+
+    /// The marching ants round what is selected — not while it is moved.
+    private func drawAnts() {
+        let segments = model.moving == nil ? document.outline : []
+        let viewport = model.viewport
+        if let last = antsFor, last.0 == segments, last.1 == viewport { return }
+        antsFor = (segments, viewport)
+        guard !segments.isEmpty else { return ants.path = nil }
+        let path = CGMutablePath()
+        var i = 0
+        while i + 3 < segments.count {
+            path.move(to: sharp(viewport.stagePoint(CGPoint(x: CGFloat(segments[i]), y: CGFloat(segments[i + 1])))))
+            path.addLine(to: sharp(viewport.stagePoint(CGPoint(x: CGFloat(segments[i + 2]), y: CGFloat(segments[i + 3])))))
+            i += 4
+        }
+        ants.path = path
+    }
+
+    /// A selection being dragged out, as the shape it will be.
+    private func drawSelecting() {
+        guard case let .select(from, to, points, _) = drag else { return selecting.path = nil }
+        let viewport = model.viewport
+        if model.selectShape == .lasso {
+            let path = CGMutablePath()
+            path.addLines(between: points.map(viewport.stagePoint))
+            path.closeSubpath()
+            selecting.path = path
+            return
+        }
+        let r = CanvasWorkspaceModel.pixelRect(from, to).map { CGFloat($0) }
+        let a = sharp(viewport.stagePoint(CGPoint(x: r[0], y: r[1])))
+        let rect = CGRect(x: a.x, y: a.y, width: (r[2] * viewport.scale).rounded(), height: (r[3] * viewport.scale).rounded())
+        selecting.path = model.selectShape == .ellipse ? CGPath(ellipseIn: rect, transform: nil) : CGPath(rect: rect, transform: nil)
+    }
+
+    /// What is being moved where the transform puts it, its box, and with
+    /// ⌘T its handles.
+    private func drawMoving() {
+        guard let moving = model.moving else {
+            floating.isHidden = true
+            floating.contents = nil
+            box.isHidden = true
+            grips.isHidden = true
+            return
+        }
+        let pixel = document.state.preset == .pixel
+        if (floating.contents as AnyObject?) !== moving.image { floating.contents = moving.image }
+        floating.bounds = CGRect(origin: .zero, size: moving.rect.size)
+        floating.position = .zero
+        floating.setAffineTransform(CGAffineTransform(translationX: moving.rect.minX, y: moving.rect.minY).concatenating(moving.transform.affine))
+        floating.magnificationFilter = pixel || model.viewport.scale >= 3 ? .nearest : .linear
+        floating.edgeAntialiasingMask = pixel ? [] : [.layerLeftEdge, .layerRightEdge, .layerTopEdge, .layerBottomEdge]
+        floating.allowsEdgeAntialiasing = !pixel
+        floating.isHidden = false
+
+        let viewport = model.viewport
+        let c = moving.transform.corners(moving.rect).map(viewport.stagePoint)
+        let path = CGMutablePath()
+        path.addLines(between: [c[0], c[1], c[3], c[2]])
+        path.closeSubpath()
+        box.path = path
+        box.isHidden = false
+        guard moving.free else { return grips.isHidden = true }
+        let squares = CGMutablePath()
+        for (_, at) in moving.transform.handles(moving.rect) {
+            let p = viewport.stagePoint(at)
+            squares.addRect(CGRect(x: p.x.rounded() - 3.5, y: p.y.rounded() - 3.5, width: 7, height: 7))
+        }
+        grips.path = squares
+        grips.isHidden = false
+    }
+
+    /// A point on a whole point and a half, so a one-point line is sharp.
+    private func sharp(_ p: CGPoint) -> CGPoint {
+        CGPoint(x: p.x.rounded() + 0.5, y: p.y.rounded() + 0.5)
+    }
+
+    /// The handle, inside or outside of what is being moved under a stage
+    /// point.
+    private func handle(at p: CGPoint) -> CanvasTransform.Handle? {
+        guard let moving = model.moving else { return nil }
+        guard moving.free else { return .move }
+        return moving.transform.hit(moving.rect, model.viewport.canvasPoint(p), reach: 8 / model.viewport.scale)
+    }
+
+    private func cursor(for handle: CanvasTransform.Handle) -> NSCursor {
+        switch handle {
+        case .move: .openHand
+        case .rotate: .crosshair
+        case .nw: .frameResize(position: .topLeft, directions: .all)
+        case .ne: .frameResize(position: .topRight, directions: .all)
+        case .sw: .frameResize(position: .bottomLeft, directions: .all)
+        case .se: .frameResize(position: .bottomRight, directions: .all)
+        case .n: .frameResize(position: .top, directions: .all)
+        case .s: .frameResize(position: .bottom, directions: .all)
+        case .e: .frameResize(position: .right, directions: .all)
+        case .w: .frameResize(position: .left, directions: .all)
+        }
     }
 
     /// The viewport changed here: kept in the model and shown at once.
@@ -186,16 +343,19 @@ final class CanvasStageView: NSView {
     override func resetCursorRects() {
         var panning = false
         if case .pan = drag { panning = true }
-        addCursorRect(bounds, cursor: model.panning ? (panning ? .closedHand : .openHand) : .crosshair)
+        addCursorRect(bounds, cursor: model.panning ? (panning ? .closedHand : .openHand) : idleCursor)
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        (model.panning ? NSCursor.openHand : NSCursor.crosshair).set()
+        (model.panning ? NSCursor.openHand : idleCursor).set()
     }
+
+    private var idleCursor: NSCursor { model.tool == .move ? .openHand : .crosshair }
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         place(outlineAt: p)
+        if !model.panning, let handle = handle(at: p) { cursor(for: handle).set() }
         let c = model.viewport.canvasPoint(p)
         let inside = c.x >= 0 && c.y >= 0 && c.x < CGFloat(document.width) && c.y < CGFloat(document.height)
         model.pointer = inside ? CGPoint(x: floor(c.x), y: floor(c.y)) : nil
@@ -257,10 +417,31 @@ final class CanvasStageView: NSView {
             return
         }
         let c = model.viewport.canvasPoint(p)
-        // ⌥ picks a colour with any tool, as in Proton; the pen's eraser
-        // end erases.
-        let tool: CanvasTool = event.modifierFlags.contains(.option) ? .pick : (event.pointingDeviceType == .eraser ? .eraser : model.tool)
+        // Something being moved takes the pointer: a handle, inside to move
+        // it, outside to turn it.
+        if let moving = model.moving, let handle = handle(at: p) {
+            drag = .transform(handle, from: c, start: moving.transform)
+            if handle == .move { NSCursor.closedHand.set() }
+            return
+        }
+        let mode = model.mode(shift: event.modifierFlags.contains(.shift), option: event.modifierFlags.contains(.option))
+        // ⌥ picks a colour with any tool that draws, as in Proton; selecting
+        // it takes away. The pen's eraser end erases.
+        let selects = [.select, .wand, .move].contains(model.tool)
+        let tool: CanvasTool = event.modifierFlags.contains(.option) && !selects ? .pick : (event.pointingDeviceType == .eraser ? .eraser : model.tool)
         switch tool {
+        case .select:
+            drag = .select(from: c, to: c, points: [c], mode: mode)
+            drawOverlays()
+        case .wand:
+            guard c.x >= 0, c.y >= 0, c.x < CGFloat(document.width), c.y < CGFloat(document.height) else { return }
+            model.selectLike(at: c, mode: mode)
+        case .move:
+            guard model.startTransform(free: false), let moving = model.moving else { return }
+            drag = .transform(.move, from: c, start: moving.transform)
+            NSCursor.closedHand.set()
+            refreshTiles()
+            drawOverlays()
         case .pick:
             pick(at: c)
             drag = .pick
@@ -289,6 +470,21 @@ final class CanvasStageView: NSView {
             move { $0.offset = CGPoint(x: offset.x + p.x - from.x, y: offset.y + p.y - from.y) }
         case .pick:
             pick(at: model.viewport.canvasPoint(p))
+        case let .select(from, _, points, mode):
+            let c = model.viewport.canvasPoint(p)
+            drag = .select(from: from, to: c, points: model.selectShape == .lasso ? points + [c] : points, mode: mode)
+            drawOverlays()
+        case let .transform(handle, from, start):
+            guard let moving = model.moving else { break }
+            let shift = event.modifierFlags.contains(.shift)
+            var t = start.dragged(moving.rect, handle, from: from, to: model.viewport.canvasPoint(p), free: shift, snap: shift)
+            // The move tool, and a pixel canvas, move by whole pixels.
+            if handle == .move, !moving.free || document.state.preset == .pixel {
+                t.dx = t.dx.rounded()
+                t.dy = t.dy.rounded()
+            }
+            model.moving?.transform = t
+            drawOverlays()
         case nil:
             break
         }
@@ -311,22 +507,47 @@ final class CanvasStageView: NSView {
             }
         case .pan:
             window?.invalidateCursorRects(for: self)
+        case let .select(from, _, points, mode):
+            drag = nil
+            model.selectDragged(from: from, to: canvasPoint(event), lasso: points, mode: mode)
+        case .transform:
+            // The move tool's move is kept when let go; ⌘T's waits for ↩.
+            if model.moving?.free == false { model.finishTransform() }
+            NSCursor.openHand.set()
         case .pick, nil:
             break
         }
         drag = nil
         refreshTiles()
+        drawOverlays()
     }
 
-    /// Esc while drawing: the stroke or shape taken away.
+    /// Esc while drawing: the stroke, shape or selection taken away; while
+    /// moving, the move left.
     override func cancelOperation(_ sender: Any?) {
         switch drag {
         case .stroke: document.cancelStroke()
         case .shape: document.clearPreview()
-        default: break
+        default: if model.moving != nil { model.leaveTransform() }
         }
         drag = nil
         refreshTiles()
+        drawOverlays()
+    }
+
+    // MARK: Pictures dropped on it
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        CanvasPicture.on(sender.draggingPasteboard) == nil ? [] : .copy
+    }
+
+    /// A picture dropped on the canvas, brought in as a layer over the one
+    /// drawn on.
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        guard let (bytes, name) = CanvasPicture.on(sender.draggingPasteboard) else { return false }
+        model.bringIn(bytes, named: name)
+        refreshTiles()
+        return true
     }
 
     private func beginStroke(_ tool: CanvasTool, at c: CGPoint, pressure: Double) {
@@ -425,4 +646,46 @@ final class CanvasStageView: NSView {
         }
         return NSColor(patternImage: image).cgColor
     }()
+}
+
+/// A dashed line in black and white, so it shows over any picture —
+/// marching, for what is selected.
+private final class Dashes {
+    private let dark = CAShapeLayer()
+    private let light = CAShapeLayer()
+
+    init(marching: Bool) {
+        for (layer, color, phase) in [(dark, NSColor.black.withAlphaComponent(0.9), 0.0), (light, NSColor.white.withAlphaComponent(0.95), 4.0)] {
+            layer.fillColor = nil
+            layer.strokeColor = color.cgColor
+            layer.lineWidth = 1
+            layer.lineDashPattern = [4, 4]
+            layer.lineDashPhase = phase
+            layer.isHidden = true
+            layer.actions = ["path": NSNull(), "hidden": NSNull()]
+            if marching {
+                let march = CABasicAnimation(keyPath: "lineDashPhase")
+                march.fromValue = phase
+                march.toValue = phase - 8
+                march.duration = 0.8
+                march.repeatCount = .infinity
+                layer.add(march, forKey: "march")
+            }
+        }
+    }
+
+    func add(to parent: CALayer) {
+        parent.addSublayer(dark)
+        parent.addSublayer(light)
+    }
+
+    var path: CGPath? {
+        get { dark.path }
+        set {
+            for layer in [dark, light] {
+                layer.path = newValue
+                layer.isHidden = newValue == nil
+            }
+        }
+    }
 }

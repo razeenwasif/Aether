@@ -18,9 +18,11 @@
 //!   its layer are laid together once per tile and kept, so a frame lays
 //!   only the stroke's layer and those over it.
 //! - A shape being dragged is shown and not kept: a preview, taken back.
+//! - What is selected is given as its edges, for the marching ants, and
+//!   lifted as pixels to be moved: the window draws them where the
+//!   transform puts them until it is kept, then sends the one op it is.
 //!
-//! One frame is shown, the first. Animation, onion skin and selections drawn
-//! with marching ants come later.
+//! One frame is shown, the first. Animation and onion skin come later.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -98,6 +100,8 @@ struct Held {
     live: Option<Live>,
     below: Option<Below>,
     preview: Option<Patch>,
+    /// Bumped whenever what is selected may have changed.
+    selection: u64,
 }
 
 impl Held {
@@ -113,6 +117,7 @@ impl Held {
             live: None,
             below: None,
             preview: None,
+            selection: 0,
         };
         held.redo_all();
         held
@@ -141,6 +146,10 @@ impl Held {
 
     /// What an op or an undo changed, to be laid together again.
     fn changed(&mut self, touched: &[(u32, u32)], meta: bool) {
+        // A whole-canvas change — turned, cropped — moves the selection too.
+        if meta || touched.iter().any(|&(layer, _)| layer == SELECTION) {
+            self.selection += 1;
+        }
         if meta {
             return self.redo_all();
         }
@@ -241,6 +250,28 @@ pub struct Laid {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
+}
+
+/// What is selected of a layer, lifted to be moved: the rectangle round
+/// what it has, and its pixels, premultiplied RGBA row by row.
+#[derive(uniffi::Record)]
+pub struct Lifted {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
+/// The pixels of `grid` within `rect`, straight RGBA row by row.
+fn cut(grid: &Grid, [x, y, w, h]: [u32; 4]) -> Vec<u8> {
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for py in y..y + h {
+        for px in x..x + w {
+            rgba.extend_from_slice(&grid.pixel(px, py));
+        }
+    }
+    rgba
 }
 
 /// A stroke begun: a pencil or eraser with a tip, or a brush.
@@ -517,6 +548,100 @@ impl CanvasEditor {
     pub fn png(&self) -> Result<Vec<u8>, DiffuseError> {
         file::flat_png(&lock(&self.held).canvas).map_err(failed)
     }
+
+    // Selections, moving pixels and the clipboard.
+
+    /// A number that changes whenever what is selected may have: ask for
+    /// the outline again when it does.
+    pub fn selection_version(&self) -> u64 {
+        lock(&self.held).selection
+    }
+
+    /// The edges of what is selected, as segments along pixels' sides — x0,
+    /// y0, x1, y1, four numbers each — for the marching ants. None when
+    /// nothing is.
+    pub fn outline(&self) -> Vec<i32> {
+        let h = lock(&self.held);
+        if !h.canvas.selecting() {
+            return Vec::new();
+        }
+        select::outline(&h.canvas.selection)
+    }
+
+    /// The rectangle round what is selected — left, top, width, height — or
+    /// none when nothing is.
+    pub fn selected(&self) -> Option<Vec<u32>> {
+        let h = lock(&self.held);
+        h.canvas.selecting().then(|| select::bounds(&h.canvas.selection)).flatten().map(Vec::from)
+    }
+
+    /// What is selected of cel `layer` — all of it, with nothing selected —
+    /// cut out to the rectangle it covers, to be moved. None when there is
+    /// nothing there, or the layer is locked.
+    pub fn lift(&self, layer: u32) -> Option<Lifted> {
+        let h = lock(&self.held);
+        let cel = h.canvas.cel(layer).filter(|c| !c.info.locked)?;
+        let (lifted, _) = select::split(cel.grid, &h.canvas.selection, h.canvas.selecting());
+        let rect = select::bounds(&lifted)?;
+        let pixels = cut(&lifted, rect)
+            .chunks_exact(4)
+            .flat_map(|p| {
+                let a = p[3] as u32;
+                [p[0], p[1], p[2]].map(|c| ((c as u32 * a + 127) / 255) as u8).into_iter().chain([p[3]])
+            })
+            .collect();
+        Some(Lifted { x: rect[0], y: rect[1], width: rect[2], height: rect[3], pixels })
+    }
+
+    /// What was last copied, as a PNG of the part of the canvas it covers,
+    /// for the system's clipboard. None if nothing was.
+    pub fn clip_png(&self) -> Option<Vec<u8>> {
+        let h = lock(&self.held);
+        let clip = h.canvas.clip.as_ref()?;
+        let rect = select::bounds(clip)?;
+        file::encode_png(rect[2], rect[3], &cut(clip, rect)).ok()
+    }
+
+    /// A picture — a PNG, a PSD or an Aseprite file — brought in as layers
+    /// over cel `above` (on top with none), one undo step. A lone picture
+    /// smaller than the canvas goes in its middle; a file's layers where its
+    /// own canvas has them. Answers what `apply` does, and `notes`: what was
+    /// left out.
+    pub fn bring_in(&self, bytes: Vec<u8>, name: String, above: Option<u32>) -> Result<String, DiffuseError> {
+        let picture = port::read(&bytes, &name).map_err(failed)?;
+        let mut h = lock(&self.held);
+        h.cancel();
+        h.clear_preview();
+        let held = &mut *h;
+        let (w, ht) = (held.canvas.width, held.canvas.height);
+        let frames = held.canvas.frames.len();
+        let still = picture.frames.len() <= 1;
+        fn first(p: &port::Part) -> Option<&port::Image> {
+            p.cels.first().and_then(|c| c.as_ref())
+        }
+        let lone = still && picture.parts.len() == 1 && first(&picture.parts[0]).is_some_and(|c| c.left == 0 && c.top == 0);
+        let centre = |pw: u32, ph: u32| if pw <= w && ph <= ht { [(w - pw) as i32 / 2, (ht - ph) as i32 / 2] } else { [0, 0] };
+        let layers = picture
+            .parts
+            .iter()
+            .map(|p| {
+                let cels = if still {
+                    vec![first(p).map_or_else(|| Grid::new(w, ht), |image| port::grid_of(image, w, ht, if lone { centre(image.width, image.height) } else { [image.left, image.top] }))]
+                } else {
+                    port::cels_of(p, w, ht, picture.frames.len().min(frames) as u32)
+                };
+                (p.name.clone(), p.opacity, !p.visible, p.blend, cels)
+            })
+            .collect();
+        let mut notes = picture.notes.clone();
+        if picture.frames.len() > frames {
+            notes.push(format!("{name} has {} frames and the canvas {frames}; the frames past them were left out", picture.frames.len()));
+        }
+        let label = if picture.parts.len() == 1 { format!("Bring in {name}") } else { format!("Bring in {} layers", picture.parts.len()) };
+        let applied = held.history.record(&mut held.canvas, &label, |c| c.bring_in(layers, above)).map_err(failed)?;
+        held.changed(&applied.touched, applied.meta);
+        Ok(json(&serde_json::json!({ "changed": applied.changed, "touched": applied.touched, "meta": applied.meta, "made": applied.made, "notes": notes })))
+    }
 }
 
 impl CanvasEditor {
@@ -606,5 +731,59 @@ mod tests {
         assert_eq!((view["width"].as_u64(), view["preset"].as_str()), (Some(32), Some("pixel")));
         assert_eq!(imported.pick(5, 5).unwrap(), vec![10, 20, 30, 255]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_is_selected_is_outlined_lifted_and_moved() {
+        let editor = CanvasEditor::create(64, 64, "pixel".into()).unwrap();
+        editor.apply(r#"{"op": "fillRect", "layer": 1, "rect": [0, 0, 64, 64], "color": [255, 0, 0, 255]}"#.into(), "Fill".into()).unwrap();
+        assert!(editor.outline().is_empty() && editor.selected().is_none());
+        let before = editor.selection_version();
+        editor.apply(r#"{"op": "select", "area": {"kind": "rect", "rect": [4, 4, 8, 6]}}"#.into(), "Select".into()).unwrap();
+        assert_ne!(editor.selection_version(), before, "the window is told to ask again");
+        assert_eq!(editor.selected(), Some(vec![4, 4, 8, 6]));
+        let length: i32 = editor.outline().chunks_exact(4).map(|s| (s[2] - s[0]) + (s[3] - s[1])).sum();
+        assert_eq!(length, 2 * 8 + 2 * 6);
+
+        let lifted = editor.lift(1).unwrap();
+        assert_eq!((lifted.x, lifted.y, lifted.width, lifted.height), (4, 4, 8, 6));
+        assert_eq!(&lifted.pixels[..4], &[255, 0, 0, 255]);
+
+        // Moved 20 right: each pixel of the result came from 20 to its left.
+        let one = 65536;
+        editor.apply(format!(r#"{{"op": "transform", "layer": 1, "bounds": [24, 4, 8, 6], "inverse": [{one}, 0, {}, 0, {one}, 0]}}"#, -20 * one), "Move".into()).unwrap();
+        assert_eq!(editor.pick(5, 5).unwrap()[3], 0, "lifted from where it was");
+        assert_eq!(editor.pick(25, 5).unwrap(), vec![255, 0, 0, 255]);
+        assert_eq!(editor.selected(), Some(vec![24, 4, 8, 6]), "the selection moves with it");
+        editor.undo().unwrap();
+        assert_eq!(editor.selected(), Some(vec![4, 4, 8, 6]));
+
+        // With nothing selected, all of the layer is lifted.
+        editor.apply(r#"{"op": "select", "area": {"kind": "nothing"}}"#.into(), "Select nothing".into()).unwrap();
+        let all = editor.lift(1).unwrap();
+        assert_eq!((all.width, all.height), (64, 64));
+    }
+
+    #[test]
+    fn a_copy_goes_to_the_clipboard_and_a_picture_comes_in_as_a_layer() {
+        let editor = CanvasEditor::create(64, 64, "pixel".into()).unwrap();
+        assert!(editor.clip_png().is_none());
+        editor.apply(r#"{"op": "fillRect", "layer": 1, "rect": [10, 10, 5, 3], "color": [0, 0, 255, 255]}"#.into(), "Fill".into()).unwrap();
+        editor.apply(r#"{"op": "copy", "layer": 1}"#.into(), "Copy".into()).unwrap();
+        let png = editor.clip_png().unwrap();
+        let (w, h, rgba) = file::decode_png(&png).unwrap();
+        assert_eq!((w, h, &rgba[..4]), (5, 3, &[0, 0, 255, 255][..]), "cut to what it covers");
+
+        let applied: serde_json::Value = serde_json::from_str(&editor.bring_in(png, "Pasted".into(), Some(1)).unwrap()).unwrap();
+        let made = applied["made"].as_u64().unwrap();
+        let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
+        let layers = view["layers"].as_array().unwrap();
+        assert_eq!((layers.len(), layers[1]["id"].as_u64()), (2, Some(made)), "over the layer said");
+        // In the middle: (64 - 5) / 2, (64 - 3) / 2.
+        let lifted = editor.lift(made as u32).unwrap();
+        assert_eq!((lifted.x, lifted.y, lifted.width, lifted.height), (29, 30, 5, 3));
+        editor.undo().unwrap();
+        let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
+        assert_eq!(view["layers"].as_array().unwrap().len(), 1, "one undo step");
     }
 }
