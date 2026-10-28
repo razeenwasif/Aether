@@ -535,6 +535,33 @@ public final class DiffuseWorkspaceModel {
         show(.graph)
     }
 
+    /// Where Send to Canvas hands a picture: its plain bytes, its name, and
+    /// whether it may be written plain (it may not when it was sealed).
+    @ObservationIgnored public var canvasReceiver: ((Data, String, Bool) -> Void)?
+
+    /// Send a Gallery picture to the Canvas, as a new canvas named after it.
+    /// A sealed one is unlocked first, and isn't written plain until the
+    /// person saves the canvas.
+    public func sendToCanvas(_ picture: GalleryPicture) async {
+        guard let receive = canvasReceiver else { return }
+        let url = picture.url
+        let sealed = picture.isSealed
+        var key: SealKey?
+        if sealed {
+            guard let unlocked = await unlockSealed() else {
+                if let sealSaid { notice = sealSaid }
+                return
+            }
+            key = unlocked
+        }
+        do {
+            let bytes = try await Task.detached { [key] in sealed ? try readFile(path: url.path, key: key) : try Data(contentsOf: url) }.value
+            receive(bytes, picture.name, !sealed)
+        } catch {
+            notice = "Couldn’t send \(picture.name) to the Canvas: \(describe(error))"
+        }
+    }
+
     /// Pictures dropped on the graph: on a Load Image, its picture; a PNG
     /// with a graph in it, elsewhere, that graph as a new flow, as Proton
     /// does; any other picture, a Load Image of it where it was dropped.

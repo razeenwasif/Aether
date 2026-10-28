@@ -236,6 +236,7 @@ private struct GalleryTile: View {
         .draggable(picture.url)
         .contextMenu {
             Button("Open Its Graph") { Task { await model.openGraph(of: picture.url) } }
+            Button("Send to Canvas") { Task { await model.sendToCanvas(picture) } }
             Button("Show in Finder") { model.showInFinder([picture.url]) }
             Button("Copy Its Path") { model.copyPath(picture.url) }
         }
@@ -386,9 +387,10 @@ struct GalleryInspector: View {
                 .disabled(model.editor == nil)
                 .help(model.editor == nil ? "Open a flow to use it in" : "Give the flow’s Load Image this picture, or add a Load Image with it")
             }
-            ActionButton("Send to Canvas", symbol: "paintbrush.pointed") {}
-                .disabled(true)
-                .help("The Canvas workspace isn't built yet")
+            ActionButton("Send to Canvas", symbol: "paintbrush.pointed") {
+                Task { await model.sendToCanvas(picture) }
+            }
+            .help(picture.isSealed ? "A new canvas of it, not written until you save it: canvases are saved plain" : "A new canvas of it, in Canvases")
             ActionButton("Send to Game", symbol: "gamecontroller") {}
                 .disabled(true)
                 .help("The Game workspace isn't built yet")

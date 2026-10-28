@@ -658,6 +658,32 @@ The user took the PI's recommendation on all five.
   - Apple's reduced-memory mode, unloading each part after its stage, against the cost of reloading.
   - forge, which Automatic now prefers whenever it's serving.
 
+**2026-10-27 · The Canvas workspace, and Send to Canvas.** The user asked to "port Proton's Canvas onto the proton-raster engine already in cores/, and make Diffuse's Send to Canvas work".
+
+- **One copy of the canvas, not two.** Proton kept the core's copy, which it saved, and the window's copy in `proton-raster` built as WebAssembly (`proton-raster-runtime`), which painted as the pen moved. The two were checked against each other by hash. Aether keeps one: `CanvasEditor` in `cores/aether-diffuse/src/canvas.rs` holds the canvas, its undo history and what was last saved, and paints and composites live as Proton's runtime did. Its runtime is ported from a C ABI over thread-local state to an object:
+  - A stroke is painted on the canvas as the pen moves, each tile from what was under it when the stroke began. When it ends, those tiles are put back and the stroke is applied through the history. The engine is whole numbers only, so it makes the same pixels, and the stroke is one undo step. A cancelled stroke puts the tiles back.
+  - Only what changed is composited again: whole tiles for a pencil, and for a brush only the parts its dabs fell in. While a stroke is drawn, the layers under it are composited once per tile and kept (at most 256 tiles).
+  - A shape being dragged is a preview, applied and then taken back.
+- **The Swift side:**
+  - `CanvasCore` holds `CanvasDocument` (an observable wrapper: ops, undo, strokes, previews, save, open, import, PNG) and `CanvasPixels`, the composite kept as 64 × 64 tile images. Only the tiles that change are made again.
+  - `CanvasUI` holds the workspace:
+    - The stage is an `NSView` of tile layers under one layer that zooms and pans, over a checkerboard. Pixels stay square on a Pixel canvas, and on a Paint canvas from 300%.
+    - Input: two fingers pan, pinch or ⌘-scroll zooms, space-drag pans. A pen's pressure and its eraser end are read. ⌥-click picks a colour.
+    - Proton's tools and keys: brush and pencil (`b`/`n`, which is which depends on the preset), eraser `e`, fill `g`, pick `i`, line, rectangle and ellipse `l r o` (⇧ makes a square, a circle or a 45° line), `[ ]` size, `p` pixel-perfect, `f` fit, `1` 100%, Esc cancels a stroke.
+    - The layers panel: add above, remove, move up and down, show or hide, lock, lock what's clear, rename by double-click, opacity (one undo step per drag), blend.
+    - Proton's home page: canvas cards and the new-canvas form (name, Pixel or Paint, Proton's sizes). Dropping a picture there makes a canvas of it.
+    - Proton's leave prompt (Stay, Leave without saving, Save and leave) before switching away from a canvas with changes.
+  - Canvases are Proton's `.canvas` folders and live in `~/Documents/Aether/Canvases`. File ▸ New, Open, Make a Canvas of a Picture (PNG, PSD or Aseprite, layers kept), Save, Save As, Export a PNG (`⌘E`, and the rail's Export).
+- **Send to Canvas**, in the Gallery's inspector and its context menu: Aether switches to Canvas and imports the picture as a new canvas named after it, as Proton does (Pixel up to 256 px a side, Paint above).
+  - A plain picture's canvas is written into Canvases at once.
+  - A sealed picture is unlocked first, and its canvas isn't written until the person saves it, with a notice that canvases are saved plain. Proton sends it plain; here nothing is written plain without the person choosing to.
+  - It's a file import, as in Proton, not a live link: live links wait on M1's project graph.
+- **Tests:** the bridge's canvas tests (a stroke paints live and is one undo step, a cancelled stroke leaves nothing, layers and previews, save, reopen and import). Plus 11 Swift tests: tiles across a tile edge, strokes, previews, layers, refusals, files, new-canvas naming, Send to Canvas plain and sealed, the leave prompt, keys and layers. 154 Rust and 73 Swift tests pass.
+- **Checked in the app:** the home page; a new 64 × 64 Pixel canvas fitted at 1200%; a pixel-perfect pencil stroke drawn live; Send to Canvas on a 1024² output (it opened as a Paint canvas, the right way up, and was written to Canvases); a brush stroke across tile edges with no seams at 79%; Edit ▸ Undo taking the whole stroke back.
+  - Fixed after looking: names kept a newline, numbers showed "1,200%", and the colour well was an empty pill (it's now a swatch that opens the colour panel).
+- **Not checked:** a pen's pressure (no tablet was used), shapes and fill in the app (covered by tests), and very large Paint canvases (4096², 4096 tile layers) for speed.
+- **Not ported yet:** selections (rect, ellipse, lasso, wand), move and transform, copy and paste, the palette editor, animation (frames, onion skin, tags), the pixel grid (`⇧G`), mirror (`m`), and dropping a picture on an open canvas as a layer.
+
 Not yet:
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
@@ -666,7 +692,7 @@ Not yet:
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a). The other five workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with Send to Canvas (§10a). The other four workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, move to Claude. They're due before M1, since nothing built so far depends on them.
@@ -677,4 +703,6 @@ Not yet:
 3. ~~**Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here~~: done, see §10a.
 4. ~~**Mask painting**~~: done, see §10a. With it, Diffuse matches Proton's window, apart from Send to Canvas and Send to Game, which wait on those workspaces.
 
-Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. After that, the omnibar and M1's project graph, which Send to Canvas and Send to Game depend on.
+Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import.
+
+**Next, proposed:** the rest of Canvas (selections, move and transform, copy and paste, the palette, the pixel grid and mirror, then animation), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.

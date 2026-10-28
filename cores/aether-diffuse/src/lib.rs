@@ -19,6 +19,9 @@ use proton_diffuse::{check, doc, layout, png, seal, templates, Catalogue, Client
 
 uniffi::setup_scaffolding!();
 
+mod canvas;
+pub use canvas::{CanvasEditor, Laid};
+
 /// What went wrong, in words a person can act on.
 #[derive(Debug, uniffi::Error)]
 pub enum DiffuseError {

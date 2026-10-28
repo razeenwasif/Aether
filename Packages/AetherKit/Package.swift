@@ -6,6 +6,8 @@
 //   DiffuseCore       flows, the catalogue, image backends and the run queue
 //   DiffuseLocal      image generation on this Mac: Apple's Core ML Stable Diffusion
 //   aether-local-bench  times local runs, and the text encoders on each compute unit
+//   CanvasCore        a canvas open for editing (proton-raster via the bridge), its pixels in tiles
+//   CanvasUI          the Canvas workspace: the canvas, layers, tools
 //   AetherDesign      Velvet Obsidian: tokens, glass, controls
 //   DiffuseUI         the Diffuse workspace: the flow canvas, node library, inspector
 //   AetherShell       the window: the rail, panels and workspaces
@@ -49,13 +51,16 @@ let package = Package(
             dependencies: ["DiffuseCore", "DiffuseLocal", .product(name: "StableDiffusion", package: "ml-stable-diffusion")],
             path: "Sources/LocalBench"
         ),
+        .target(name: "CanvasCore", dependencies: ["DiffuseBridge"]),
+        .target(name: "CanvasUI", dependencies: ["CanvasCore", "AetherDesign"]),
         .target(name: "AetherDesign"),
         .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "DiffuseLocal", "AetherDesign"]),
-        .target(name: "AetherShell", dependencies: ["AetherDesign", "DiffuseBridge", "DiffuseCore", "DiffuseUI"]),
+        .target(name: "AetherShell", dependencies: ["AetherDesign", "CanvasCore", "CanvasUI", "DiffuseBridge", "DiffuseCore", "DiffuseUI"]),
         .testTarget(
             name: "DiffuseLocalTests",
             dependencies: ["DiffuseLocal", .product(name: "StableDiffusion", package: "ml-stable-diffusion")]
         ),
+        .testTarget(name: "CanvasCoreTests", dependencies: ["CanvasCore", "CanvasUI"]),
         .testTarget(
             name: "DiffuseCoreTests",
             dependencies: ["DiffuseCore"],

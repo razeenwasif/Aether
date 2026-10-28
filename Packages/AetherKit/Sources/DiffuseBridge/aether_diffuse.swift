@@ -481,6 +481,38 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
+    typealias FfiType = Int32
+    typealias SwiftType = Int32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int32, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+    typealias FfiType = UInt64
+    typealias SwiftType = UInt64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -565,6 +597,442 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
         writeBytes(&buf, value)
     }
 }
+
+
+
+
+/**
+ * One canvas open for editing (see the module's notes).
+ */
+public protocol CanvasEditorProtocol: AnyObject, Sendable {
+    
+    /**
+     * Apply an op (JSON, Proton's shape) as one undo step, named `label`.
+     * Answers `{changed, touched, meta, made}`.
+     */
+    func apply(opJson: String, label: String) throws  -> String
+    
+    /**
+     * Lay together what changed, as much as `budget` pixel-layers allow
+     * (the rest waits for the next call): the parts laid, with pixels.
+     */
+    func lay(budget: UInt64)  -> [Laid]
+    
+    /**
+     * How many parts wait to be laid together.
+     */
+    func pending()  -> UInt32
+    
+    /**
+     * A pixel of everything laid together, straight RGBA: the eyedropper's.
+     */
+    func pick(x: UInt32, y: UInt32)  -> Data?
+    
+    /**
+     * The canvas laid together, as a PNG: for exporting and sending.
+     */
+    func png() throws  -> Data
+    
+    /**
+     * An op shown and not kept — a shape being dragged. The last one shown
+     * is taken away first.
+     */
+    func preview(opJson: String) throws 
+    
+    func previewClear() 
+    
+    func redo()  -> String?
+    
+    /**
+     * Everything to be laid together again, as after opening.
+     */
+    func relayAll() 
+    
+    /**
+     * Write the canvas into `dir` (a `.canvas` folder, made if it isn't
+     * there) — or where it was opened from or last saved, with none.
+     */
+    func save(dir: String?) throws  -> String
+    
+    /**
+     * More of the stroke: numbers in threes — x and y in 1/256 px, and the
+     * pen's pressure, 0 to 65535.
+     */
+    func strokeAdd(points: [Int32]) throws 
+    
+    /**
+     * Begin a stroke (JSON: `{layer, tool, tip | brush, color, pixelPerfect}`).
+     * One being drawn is taken away first.
+     */
+    func strokeBegin(beginJson: String) throws 
+    
+    /**
+     * The stroke taken away, nothing kept.
+     */
+    func strokeCancel() 
+    
+    /**
+     * The stroke finished: one undo step, named `label`. Answers what
+     * changed, as `apply` does; a stroke that covered nothing changes
+     * nothing.
+     */
+    func strokeEnd(label: String) throws  -> String
+    
+    /**
+     * Undo a step; what it was, or `None` with nothing to undo.
+     */
+    func undo()  -> String?
+    
+    /**
+     * The canvas but its pixels, as JSON: `{width, height, preset, palette,
+     * layers (bottom to top), frames, dirty, canUndo, canRedo, undo, redo}`.
+     */
+    func view()  -> String
+    
+}
+/**
+ * One canvas open for editing (see the module's notes).
+ */
+open class CanvasEditor: CanvasEditorProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_canvaseditor(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_canvaseditor(handle, $0) }
+    }
+
+    
+    /**
+     * A new canvas of `width` × `height`, `preset` "pixel" or "paint", with
+     * one layer; not written until saved.
+     */
+public static func create(width: UInt32, height: UInt32, presetName: String)throws  -> CanvasEditor  {
+    return try  FfiConverterTypeCanvasEditor_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_canvaseditor_create(
+        FfiConverterUInt32.lower(width),
+        FfiConverterUInt32.lower(height),
+        FfiConverterString.lower(presetName),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * A new canvas of a picture — a PNG, a PSD or an Aseprite file, its
+     * layers kept — Pixel when small, Paint when not, as Proton's import
+     * makes one. Not written until saved.
+     */
+public static func `import`(bytes: Data, name: String)throws  -> CanvasEditor  {
+    return try  FfiConverterTypeCanvasEditor_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_canvaseditor_import(
+        FfiConverterData.lower(bytes),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The canvas in folder `dir` (a `.canvas`: canvas.json and its PNGs).
+     */
+public static func `open`(dir: String)throws  -> CanvasEditor  {
+    return try  FfiConverterTypeCanvasEditor_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_canvaseditor_open(
+        FfiConverterString.lower(dir),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * Apply an op (JSON, Proton's shape) as one undo step, named `label`.
+     * Answers `{changed, touched, meta, made}`.
+     */
+open func apply(opJson: String, label: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_apply(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(opJson),
+        FfiConverterString.lower(label),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Lay together what changed, as much as `budget` pixel-layers allow
+     * (the rest waits for the next call): the parts laid, with pixels.
+     */
+open func lay(budget: UInt64) -> [Laid]  {
+    return try!  FfiConverterSequenceTypeLaid.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_lay(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt64.lower(budget),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * How many parts wait to be laid together.
+     */
+open func pending() -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_pending(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * A pixel of everything laid together, straight RGBA: the eyedropper's.
+     */
+open func pick(x: UInt32, y: UInt32) -> Data?  {
+    return try!  FfiConverterOptionData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_pick(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(x),
+        FfiConverterUInt32.lower(y),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The canvas laid together, as a PNG: for exporting and sending.
+     */
+open func png()throws  -> Data  {
+    return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_png(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * An op shown and not kept — a shape being dragged. The last one shown
+     * is taken away first.
+     */
+open func preview(opJson: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_preview(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(opJson),uniffiCallStatus
+    )
+}
+}
+    
+open func previewClear()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_preview_clear(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+open func redo() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_redo(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Everything to be laid together again, as after opening.
+     */
+open func relayAll()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_relay_all(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Write the canvas into `dir` (a `.canvas` folder, made if it isn't
+     * there) — or where it was opened from or last saved, with none.
+     */
+open func save(dir: String?)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_save(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(dir),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * More of the stroke: numbers in threes — x and y in 1/256 px, and the
+     * pen's pressure, 0 to 65535.
+     */
+open func strokeAdd(points: [Int32])throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_stroke_add(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceInt32.lower(points),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Begin a stroke (JSON: `{layer, tool, tip | brush, color, pixelPerfect}`).
+     * One being drawn is taken away first.
+     */
+open func strokeBegin(beginJson: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_stroke_begin(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(beginJson),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The stroke taken away, nothing kept.
+     */
+open func strokeCancel()  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_stroke_cancel(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The stroke finished: one undo step, named `label`. Answers what
+     * changed, as `apply` does; a stroke that covered nothing changes
+     * nothing.
+     */
+open func strokeEnd(label: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_stroke_end(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(label),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Undo a step; what it was, or `None` with nothing to undo.
+     */
+open func undo() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_undo(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The canvas but its pixels, as JSON: `{width, height, preset, palette,
+     * layers (bottom to top), frames, dirty, canUndo, canRedo, undo, redo}`.
+     */
+open func view() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_view(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCanvasEditor: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = CanvasEditor
+
+    public static func lift(_ handle: UInt64) throws -> CanvasEditor {
+        return CanvasEditor(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: CanvasEditor) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CanvasEditor {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: CanvasEditor, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCanvasEditor_lift(_ handle: UInt64) throws -> CanvasEditor {
+    return try FfiConverterTypeCanvasEditor.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCanvasEditor_lower(_ value: CanvasEditor) -> UInt64 {
+    return FfiConverterTypeCanvasEditor.lower(value)
+}
+
+
 
 
 
@@ -1724,6 +2192,76 @@ public func FfiConverterTypeGraphTo_lower(_ value: GraphTo) -> RustBuffer {
 
 
 /**
+ * A part of the canvas laid together again: where, and its pixels,
+ * premultiplied RGBA row by row.
+ */
+public struct Laid: Equatable, Hashable {
+    public var x: UInt32
+    public var y: UInt32
+    public var width: UInt32
+    public var height: UInt32
+    public var pixels: Data
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(x: UInt32, y: UInt32, width: UInt32, height: UInt32, pixels: Data) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.pixels = pixels
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Laid: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLaid: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Laid {
+        return
+            try Laid(
+                x: FfiConverterUInt32.read(from: &buf), 
+                y: FfiConverterUInt32.read(from: &buf), 
+                width: FfiConverterUInt32.read(from: &buf), 
+                height: FfiConverterUInt32.read(from: &buf), 
+                pixels: FfiConverterData.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Laid, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.x, into: &buf)
+        FfiConverterUInt32.write(value.y, into: &buf)
+        FfiConverterUInt32.write(value.width, into: &buf)
+        FfiConverterUInt32.write(value.height, into: &buf)
+        FfiConverterData.write(value.pixels, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLaid_lift(_ buf: RustBuffer) throws -> Laid {
+    return try FfiConverterTypeLaid.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLaid_lower(_ value: Laid) -> RustBuffer {
+    return FfiConverterTypeLaid.lower(value)
+}
+
+
+/**
  * A mask's pixels: how painted each is, 0 to 255, row by row.
  */
 public struct MaskPixels: Equatable, Hashable {
@@ -1968,6 +2506,30 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
+    typealias SwiftType = Data?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterData.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterData.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSealKey: FfiConverterRustBuffer {
     typealias SwiftType = SealKey?
 
@@ -1992,6 +2554,31 @@ fileprivate struct FfiConverterOptionTypeSealKey: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceInt32: FfiConverterRustBuffer {
+    typealias SwiftType = [Int32]
+
+    public static func write(_ value: [Int32], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterInt32.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Int32] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Int32]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterInt32.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -2009,6 +2596,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeLaid: FfiConverterRustBuffer {
+    typealias SwiftType = [Laid]
+
+    public static func write(_ value: [Laid], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLaid.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Laid] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Laid]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLaid.read(from: &buf))
         }
         return seq
     }
@@ -2349,6 +2961,54 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_runevents_next() != 59553) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_apply() != 65497) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_lay() != 42866) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_pending() != 16841) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_pick() != 43330) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_png() != 28195) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_preview() != 24333) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_preview_clear() != 4669) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_redo() != 4047) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_relay_all() != 18247) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_save() != 59152) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_stroke_add() != 42638) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_stroke_begin() != 38452) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_stroke_cancel() != 13910) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_stroke_end() != 48237) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_undo() != 7046) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 31181) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_constructor_flowdocument_create() != 53531) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2362,6 +3022,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_sealkey_new() != 7945) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_canvaseditor_create() != 53842) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_canvaseditor_import() != 43378) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_canvaseditor_open() != 57588) {
         return InitializationResult.apiChecksumMismatch
     }
 

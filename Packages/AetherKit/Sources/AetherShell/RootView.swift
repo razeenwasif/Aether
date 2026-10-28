@@ -1,4 +1,5 @@
 import AetherDesign
+import CanvasUI
 import DiffuseCore
 import DiffuseUI
 import SwiftUI
@@ -17,6 +18,7 @@ public struct RootView: View {
             Group {
                 switch model.active {
                 case .diffuse: DiffuseWorkspace(model: model.diffuse)
+                case .canvas: CanvasWorkspace(model: model.canvas)
                 default: PlannedWorkspace(workspace: model.active)
                 }
             }
@@ -41,7 +43,7 @@ struct WorkspaceRail: View {
             SpineText(documentName, font: .system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.inkHi)
                 .padding(.vertical, 8)
-                .help(model.diffuse.editor?.url.path ?? "Aether")
+                .help(documentPath)
             divider
             VStack(spacing: 2) {
                 ForEach(Workspace.allCases) { workspace in
@@ -57,10 +59,10 @@ struct WorkspaceRail: View {
                 RailButton("Search", style: .field, help: model.active == .diffuse ? "Find a node  ⇥" : "Search") {
                     if model.active == .diffuse { model.diffuse.openLibrary() }
                 }
-                RailButton(model.active.navigatorLabel, isOn: model.active == .diffuse && model.diffuse.libraryOpen, help: "\(model.active.navigatorLabel)  ⌘0") {
+                RailButton(model.active.navigatorLabel, isOn: model.navigatorOpen, help: "\(model.active.navigatorLabel)  ⌘0") {
                     model.toggleNavigator()
                 }
-                RailButton("Inspector", isOn: model.active == .diffuse && model.diffuse.inspectorOpen, help: "Inspector  ⌘\\") {
+                RailButton("Inspector", isOn: model.inspectorOpen, help: "Inspector  ⌘\\") {
                     model.toggleInspector()
                 }
             }
@@ -73,7 +75,19 @@ struct WorkspaceRail: View {
     }
 
     private var documentName: String {
-        model.active == .diffuse ? (model.diffuse.editor?.name ?? "Aether") : "Aether"
+        switch model.active {
+        case .diffuse: model.diffuse.editor?.name ?? "Aether"
+        case .canvas: model.canvas.document?.name ?? "Aether"
+        default: "Aether"
+        }
+    }
+
+    private var documentPath: String {
+        switch model.active {
+        case .diffuse: model.diffuse.editor?.url.path ?? "Aether"
+        case .canvas: model.canvas.document?.url.path ?? "Aether"
+        default: "Aether"
+        }
     }
 
     private var divider: some View {
@@ -90,6 +104,10 @@ struct WorkspaceRail: View {
             } else {
                 RailButton("Generate", style: .run, help: "Generate  ⌘↩") { model.run() }
             }
+        } else if model.active == .canvas {
+            RailButton("Export", style: .run, help: "Export a PNG  ⌘E") { model.run() }
+                .opacity(model.canvas.document == nil ? 0.35 : 1)
+                .disabled(model.canvas.document == nil)
         } else {
             RailButton(verb(model.active), style: .run, help: "\(model.active.title) is not built yet") {}
                 .opacity(0.35)
@@ -120,7 +138,7 @@ struct PlannedWorkspace: View {
     var body: some View {
         VStack(spacing: 14) {
             Text(workspace.title).font(.system(size: 28, weight: .semibold)).foregroundStyle(Color.inkHi)
-            Text("Designed, not built yet. It lands in \(workspace.milestone) of the plan; Diffuse is first.")
+            Text("Designed, not built yet. It lands in \(workspace.milestone) of the plan; Diffuse and Canvas are built.")
                 .font(.system(size: 13))
                 .foregroundStyle(Color.ink)
             Link("Open the design canvas", destination: URL(string: "https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv")!)

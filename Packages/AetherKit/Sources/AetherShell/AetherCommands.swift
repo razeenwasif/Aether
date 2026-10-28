@@ -1,11 +1,13 @@
 import AppKit
+import CanvasUI
 import DiffuseBridge
 import DiffuseCore
 import DiffuseUI
 import SwiftUI
 
-/// The menu bar. Undo and Redo go to the flow unless a text field has the
-/// keys, so ⌘Z still undoes typing in a prompt.
+/// The menu bar, for the workspace on screen. Undo and Redo go to the flow
+/// or the canvas unless a text field has the keys, so ⌘Z still undoes
+/// typing in a prompt.
 public struct AetherCommands: Commands {
     let model: AppModel
 
@@ -14,44 +16,87 @@ public struct AetherCommands: Commands {
     }
 
     private var diffuse: DiffuseWorkspaceModel { model.diffuse }
+    private var canvas: CanvasWorkspaceModel { model.canvas }
+    private var onCanvas: Bool { model.active == .canvas }
 
     public var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Flow") { diffuse.newFlow(template: nil) }
-                .keyboardShortcut("n")
-            Menu("New Flow from Template") {
-                ForEach(templates(), id: \.name) { template in
-                    Button("\(template.title) — \(template.summary)") { diffuse.newFlow(template: template.name) }
+            if onCanvas {
+                Button("New Canvas…") { canvas.askForNew() }
+                    .keyboardShortcut("n")
+                Button("Open…") { canvas.chooseAndOpen() }
+                    .keyboardShortcut("o")
+                Button("Make a Canvas of a Picture…") { canvas.chooseAndImport() }
+                    .keyboardShortcut("o", modifiers: [.command, .shift])
+            } else {
+                Button("New Flow") { diffuse.newFlow(template: nil) }
+                    .keyboardShortcut("n")
+                Menu("New Flow from Template") {
+                    ForEach(templates(), id: \.name) { template in
+                        Button("\(template.title) — \(template.summary)") { diffuse.newFlow(template: template.name) }
+                    }
                 }
+                Button("Open…") { diffuse.chooseAndOpen() }
+                    .keyboardShortcut("o")
             }
-            Button("Open…") { diffuse.chooseAndOpen() }
-                .keyboardShortcut("o")
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { diffuse.save() }
+            Button("Save") { onCanvas ? canvas.save() : diffuse.save() }
                 .keyboardShortcut("s")
-            Button("Save As…") { diffuse.saveAs() }
+            Button("Save As…") { onCanvas ? canvas.saveAs() : diffuse.saveAs() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+            if onCanvas {
+                Button("Export a PNG…") { canvas.exportPNG() }
+                    .keyboardShortcut("e")
+                    .disabled(canvas.document == nil)
+                Button("Close the Canvas") { canvas.close() }
+                    .keyboardShortcut("w", modifiers: [.command, .shift])
+                    .disabled(canvas.document == nil)
+            }
         }
         CommandGroup(replacing: .undoRedo) {
-            Button("Undo") { textHasKeys ? send("undo:") : diffuse.editor?.undo() }
+            Button("Undo") { textHasKeys ? send("undo:") : (onCanvas ? canvas.undo() : diffuse.editor?.undo()) }
                 .keyboardShortcut("z")
-            Button("Redo") { textHasKeys ? send("redo:") : diffuse.editor?.redo() }
+            Button("Redo") { textHasKeys ? send("redo:") : (onCanvas ? canvas.redo() : diffuse.editor?.redo()) }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
         }
         CommandGroup(after: .pasteboard) {
+            if model.active == .diffuse {
+                Divider()
+                Button("Duplicate") { diffuse.duplicateSelection() }
+                    .keyboardShortcut("d")
+                Button("Bypass") { diffuse.toggleBypass() }
+                    .keyboardShortcut("b")
+                Button("Move to Trash") { diffuse.askToTrash() }
+                    .keyboardShortcut(.delete, modifiers: .command)
+                    .disabled(diffuse.stage != .gallery || diffuse.gallery.picked.isEmpty)
+            }
+        }
+        CommandMenu("Canvas") {
+            Button("Fit in View  (f)") { canvas.fit() }
+                .disabled(!onCanvas || canvas.document == nil)
+            Button("Actual Size  (1)") { canvas.actualSize() }
+                .disabled(!onCanvas || canvas.document == nil)
+            Button("Zoom In") { canvas.zoom(by: 2) }
+                .keyboardShortcut("=")
+                .disabled(!onCanvas || canvas.document == nil)
+            Button("Zoom Out") { canvas.zoom(by: 0.5) }
+                .keyboardShortcut("-")
+                .disabled(!onCanvas || canvas.document == nil)
             Divider()
-            Button("Duplicate") { diffuse.duplicateSelection() }
-                .keyboardShortcut("d")
-            Button("Bypass") { diffuse.toggleBypass() }
-                .keyboardShortcut("b")
-            Button("Move to Trash") { diffuse.askToTrash() }
-                .keyboardShortcut(.delete, modifiers: .command)
-                .disabled(diffuse.stage != .gallery || diffuse.gallery.picked.isEmpty)
+            Button("Add a Layer") { canvas.addLayer() }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(!onCanvas || canvas.document == nil)
+            Button("Remove the Layer") { canvas.removeLayer() }
+                .disabled(!onCanvas || canvas.document == nil)
+            Divider()
+            Button("All Canvases") { canvas.close() }
+                .disabled(!onCanvas || canvas.document == nil)
         }
         CommandMenu("Flow") {
-            Button("Generate") { model.run() }
+            Button("Generate") { diffuse.run() }
                 .keyboardShortcut(.return)
+                .disabled(model.active != .diffuse)
             Button("Run to Selected Node") { if let node = diffuse.runTarget { diffuse.runTo(node) } }
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .disabled(diffuse.runTarget == nil || diffuse.stage != .graph)
