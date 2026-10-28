@@ -180,7 +180,7 @@ private struct PictureField: View {
                     Spacer(minLength: 0)
                 }
             } else {
-                Text("No picture yet: choose one, take one from the Gallery, or drop one here or on the graph.")
+                Text("No picture yet: choose one, take one from the Gallery or a canvas, or drop one here or on the graph.")
                     .font(.system(size: 11.5)).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
             }
             if let project = model.project, let link = model.link(node: node.id, field: field), let asset = project.asset(link.asset) {
@@ -189,17 +189,19 @@ private struct PictureField: View {
             HStack(spacing: 6) {
                 Button("Choose…") { model.choosePicture(node: node.id, field: field) }
                 Button("From the Gallery") { model.pickFromGallery(node: node.id, field: field) }
-                if !model.projectCanvases.isEmpty, !editor.isSealed {
-                    Menu("From a Canvas") {
-                        ForEach(model.projectCanvases, id: \.self) { url in
-                            Button(url.deletingPathExtension().lastPathComponent) { model.useCanvas(at: url, node: node.id, field: field) }
-                        }
-                    }
-                    .fixedSize()
-                    .help("A canvas, live: each time it's saved, this picture follows")
-                }
             }
             .controlSize(.small)
+            // A row of its own: beside the others it cut their names short.
+            if !model.projectCanvases.isEmpty, !editor.isSealed {
+                Menu("From a Canvas") {
+                    ForEach(model.projectCanvases, id: \.self) { url in
+                        Button(url.deletingPathExtension().lastPathComponent) { model.useCanvas(at: url, node: node.id, field: field) }
+                    }
+                }
+                .fixedSize()
+                .controlSize(.small)
+                .help("A canvas, live: each time it's saved, this picture follows")
+            }
             if name != nil {
                 VStack(alignment: .leading, spacing: 4) {
                     Button { Task { await model.openMask(node: node.id, field: field) } } label: {

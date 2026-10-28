@@ -150,6 +150,14 @@ extension CanvasWorkspaceModel {
         }
     }
 
+    /// The canvas open let go: its history goes with it, so its steps leave
+    /// the project's; and with changes not saved, the links made with them
+    /// go too, or one would fasten on to the next layer given that id.
+    func letGo() {
+        guard let project, let document, let path = documentPath else { return }
+        if document.state.dirty { project.discard(document: path) } else { project.forget(document: path) }
+    }
+
     /// Saved, the canvas is published when something uses it.
     func publishIfUsed() {
         guard let project, let document, let path = documentPath, let asset = project.asset(madeBy: path), let png = try? document.png() else { return }

@@ -102,19 +102,32 @@ public final class DiffuseWorkspaceModel {
     public internal(set) var pictureRevision = 0
     /// The canvases in the project, by name, for a Load Image to take.
     public internal(set) var projectCanvases: [URL] = []
+    /// Whether the flow open was edited since it opened: a new flow from a
+    /// template is unsaved, but there's nothing in it to lose.
+    public internal(set) var editedSinceOpen = false
+    /// Edits that would be lost if the flow were let go now.
+    public var hasUnsavedEdits: Bool { editor?.isDirty == true && editedSinceOpen }
     /// A canvas made an asset with a version, for a Load Image to follow:
     /// the window lends the Canvas workspace's.
     @ObservationIgnored public var canvasAsset: ((URL) async throws -> Asset)?
     /// Where Show the Source goes: the asset's document, in its workspace.
     @ObservationIgnored public var showSource: ((Asset) -> Void)?
 
-    public init() {
+    /// Where settings kept between launches go; tests use their own.
+    @ObservationIgnored let defaults: UserDefaults
+
+    /// Flows in `flowsFolder`. `connecting` false leaves the gateway alone,
+    /// key and all, for tests.
+    public init(flowsFolder: URL = DiffuseWorkspaceModel.defaultFlowsFolder, defaults: UserDefaults = .standard, connecting: Bool = true) {
         let settings = GatewaySettings.current()
         library = NodeLibrary.saved()
         self.settings = settings
+        self.flowsFolder = flowsFolder
+        self.defaults = defaults
         queue = RunQueue(backend: NexusBackend(settings: settings, key: nil))
         queue.onFinished = { [weak self] item in self?.finished(item) }
         openInitialFlow()
+        guard connecting else { return }
         Task { await connect() }
         // forge again every 30 s, as Proton looks, so Automatic falls back to
         // this Mac when forge goes and back to forge when it returns.
@@ -155,14 +168,44 @@ public final class DiffuseWorkspaceModel {
 
     // MARK: Files
 
-    /// `~/Documents/Aether/Flows`, where new flows go.
-    public var flowsFolder: URL {
+    /// Where new flows go: the project's `Flows/`.
+    public private(set) var flowsFolder: URL
+
+    /// `~/Documents/Aether/Flows`, the default project's.
+    public nonisolated static var defaultFlowsFolder: URL {
         URL.documentsDirectory.appending(path: "Aether/Flows", directoryHint: .isDirectory)
     }
 
+    /// The flow last open in this flows folder: each project has its own.
+    /// The default project's was kept under one key before projects.
+    private var lastFlow: URL? {
+        let saved = (defaults.dictionary(forKey: "diffuse.lastFlows") as? [String: String])?[flowsFolder.standardizedFileURL.path]
+            ?? (flowsFolder.standardizedFileURL == Self.defaultFlowsFolder.standardizedFileURL ? defaults.string(forKey: "diffuse.lastFlow") : nil)
+        return saved.map { URL(fileURLWithPath: $0) }
+    }
+
+    private func rememberLastFlow(_ url: URL) {
+        var all = defaults.dictionary(forKey: "diffuse.lastFlows") as? [String: String] ?? [:]
+        all[flowsFolder.standardizedFileURL.path] = url.path
+        defaults.set(all, forKey: "diffuse.lastFlows")
+    }
+
+    /// Another project's flows: the flow open is let go without asking (the
+    /// window asked about every workspace first), and the project's last
+    /// flow opens, or a new one.
+    public func switchFolder(to url: URL) {
+        editor = nil
+        lockedFlow = nil
+        pickingInput = nil
+        flowsFolder = url
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        show(.graph)
+        openInitialFlow()
+        fitRequest += 1
+    }
+
     private func openInitialFlow() {
-        if let last = UserDefaults.standard.string(forKey: "diffuse.lastFlow").map({ URL(fileURLWithPath: $0) }),
-           SealedFiles.exists(last) {
+        if let last = lastFlow, SealedFiles.exists(last) {
             // Nothing sealed is shown, or asked for, until the person asks.
             if SealedFiles.isSealed(last) {
                 lockedFlow = last
@@ -209,7 +252,7 @@ public final class DiffuseWorkspaceModel {
             editor = try FlowEditor.open(url, library: library, key: sealKey)
             lockedFlow = nil
             show(.graph)
-            UserDefaults.standard.set(url.path, forKey: "diffuse.lastFlow")
+            rememberLastFlow(url)
             fitRequest += 1
         } catch {
             notice = "Couldn’t open \(url.lastPathComponent): \(describe(error))"
@@ -286,7 +329,8 @@ public final class DiffuseWorkspaceModel {
         guard let editor else { return }
         do {
             try editor.save()
-            UserDefaults.standard.set(editor.url.path, forKey: "diffuse.lastFlow")
+            rememberLastFlow(editor.url)
+            if let project { project.documentSaved(project.path(of: editor.url)) }
         } catch {
             notice = "Couldn’t save: \(describe(error))"
         }
@@ -300,8 +344,13 @@ public final class DiffuseWorkspaceModel {
         panel.nameFieldStringValue = "\(editor.name).flow.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
+            let was = flowPath
             try editor.save(as: url)
-            UserDefaults.standard.set(url.path, forKey: "diffuse.lastFlow")
+            rememberLastFlow(url)
+            if let project {
+                if let was { project.move(document: was, to: project.path(of: editor.url), by: .diffuse) }
+                project.documentSaved(project.path(of: editor.url))
+            }
         } catch {
             notice = "Couldn’t save: \(describe(error))"
         }

@@ -180,7 +180,7 @@ struct Omnibar: View {
                                         .padding(.horizontal, 10).padding(.top, index == 0 ? 4 : 10).padding(.bottom, 3)
                                 }
                                 // A button, so a click, VoiceOver and Press all run it.
-                                Button { run(item) } label: { row(item, selected: index == omnibar.selected) }
+                                Button { run(item) } label: { row(item, selected: omnibar.choosing && index == omnibar.selected) }
                                     .buttonStyle(.plain)
                             }
                         }
@@ -193,7 +193,7 @@ struct Omnibar: View {
                 }
             }
             Rectangle().fill(Color.line).frame(height: 1)
-            Text("↑↓ choose · ↩ run · ⇥ \(omnibar.scope == .all ? "narrow" : "next group") · esc close")
+            Text("Type, or ↑↓ to choose · ↩ run · ⇥ \(omnibar.scope == .all ? "narrow" : "next group") · esc close")
                 .font(.aeSmall).foregroundStyle(Color.ink3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).frame(height: 28)
@@ -203,6 +203,9 @@ struct Omnibar: View {
         .aeGlass(.floating)
         .onAppear {
             focused = true
+            // Again on the next turn: the first time, the graph or canvas may
+            // still hold the keys.
+            DispatchQueue.main.async { focused = true }
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 handle(event) ? nil : event
             }
@@ -243,7 +246,7 @@ struct Omnibar: View {
         case 53: omnibar.close()
         case 36, 76:
             let items = omnibar.results
-            if items.indices.contains(omnibar.selected) { run(items[omnibar.selected]) }
+            if omnibar.choosing, items.indices.contains(omnibar.selected) { run(items[omnibar.selected]) }
         default: return false
         }
         return true

@@ -40,6 +40,16 @@ public struct AetherCommands: Commands {
                 Button("Open…") { diffuse.chooseAndOpen() }
                     .keyboardShortcut("o")
             }
+            Divider()
+            Button("New Project…") { model.newProject() }
+            Button("Open Project…") { model.chooseProject() }
+                .keyboardShortcut("o", modifiers: [.command, .option])
+            Menu("Open Recent Project") {
+                ForEach(model.otherRecentProjects, id: \.self) { url in
+                    Button(url.deletingPathExtension().lastPathComponent) { model.openProject(at: url) }
+                }
+            }
+            .disabled(model.otherRecentProjects.isEmpty)
         }
         CommandGroup(replacing: .saveItem) {
             Button("Save") { onCanvas ? canvas.save() : diffuse.save() }

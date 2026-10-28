@@ -288,6 +288,8 @@ public final class ProjectGraph {
 
     @ObservationIgnored private var listeners: [UUID: @MainActor (Asset, AssetVersion) -> Void] = [:]
     @ObservationIgnored private var saving: Task<Void, Never>?
+    /// Changed since `project.json` was last written.
+    @ObservationIgnored private var unsaved = false
     @ObservationIgnored static let signposter = OSSignposter(subsystem: "dev.razeen.aether", category: "graph")
 
     public init(folder: URL?, nodes: [Node] = []) {
@@ -338,6 +340,7 @@ public final class ProjectGraph {
         }
         nodes = scratch
         revision &+= 1
+        unsaved = true
         log.append(tx)
         if log.count > 200 { log.removeFirst(log.count - 200) }
         scheduleSave()
@@ -460,6 +463,22 @@ public final class ProjectGraph {
         history.forget(document)
     }
 
+    /// A document saved: the links made with its steps are part of it now.
+    public func documentSaved(_ document: String) {
+        history.markSaved(document)
+    }
+
+    /// A document let go with changes not saved: the project changes made
+    /// with those changes are taken back, and those of saved steps undone
+    /// are made again, so the links match the file. Otherwise a link to a
+    /// layer or node that was never saved would stay, and fasten on to the
+    /// next one given its id.
+    public func discard(document: String) {
+        let (takeBack, makeAgain) = history.unsaved(document)
+        for tx in takeBack + makeAgain { _ = try? commit(tx) }
+        history.forget(document)
+    }
+
     // MARK: Listening
 
     /// `handler` is told of every version published, on the main actor, in
@@ -499,13 +518,15 @@ public final class ProjectGraph {
         }
     }
 
-    /// Write `project.json` now, whole and atomically.
+    /// Write `project.json` now, whole and atomically, if anything changed:
+    /// a project nothing was linked in leaves no file behind.
     public func saveNow() {
         saving?.cancel()
         saving = nil
-        guard let folder else { return }
+        guard let folder, unsaved else { return }
         do {
             try ProjectFile(name: name, nodes: Array(nodes.values)).write(into: folder)
+            unsaved = false
             problem = nil
         } catch {
             problem = "Couldn’t save the project: \(error.localizedDescription)"
@@ -517,6 +538,32 @@ public final class ProjectGraph {
     public static func open(_ folder: URL) throws -> ProjectGraph {
         ProjectGraph(folder: folder, nodes: try ProjectFile.read(from: folder)?.nodes ?? [])
     }
+
+    /// A new project in `folder` (`Name.aether`, a package): its
+    /// `Canvases/`, `Flows/` and `project.json`. A project already there is
+    /// opened as it is, never written over.
+    public static func create(_ folder: URL) throws -> ProjectGraph {
+        if FileManager.default.fileExists(atPath: folder.appending(path: ProjectFile.name).path) { return try open(folder) }
+        for part in ["Canvases", "Flows"] {
+            try FileManager.default.createDirectory(at: folder.appending(path: part, directoryHint: .isDirectory), withIntermediateDirectories: true)
+        }
+        let project = ProjectGraph(folder: folder)
+        try ProjectFile(name: project.name, nodes: []).write(into: folder)
+        return project
+    }
+
+    /// Whether `folder` is a project: a `.aether` package, one with a
+    /// `project.json`, or a folder of `Canvases/` or `Flows/` to start one in.
+    public nonisolated static func isProject(_ folder: URL) -> Bool {
+        let fm = FileManager.default
+        var isFolder: ObjCBool = false
+        guard fm.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else { return false }
+        return folder.pathExtension == "aether" || ["project.json", "Canvases", "Flows"].contains { fm.fileExists(atPath: folder.appending(path: $0).path) }
+    }
+
+    /// Where the project's canvases and flows go.
+    public var canvasesFolder: URL? { folder?.appending(path: "Canvases", directoryHint: .isDirectory) }
+    public var flowsFolder: URL? { folder?.appending(path: "Flows", directoryHint: .isDirectory) }
 }
 
 /// A listener held: let go, it stops.

@@ -369,13 +369,19 @@ These rules were the LE's open task; Claude wrote them with M1 and the code foll
    - A project change made with a document step, like the link made when a picture comes in as a layer, is attached to that step, so one ⌘Z takes both back.
    - A new step drops what could be redone in that document only. That includes a project step: once you've unlinked, the canvas's core still holds its old redo, but Redo won't reach it, so the two histories never part.
    - A closed document's steps leave the history, as its core's did.
+   - A link belongs to its document as saved. Each step knows whether the file has it. When a document is let go with changes not saved, the project changes made with those steps are taken back, and those of saved steps undone since are made again. Otherwise a link to a layer or node that was never saved would fasten on to the next one given its id, and a canvas reuses layer ids when it reopens.
 6. **Publishing isn't an undo step,** just as saving isn't. Versions only grow. A link either follows the newest version or keeps one. Undo never takes a version away from under a link.
 7. **Consumers hear on the main actor, in the same turn.** `onPublish` listeners run as the transaction lands. Bytes are read from the `AssetPool` actor, off the main actor, and each version is decoded once and shared by every view.
 8. **Paths name documents:**
    - inside the project, a path relative to its folder; outside it, the whole path;
    - Save As moves a document's links, assets and steps with it.
 
-The package is the project folder: `project.json` holds the nodes, sorted with keys in order so it diffs cleanly, and `blobs/<sha256>.png` holds each version's bytes, once. A blob is cloned on APFS when it comes from a file. The default project is `~/Documents/Aether`, which already holds `Canvases/` and `Flows/`, so nothing moved.
+The package is the project folder:
+- `project.json` holds the nodes, sorted with keys in order so it diffs cleanly. It's written only once something changes, so a project nothing was linked in leaves no file behind.
+- `blobs/<sha256>.png` holds each version's bytes, once. A blob is cloned on APFS when it comes from a file.
+- `Canvases/` and `Flows/` hold the documents.
+
+The default project is `~/Documents/Aether`, which already held `Canvases/` and `Flows/`, so nothing moved. Any other project is a `Name.aether` package, declared in the app's Info.plist (`dev.razeen.aether.project`, conforming to `com.apple.package`) so the Finder shows it as one document that opens in Aether.
 
 ### 6.5 Traffic lights stacked vertically (AppKit)
 
@@ -929,6 +935,54 @@ Not yet:
     - Keeping a version from the picker, which the automation can't open; tests cover it.
 - **Not done:** opening another project (New Project/Open Project), and a Metal capture for the "no copy" exit criterion. Today each version is decoded once and shared, but the raster core holds its own tiles, as Proton's determinism needs, and there's no Metal viewport until M2. Diffuse's link code is covered only by the canvas side's tests and the flow editor's, because `DiffuseWorkspaceModel` reaches the gateway when made.
 
+**2026-10-28 · M1: projects — New Project and Open Project.** The user asked to "continue with M1".
+
+- **Opening and making projects:**
+  - File has New Project… (a save panel for `Name.aether`), Open Project… (`⌥⌘O`, a `.aether` package or a folder of Canvases or Flows), and Open Recent Project.
+  - The rail's top slot is now the project, as the design has it. Its name opens a menu: New, Open, the recent projects, and Show in Finder. Each workspace's bar still names its document.
+  - Double-clicking a `.aether` in the Finder, or dropping one on the Dock icon, opens it through `AetherAppDelegate`. The model takes it once it's there, so a project opened at launch isn't lost.
+- **Switching** points every workspace at the new project:
+  - The old project is saved first, and the document open in each workspace is let go.
+  - Canvas lists the new project's `Canvases/`. Diffuse opens that project's last flow, kept per project (the default project's old setting carries over), or a new one.
+  - The last project opens at the next launch.
+  - Before switching, unsaved changes in the canvas or flow open are asked about: Save, Cancel or Don't Save. A new flow from a template that hasn't been edited isn't asked about: there's nothing in it to lose.
+  - Folders are compared by path, since URLs with and without a trailing slash differ.
+- **`ProjectGraph`:**
+  - `create` makes a package's folders and `project.json`, and opens a project already there rather than writing over it.
+  - `isProject` says whether a folder is one.
+  - `saveNow` writes only after a change. A switch away from `~/Documents/Aether` had written an empty `project.json` there; that was found by checking the folder after the round trip, fixed, and the file moved to the Trash.
+- **Diffuse can be made without the gateway** (`connecting: false`, its own flows folder and settings store), so its link code has tests at last.
+- **Tests:** Swift has 4 more:
+  - A new project's folders, which are never written over, and what counts as a project.
+  - Switching:
+    - every workspace follows, and unsaved work is asked about
+    - an untouched flow isn't asked about
+    - each project keeps its own last flow, and the last project reopens
+    - a folder that isn't a project is refused
+  - Diffuse's links:
+    - A Load Image follows a canvas asset: one step with its link, the file rewritten on each version, keeping and undoing, unlinking.
+    - Send to Canvas and a finished run publish the flow's picture; a preview and a sealed picture don't.
+  - The graph test also checks that nothing is written before a change. 159 Rust and 111 Swift tests pass.
+- **Checked in the app,** by eye, once the user was back. The check used two throwaway projects in my scratchpad, deleted afterwards along with the settings they left; `~/Documents/Aether` is as it was.
+  - **Opening by Finder event** works: with the screen locked, `open -a` switched Aether to a project and back.
+  - **The rail's project menu** listed New Project…, Open Project…, the recent projects and Show in Finder. Choosing Check there switched every workspace: Canvas showed "No canvas here yet", and Diffuse opened a new flow in Check's `Flows/`. No question was asked, since the old flow was untouched.
+  - **From a Canvas, live:**
+    - A red canvas made in Check appeared in a Load Image's From a Canvas menu. Choosing it wrote `inputs/Live source.png`, and the inspector showed a live dot and "Live: v1 of 1".
+    - The canvas saved blue updated the Load Image while the flow was off screen: "v2 of 2".
+    - "Undo Set image" took the picture and the link back together (the link left `project.json`), and Redo brought both back.
+  - **Switching away with the flow edited** asked "Save the changes to Untitled before opening Aether?" Don't Save left the flow unsaved.
+  - **New Project…** opened a save panel ("A project keeps its canvases, flows and the links between them together."). Saving made `Untitled.aether`, with `Canvases/`, `Flows/` and `project.json`, which the system typed as `dev.razeen.aether.project`, a package. Open Recent Project listed both projects.
+- **Faults the check found, all fixed and seen fixed:**
+  - **The project menu** placed itself at the mouse, so pressing the name from the keyboard, with VoiceOver or through accessibility opened nothing. It now opens under the name when there's no click.
+  - **From a Canvas** beside Choose… and From the Gallery cut their names to "Choos…" and "From t…". It has a row of its own now, and the empty Load Image's text mentions canvases.
+  - **A link outlived a flow let go unsaved.** A new flow's node 8 showed a live link the discarded flow's node 8 had made. On a canvas the same could fasten a stale link on to a newly painted layer. Links now follow the saved document (§6.4a, rule 5). Diffuse's Save As also now moves its links.
+  - **Switching attached the new project before letting go of the open documents,** so the discard ran against the wrong project, after the old one was saved. Documents are let go first now, then the old project is saved. Seen: a link made and left with Don't Save was gone from that project's file.
+  - **↩ in the omnibar with nothing typed ran the top row,** which in Diffuse is Generate. My keystrokes reached the omnibar before its field had focus, so ↩ ran Generate and started one SDXL run on forge. It took about 10 seconds and made one picture, saved in the throwaway project and deleted with it. ↩ now runs a row only after something is typed or ↑↓ have chosen one, no row is highlighted before then, and the field takes focus again on the next turn. Seen: typing straight after ⌘K lands in the field in both workspaces.
+- **Tests:** 5 more, for 116 Swift and 159 Rust:
+  - unsaved links taken back, and undone saved ones made again, in the graph, a canvas and a flow
+  - a switch taking an unsaved link out of the old project's file
+  - ↩ running nothing until something is chosen
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -947,4 +1001,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~M1: the transaction rules, the project graph with live links, and the omnibar~~: done, see §10a. Checked in the app with two canvases. Send to Canvas and From a Canvas are covered by tests only.
 
-**Next, proposed:** finish M1: New Project and Open Project (other `.aether` folders), and the Metal capture for the exit criterion once M2's viewport exists. After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD).
+~~New Project and Open Project~~: done and checked in the app, see §10a.
+
+**Next, proposed:** M1's last item, the Metal capture for the exit criterion, waits for M2's viewport. After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD). After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD).

@@ -144,6 +144,36 @@ struct CanvasLinkTests {
         #expect(project.asset(asset.id)?.document == "Canvases/Sky 2.canvas")
     }
 
+    @Test func aLinkNotSavedWithItsCanvasGoesWhenTheCanvasIsShut() async throws {
+        let folder = try folder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let project = ProjectGraph(folder: folder)
+        let model = model(project, in: folder)
+        model.newCanvas(named: "Scene", preset: .pixel, width: 8, height: 8)
+        let url = try #require(model.document).url
+        let art = try project.asset(madeBy: "Flows/key.flow.json", named: "Key art", in: .diffuse)
+        try await publish(project, art.id, png(red))
+
+        model.place(try #require(project.asset(art.id)))
+        await model.following?.value
+        let placed = try #require(model.currentLayer).id
+        model.close()
+        model.answerLeaving(save: false)
+        #expect(project.links.isEmpty, "never saved with the canvas")
+        // Reopened, the next layer made gets that id, and follows nothing.
+        model.open(url)
+        model.addLayer()
+        let next = try #require(model.currentLayer)
+        #expect(next.id == placed && model.link(of: next) == nil)
+
+        // Saved with it, it stays.
+        model.place(try #require(project.asset(art.id)))
+        await model.following?.value
+        model.save()
+        model.close()
+        #expect(project.links.count == 1)
+    }
+
     @Test func everyCanvasStepIsInTheProjectsHistory() throws {
         let project = ProjectGraph(folder: nil)
         let model = model(project, in: try folder())

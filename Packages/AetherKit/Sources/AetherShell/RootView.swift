@@ -1,4 +1,5 @@
 import AetherDesign
+import AppKit
 import AetherGraph
 import CanvasUI
 import DiffuseCore
@@ -54,10 +55,17 @@ struct WorkspaceRail: View {
         VStack(spacing: 0) {
             // The window's traffic lights are stacked into this space.
             Color.clear.frame(height: WindowChrome.lightsHeight)
-            SpineText(documentName, font: .system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.inkHi)
-                .padding(.vertical, 8)
-                .help(documentPath)
+            // The project, as the design has it: its menu opens another.
+            Button { ProjectMenu.show(for: model) } label: {
+                SpineText(model.project.name, font: .system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.inkHi)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("\(model.project.name) · \(model.project.folder?.path ?? "not saved") · New Project, Open Project")
+            .accessibilityLabel("Project \(model.project.name)")
+            .accessibilityHint("Opens the project menu")
             divider
             VStack(spacing: 2) {
                 ForEach(Workspace.allCases) { workspace in
@@ -86,22 +94,6 @@ struct WorkspaceRail: View {
         .frame(maxHeight: .infinity)
         .background(Color.rail)
         .overlay(alignment: .trailing) { Rectangle().fill(Color.line).frame(width: 1) }
-    }
-
-    private var documentName: String {
-        switch model.active {
-        case .diffuse: model.diffuse.editor?.name ?? "Aether"
-        case .canvas: model.canvas.document?.name ?? "Aether"
-        default: "Aether"
-        }
-    }
-
-    private var documentPath: String {
-        switch model.active {
-        case .diffuse: model.diffuse.editor?.url.path ?? "Aether"
-        case .canvas: model.canvas.document?.url.path ?? "Aether"
-        default: "Aether"
-        }
     }
 
     private var divider: some View {
@@ -161,5 +153,50 @@ struct PlannedWorkspace: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.obsidian0)
+    }
+}
+
+/// The project menu, under the rail's project name: new, open, recent, and
+/// the folder in the Finder.
+@MainActor
+enum ProjectMenu {
+    static func show(for model: AppModel) {
+        let menu = NSMenu()
+        menu.addItem(ActionItem("New Project…") { model.newProject() })
+        menu.addItem(ActionItem("Open Project…") { model.chooseProject() })
+        let recent = model.otherRecentProjects
+        if !recent.isEmpty {
+            menu.addItem(.separator())
+            menu.addItem(NSMenuItem.sectionHeader(title: "Recent"))
+            for url in recent {
+                menu.addItem(ActionItem(url.deletingPathExtension().lastPathComponent) { model.openProject(at: url) })
+            }
+        }
+        menu.addItem(.separator())
+        menu.addItem(ActionItem("Show in Finder") { model.showProjectInFinder() })
+        guard let view = (NSApp.keyWindow ?? NSApp.mainWindow)?.contentView else { return }
+        let point: NSPoint
+        if let event = NSApp.currentEvent, [.leftMouseDown, .leftMouseUp].contains(event.type), event.window === view.window {
+            point = view.convert(event.locationInWindow, from: nil)
+        } else {
+            // Pressed from the keyboard or with VoiceOver: under the name.
+            point = NSPoint(x: 34, y: view.isFlipped ? 64 : view.bounds.height - 64)
+        }
+        menu.popUp(positioning: nil, at: point, in: view)
+    }
+
+    /// A menu item that runs a closure.
+    private final class ActionItem: NSMenuItem {
+        private let run: () -> Void
+
+        init(_ title: String, run: @escaping () -> Void) {
+            self.run = run
+            super.init(title: title, action: #selector(fire), keyEquivalent: "")
+            target = self
+        }
+
+        required init(coder: NSCoder) { fatalError("not from a nib") }
+
+        @objc private func fire() { run() }
     }
 }

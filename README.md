@@ -37,7 +37,11 @@ swift test --package-path Packages/AetherKit       # the graph, flows, canvases,
 
 ## The project
 
-Every workspace views one project: `~/Documents/Aether`, which holds `Canvases/` and `Flows/`. Its `project.json` keeps what crosses workspaces:
+Every workspace views one project. The default is `~/Documents/Aether`, which holds `Canvases/` and `Flows/`; any other is a `Name.aether` package, which the Finder shows as one document.
+- **Making and opening:** File ▸ New Project… makes one, Open Project… (`⌥⌘O`) opens one, and so does double-clicking a `.aether`. The rail's top slot names the project open, and clicking it opens a menu of the same with the recent projects.
+- **Switching** asks about unsaved changes first, and each project keeps its own last flow. The last project opens at the next launch.
+
+A project's `project.json` keeps what crosses workspaces, and is written once something is linked:
 - assets: something one workspace makes for others to use
 - their versions, whose bytes are kept once each in `blobs/`
 - links: the places that use an asset
@@ -50,9 +54,9 @@ The rules are RESEARCH_PLAN.md §6.4a.
 - In Canvas, Publish as an Asset (from the omnibar) lets another canvas place this one as a layer that follows it.
 - Sealed pictures and flows are never linked, since versions are kept plain. They're copied, as before.
 
-**One history.** `⌘Z` undoes the newest step of the document on screen, whether it's the document's own or a project step made in it (keeping a version, unlinking). A step and the link made with it, like a layer placed from an asset, undo together. A new step, of either kind, drops what could be redone. The Edit menu names the step.
+**One history.** `⌘Z` undoes the newest step of the document on screen, whether it's the document's own or a project step made in it (keeping a version, unlinking). A step and the link made with it, like a layer placed from an asset, undo together. A new step, of either kind, drops what could be redone. The Edit menu names the step. A link belongs to its document as saved: closing without saving takes back the links made since.
 
-**The omnibar** (`⌘K`, or Search in the rail) lists tools, actions, assets and places to go, the workspace's own first. Type a few letters in order ("cf" finds Copy the Frame). `↑` `↓` choose, `↩` runs, `⇥` narrows to one group, and esc closes. In a flow it can add any node. An asset is placed as a layer in a canvas, or taken by a Load Image in a flow.
+**The omnibar** (`⌘K`, or Search in the rail) lists tools, actions, assets and places to go, the workspace's own first. Type a few letters in order ("cf" finds Copy the Frame). `↑` `↓` choose, `↩` runs (only once something is typed or chosen), `⇥` narrows to one group, and esc closes. In a flow it can add any node. An asset is placed as a layer in a canvas, or taken by a Load Image in a flow.
 
 ## Diffuse
 

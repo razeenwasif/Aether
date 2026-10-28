@@ -40,6 +40,22 @@ struct OmnibarTests {
         omnibar.move(by: -1, in: 3)
         #expect(omnibar.selected == 2, "and round from the end")
     }
+
+    @Test func nothingRunsUntilSomethingIsTypedOrChosen() {
+        let omnibar = OmnibarModel()
+        omnibar.open(with: items())
+        #expect(!omnibar.choosing, "↩ straight away runs nothing, not the top row")
+        omnibar.move(by: 1, in: 5)
+        #expect(omnibar.choosing && omnibar.selected == 0, "the first ↓ chooses the top row")
+        omnibar.open(with: items())
+        omnibar.move(by: -1, in: 5)
+        #expect(omnibar.selected == 4, "the first ↑, the bottom one")
+        omnibar.open(with: items())
+        omnibar.query = "nf"
+        #expect(omnibar.choosing)
+        omnibar.query = "  "
+        #expect(!omnibar.choosing)
+    }
 }
 
 @MainActor

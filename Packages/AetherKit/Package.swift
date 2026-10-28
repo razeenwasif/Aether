@@ -64,7 +64,8 @@ let package = Package(
             dependencies: ["DiffuseLocal", .product(name: "StableDiffusion", package: "ml-stable-diffusion")]
         ),
         .testTarget(name: "CanvasCoreTests", dependencies: ["CanvasCore", "CanvasUI", "AetherGraph"]),
-        .testTarget(name: "AetherShellTests", dependencies: ["AetherShell", "AetherGraph"]),
+        .testTarget(name: "AetherShellTests", dependencies: ["AetherShell", "AetherGraph", "CanvasCore", "CanvasUI", "DiffuseUI"]),
+        .testTarget(name: "DiffuseUITests", dependencies: ["DiffuseUI", "DiffuseCore", "AetherGraph"]),
         .testTarget(
             name: "DiffuseCoreTests",
             dependencies: ["DiffuseCore"],

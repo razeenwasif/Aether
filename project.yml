@@ -16,6 +16,8 @@ targets:
     platform: macOS
     sources:
       - path: App
+        excludes:
+          - Info.plist
     dependencies:
       - package: AetherKit
         product: AetherKit
@@ -28,6 +30,8 @@ targets:
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         GENERATE_INFOPLIST_FILE: YES
+        # The .aether project type; Xcode adds the generated keys to it.
+        INFOPLIST_FILE: App/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Aether
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.graphics-design
         INFOPLIST_KEY_NSHumanReadableCopyright: ""

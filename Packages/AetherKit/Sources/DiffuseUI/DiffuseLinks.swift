@@ -29,12 +29,18 @@ extension DiffuseWorkspaceModel {
 
     func editorChanged(from old: FlowEditor?) {
         guard old !== editor else { return }
-        // Its history went with it, so its steps leave the project's.
-        if let old, let project { project.forget(document: project.path(of: old.url)) }
+        editedSinceOpen = false
+        // Its history went with it, so its steps leave the project's; and
+        // with changes not saved, the links made with them go too.
+        if let old, let project {
+            let path = project.path(of: old.url)
+            if old.isDirty { project.discard(document: path) } else { project.forget(document: path) }
+        }
         editor?.onStep = { [weak self, weak editor] label, added in self?.stepped(label, added, in: editor) }
     }
 
     func stepped(_ label: String, _ added: [String], in editor: FlowEditor?) {
+        editedSinceOpen = true
         let tx = attaching?(added)
         attaching = nil
         guard let project, let editor else { return }

@@ -16,19 +16,34 @@ extension Workspace {
 public final class AppModel {
     public var active: Workspace = .diffuse
     /// The project every workspace views: its assets, links and history.
-    public let project: ProjectGraph
-    public let diffuse = DiffuseWorkspaceModel()
-    public let canvas = CanvasWorkspaceModel()
+    public internal(set) var project: ProjectGraph
+    public let diffuse: DiffuseWorkspaceModel
+    public let canvas: CanvasWorkspaceModel
     /// The omnibar (⌘K): tools, actions, assets and Go to in one list.
     public let omnibar = OmnibarModel()
     /// The flows in the flows folder, for Go to: read off the main actor,
     /// so opening the omnibar never waits on the disk (§7a).
     public private(set) var flowFiles: [URL] = []
+    /// Projects opened lately, newest first.
+    public internal(set) var recentProjects: [URL] = []
+    /// Where settings kept between launches go; tests use their own.
+    @ObservationIgnored let defaults: UserDefaults
+    /// How to ask about changes not saved before another project opens:
+    /// what isn't saved, and the project's name. An alert; tests answer.
+    @ObservationIgnored var askAboutUnsaved: @MainActor ([String], String) -> LeaveAnswer = AppModel.alertAboutUnsaved
     @ObservationIgnored private var quitting: (any NSObjectProtocol)?
 
-    public init(project: ProjectGraph? = nil) {
-        let project = project ?? Self.openProject()
+    /// The project last open (or `~/Documents/Aether`), its workspaces
+    /// pointed at its `Canvases/` and `Flows/`. `connecting` false leaves
+    /// Diffuse's gateway alone, for tests.
+    public init(project: ProjectGraph? = nil, defaults: UserDefaults = .standard, connecting: Bool = true) {
+        self.defaults = defaults
+        let project = project ?? Self.openLastProject(defaults)
         self.project = project
+        let folder = project.folder ?? Self.defaultProjectFolder
+        diffuse = DiffuseWorkspaceModel(flowsFolder: folder.appending(path: "Flows", directoryHint: .isDirectory), defaults: defaults, connecting: connecting)
+        canvas = CanvasWorkspaceModel(folder: folder.appending(path: "Canvases", directoryHint: .isDirectory), defaults: defaults)
+        recentProjects = (defaults.stringArray(forKey: "aether.recentProjects") ?? []).map { URL(fileURLWithPath: $0, isDirectory: true) }
         diffuse.project = project
         canvas.project = project
         // Send to Canvas: the picture as a new canvas, on screen, its layer
@@ -45,15 +60,22 @@ public final class AppModel {
         diffuse.showSource = { [weak self] in self?.showSource($0) }
         canvas.showSource = { [weak self] in self?.showSource($0) }
         Task { await refreshFlowFiles() }
-        quitting = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [project] _ in
-            MainActor.assumeIsolated { project.saveNow() }
+        quitting = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.project.saveNow() }
         }
     }
 
-    /// `~/Documents/Aether`, which already holds `Canvases/` and `Flows/`.
-    /// One that can't be read is kept in memory, not written over.
-    static func openProject() -> ProjectGraph {
-        let folder = URL.documentsDirectory.appending(path: "Aether", directoryHint: .isDirectory)
+    /// `~/Documents/Aether`, which already held `Canvases/` and `Flows/`
+    /// before there were projects.
+    public nonisolated static var defaultProjectFolder: URL {
+        URL.documentsDirectory.appending(path: "Aether", directoryHint: .isDirectory)
+    }
+
+    /// The project last open, or the default one. One that can't be read is
+    /// kept in memory, not written over.
+    static func openLastProject(_ defaults: UserDefaults) -> ProjectGraph {
+        let last = defaults.string(forKey: "aether.project").map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let folder = last.flatMap { ProjectGraph.isProject($0) ? $0 : nil } ?? defaultProjectFolder
         do {
             return try ProjectGraph.open(folder)
         } catch {

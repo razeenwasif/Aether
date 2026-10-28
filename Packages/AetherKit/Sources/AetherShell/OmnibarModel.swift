@@ -69,8 +69,15 @@ public final class OmnibarModel {
     public var scope: Scope = .all {
         didSet { selected = 0 }
     }
-    /// Which result ↩ runs.
+    /// Which result ↩ runs, once there's a choice (see `choosing`).
     public var selected = 0
+    /// Whether ↑↓ have moved the choice since it opened.
+    public private(set) var moved = false
+
+    /// Whether a row is chosen for ↩: once something is typed or ↑↓ have
+    /// moved. Until then ↩ does nothing, so a key pressed too soon never
+    /// runs the top row (Generate, in Diffuse).
+    public var choosing: Bool { moved || !query.trimmingCharacters(in: .whitespaces).isEmpty }
     /// The most results shown.
     static let most = 60
 
@@ -88,6 +95,7 @@ public final class OmnibarModel {
         offer(items)
         query = ""
         scope = .all
+        moved = false
         isOpen = true
     }
 
@@ -112,7 +120,9 @@ public final class OmnibarModel {
 
     public func move(by step: Int, in count: Int) {
         guard count > 0 else { return }
-        selected = (selected + step + count) % count
+        // The first ↓ chooses the top row; the first ↑ the bottom one.
+        selected = moved || !query.isEmpty ? (selected + step + count) % count : (step > 0 ? 0 : count - 1)
+        moved = true
     }
 
     /// What matches the query in the scope: by group with nothing typed,

@@ -217,7 +217,8 @@ public final class CanvasWorkspaceModel {
     /// Where the pointer is on the canvas, in pixels, while it's over it.
     public var pointer: CGPoint?
 
-    public let folder: URL
+    /// Where canvases go: the project's `Canvases/`.
+    public private(set) var folder: URL
 
     /// The project the canvas belongs to: its links, and every document's
     /// steps in one history. Set by the window; tests may leave it out.
@@ -355,6 +356,7 @@ public final class CanvasWorkspaceModel {
         finishTransform()
         do {
             try document.save()
+            if let path = documentPath { project?.documentSaved(path) }
             refreshList()
             publishIfUsed()
         } catch {
@@ -375,6 +377,7 @@ public final class CanvasWorkspaceModel {
             let was = documentPath
             try document.save(as: url)
             if let project, let was { project.move(document: was, to: project.path(of: url), by: .canvas) }
+            if let path = documentPath { project?.documentSaved(path) }
             refreshList()
         } catch {
             notice = "Couldn’t save \(url.lastPathComponent): \(Self.describe(error))"
@@ -397,11 +400,26 @@ public final class CanvasWorkspaceModel {
         }
     }
 
+    /// Another project's canvases: the canvas open is shut without asking
+    /// (the window asked about every workspace first), and the list is the
+    /// new folder's.
+    public func switchFolder(to url: URL) {
+        stop()
+        moving = nil
+        leaving = nil
+        letGo()
+        document = nil
+        layer = nil
+        folder = url
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        refreshList()
+    }
+
     /// Back to the home page.
     public func close() {
         leave {
             self.stop()
-            if let path = self.documentPath { self.project?.forget(document: path) }
+            self.letGo()
             self.document = nil
             self.layer = nil
             self.refreshList()
@@ -432,8 +450,7 @@ public final class CanvasWorkspaceModel {
         moving = nil
         swatch = nil
         thumbs = [:]
-        // Its history goes with it, so its steps leave the project's.
-        if let path = documentPath, document !== doc { project?.forget(document: path) }
+        if document !== doc { letGo() }
         document = doc
         doc.onStep = { [weak self, weak doc] label, applied in self?.stepped(label, applied, in: doc) }
         applyOnion()

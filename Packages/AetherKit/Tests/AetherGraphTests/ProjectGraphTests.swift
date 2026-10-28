@@ -126,6 +126,8 @@ struct ProjectGraphTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         let graph = ProjectGraph(folder: folder)
         #expect(graph.name.hasPrefix("aether-project-"))
+        graph.saveNow()
+        #expect(!FileManager.default.fileExists(atPath: folder.appending(path: "project.json").path), "nothing changed, nothing written")
         let red = png(255)
         let blob = try await graph.pool.store(red)
         #expect(try await graph.pool.store(red) == blob, "the same bytes, the same blob")
@@ -161,6 +163,30 @@ struct ProjectGraphTests {
         #expect(graph.links.map(\.document) == ["Canvases/b.canvas"] && graph.undoLabel(in: "Canvases/b.canvas") == "Bring in")
         #expect(graph.undoLabel(in: "Canvases/a.canvas") == nil)
         #expect(Slot.layer(of: "layer:3") == 3 && Slot.input(of: Slot.input(node: "12", field: "image"))! == ("12", "image"))
+    }
+
+    @Test func linksMadeWithUnsavedStepsGoWhenTheDocumentIsLetGo() throws {
+        let graph = ProjectGraph(folder: nil)
+        let art = try graph.asset(madeBy: "Flows/f.flow.json", named: "Art", in: .diffuse)
+        try graph.publish(art.id, blob: "x", width: 1, height: 1)
+        let a = "Canvases/a.canvas"
+        func link(_ layer: UInt32) -> Transaction {
+            Transaction([graph.linkOp(art.id, into: a, slot: Slot.layer(layer), by: .canvas)], origin: .canvas, label: "Link", document: a)
+        }
+        try graph.documentStepped(a, label: "Bring in", with: link(2))
+        graph.documentSaved(a)
+        try graph.documentStepped(a, label: "Bring in", with: link(3))
+        #expect(graph.links.count == 2)
+        graph.discard(document: a)
+        #expect(graph.links.map(\.slot) == ["layer:2"] && graph.history.done.isEmpty, "the saved one stays; the unsaved one goes")
+
+        // Saved, then undone: letting go puts it back, as the file has it.
+        try graph.documentStepped(a, label: "Bring in", with: link(4))
+        graph.documentSaved(a)
+        graph.undo(in: a) { true }
+        #expect(graph.link(in: a, slot: "layer:4") == nil)
+        graph.discard(document: a)
+        #expect(graph.link(in: a, slot: "layer:4") != nil)
     }
 
     @Test func aThousandOpsApplyWellInsideAFrame() throws {
