@@ -183,6 +183,16 @@ public final class CanvasWorkspaceModel {
     public var wandDiagonal = false
     /// What is being moved, until it is kept or left.
     public internal(set) var moving: CanvasMoving?
+    /// The pixel grid (⇧G), drawn once a pixel is six points or more.
+    public var showGrid = false
+    /// Drawing mirrored across the canvas's middle (m) and down it (⇧M):
+    /// the pencil's tip and shapes, as Proton's are.
+    public var mirrorAcross = false
+    public var mirrorDown = false
+    /// The palette's swatch last chosen: what Recolour changes.
+    public var swatch: Int?
+    /// The resize form.
+    public var askingToResize = false
     /// The system clipboard's change count when this canvas last put its
     /// copy there: pasting it again pastes the copy where it was.
     @ObservationIgnored private var ownClipboard: Int?
@@ -386,6 +396,7 @@ public final class CanvasWorkspaceModel {
 
     private func show(_ doc: CanvasDocument) {
         moving = nil
+        swatch = nil
         document = doc
         layer = doc.state.layers.last?.id
         if doc.state.preset == .pixel, tool == .brush { tool = .pencil }
@@ -673,6 +684,19 @@ public final class CanvasWorkspaceModel {
         fit()
     }
 
+    /// The whole canvas made `width` by `height`: by the nearest pixel on a
+    /// pixel canvas, weighed on a painting.
+    public func resizeCanvas(width: Int, height: Int) {
+        guard let document else { return }
+        let preset = document.state.preset
+        guard (1...preset.most).contains(width), (1...preset.most).contains(height) else {
+            notice = "A \(preset.title) canvas is 1 to \(preset.most) pixels a side."
+            return
+        }
+        change(.resize(width: UInt32(width), height: UInt32(height), smooth: preset == .paint), label: "Resize")
+        fit()
+    }
+
     // MARK: Colour
 
     /// Remember `color` as used.
@@ -680,6 +704,75 @@ public final class CanvasWorkspaceModel {
         recent.removeAll { $0 == color }
         recent.insert(color, at: 0)
         if recent.count > 12 { recent.removeLast(recent.count - 12) }
+    }
+
+    /// The colour drawn with from a hex code: `#rgb`, `#rrggbb` or
+    /// `#rrggbbaa`. Whether it was one.
+    @discardableResult
+    public func setColor(hex: String) -> Bool {
+        var s = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("#") { s.removeFirst() }
+        if s.count == 3 { s = s.map { "\($0)\($0)" }.joined() }
+        guard s.count == 6 || s.count == 8, s.allSatisfy(\.isHexDigit), let v = UInt32(s, radix: 16) else { return false }
+        let bytes = s.count == 6 ? [UInt8(v >> 16 & 255), UInt8(v >> 8 & 255), UInt8(v & 255), 255]
+            : [UInt8(v >> 24), UInt8(v >> 16 & 255), UInt8(v >> 8 & 255), UInt8(v & 255)]
+        color = RGBA(bytes)
+        return true
+    }
+
+    /// The pencil's tip as it draws: with the mirror lines on, given as
+    /// twice their place, so the canvas's width is its middle.
+    public var drawingTip: CanvasTip {
+        var t = tip
+        t.mirror = [mirrorAcross ? document.map { Int32($0.width) } : nil, mirrorDown ? document.map { Int32($0.height) } : nil]
+        return t
+    }
+
+    // MARK: The palette
+
+    public var palette: [RGBA] { document?.state.palette.map(RGBA.init) ?? [] }
+
+    /// A swatch chosen: the colour drawn with, and what Recolour changes.
+    public func chooseSwatch(_ index: Int) {
+        guard palette.indices.contains(index) else { return }
+        color = palette[index]
+        swatch = index
+    }
+
+    /// The colour drawn with, added to the palette.
+    public func addToPalette() {
+        guard document != nil, !palette.contains(color) else { return }
+        change(.setPalette(palette + [color]), label: "Add a colour")
+        swatch = palette.firstIndex(of: color)
+    }
+
+    /// Five steps of the colour drawn with, darker and lighter, the hue
+    /// turning as a painter's shading does: those not there already, added.
+    public func addRamp() {
+        guard document != nil else { return }
+        let fresh = CanvasDocument.ramp(of: color).filter { !palette.contains($0) }
+        guard !fresh.isEmpty else { return }
+        change(.setPalette(palette + fresh), label: "Ramp")
+    }
+
+    /// The colour drawn with, taken out of the palette.
+    public func removeFromPalette() {
+        guard palette.contains(color) else { return }
+        change(.setPalette(palette.filter { $0 != color }), label: "Remove a colour")
+        swatch = nil
+    }
+
+    /// Whether the chosen swatch is a colour other than the one drawn with.
+    public var canRecolour: Bool {
+        guard let swatch, palette.indices.contains(swatch) else { return false }
+        return palette[swatch] != color
+    }
+
+    /// The chosen swatch made the colour drawn with, and every pixel of its
+    /// colour on layers not locked, as one edit.
+    public func recolourSwatch() {
+        guard canRecolour, let swatch else { return }
+        change(.replaceColor(from: palette[swatch], to: color, swatch: UInt32(swatch)), label: "Recolour")
     }
 
     // MARK: The view
@@ -751,7 +844,10 @@ public final class CanvasWorkspaceModel {
         case "b": tool = pixel ? .pencil : .brush
         case "n": tool = pixel ? .brush : .pencil
         case "e": tool = .eraser
-        case "g": tool = .fill
+        case "g":
+            if shift { showGrid.toggle() } else { tool = .fill }
+        case "m":
+            if shift { mirrorDown.toggle() } else { mirrorAcross.toggle() }
         case "i": tool = .pick
         case "l": tool = .line
         case "r": tool = .rect

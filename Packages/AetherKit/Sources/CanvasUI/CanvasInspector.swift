@@ -11,11 +11,12 @@ struct CanvasInspector: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
-                    ColourSection(model: model, document: document)
+                    ColourSection(model: model)
+                    PaletteSection(model: model)
                     ToolSection(model: model)
                 }
             }
-            .frame(maxHeight: 400)
+            .frame(maxHeight: 540)
             .fixedSize(horizontal: false, vertical: true)
             LayersSection(model: model, document: document)
         }
@@ -28,40 +29,112 @@ struct CanvasInspector: View {
 
 private struct ColourSection: View {
     @Bindable var model: CanvasWorkspaceModel
-    let document: CanvasDocument
+    @State private var hex = ""
+    @FocusState private var typing: Bool
 
     var body: some View {
         PanelSection("Colour") {
             HStack(spacing: 10) {
                 ColorWell(model: model)
-                Text(model.color.hex).font(.aeMono).foregroundStyle(Color.ink).textSelection(.enabled)
+                TextField("Hex", text: $hex)
+                    .textFieldStyle(.plain)
+                    .font(.aeMono)
+                    .foregroundStyle(Color.ink)
+                    .frame(width: 96)
+                    .focused($typing)
+                    .onSubmit {
+                        model.setColor(hex: hex)
+                        hex = model.color.hex
+                    }
+                    .help("Type a hex code: #rrggbb, or #rrggbbaa")
+                    .accessibilityLabel("Colour, as hex")
                 Spacer()
-            }
-            if !document.state.palette.isEmpty {
-                swatches(document.state.palette.map(RGBA.init), help: "The canvas’s palette")
             }
             if !model.recent.isEmpty {
                 Text("Lately").font(.aeSmall).foregroundStyle(Color.ink3)
-                swatches(model.recent, help: "Used lately")
+                Swatches(colors: model.recent, chosen: { $0 == model.color }, help: { "\($0.hex) — used lately" }) { model.color = model.recent[$0] }
             }
         }
+        .onAppear { hex = model.color.hex }
+        .onChange(of: model.color) { if !typing { hex = model.color.hex } }
+        .onChange(of: typing) { if !typing { hex = model.color.hex } }
+    }
+}
+
+/// Small squares of colour, eleven to a row.
+private struct Swatches: View {
+    let colors: [RGBA]
+    let chosen: (RGBA) -> Bool
+    let help: (RGBA) -> String
+    var twice: ((Int) -> Void)?
+    let pick: (Int) -> Void
+
+    init(colors: [RGBA], chosen: @escaping (RGBA) -> Bool, help: @escaping (RGBA) -> String, twice: ((Int) -> Void)? = nil, pick: @escaping (Int) -> Void) {
+        self.colors = colors
+        self.chosen = chosen
+        self.help = help
+        self.twice = twice
+        self.pick = pick
     }
 
-    private func swatches(_ colors: [RGBA], help: String) -> some View {
+    var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.fixed(18), spacing: 4), count: 11), alignment: .leading, spacing: 4) {
-            ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
-                Button {
-                    model.color = color
-                } label: {
+            ForEach(Array(colors.enumerated()), id: \.offset) { i, color in
+                Button { pick(i) } label: {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(color.color)
                         .frame(width: 18, height: 18)
-                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(color == model.color ? Color.inkHi : Color.white.opacity(0.12), lineWidth: color == model.color ? 1.5 : 1))
+                        .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(chosen(color) ? Color.inkHi : Color.white.opacity(0.12), lineWidth: chosen(color) ? 1.5 : 1))
                 }
                 .buttonStyle(.plain)
-                .help("\(color.hex) — \(help)")
+                .simultaneousGesture(TapGesture(count: 2).onEnded { twice?(i) })
+                .help(help(color))
                 .accessibilityLabel(color.hex)
             }
+        }
+    }
+}
+
+// MARK: - The palette
+
+/// The canvas's palette, as Proton's: a swatch to draw with, the colour
+/// drawn with added, a ramp of it, and a swatch recoloured everywhere it is.
+private struct PaletteSection: View {
+    @Bindable var model: CanvasWorkspaceModel
+
+    var body: some View {
+        let palette = model.palette
+        PanelSection("Palette") {
+            if palette.isEmpty {
+                Text("No palette yet.").font(.aeSmall).foregroundStyle(Color.ink3)
+            } else {
+                Swatches(colors: palette, chosen: { $0 == model.color },
+                         help: { "\($0.hex) — click to draw with it, double-click to change it everywhere it is" },
+                         twice: { i in
+                             model.chooseSwatch(i)
+                             ColorPanelLink.shared.open(for: model)
+                         },
+                         pick: { model.chooseSwatch($0) })
+            }
+            HStack(spacing: 6) {
+                if model.canRecolour, let i = model.swatch {
+                    Button("Recolour") { model.recolourSwatch() }
+                        .buttonStyle(.borderedProminent)
+                        .help("\(palette[i].hex) becomes \(model.color.hex), the swatch and every pixel of it, as one edit")
+                }
+                Button("Add") { model.addToPalette() }
+                    .disabled(palette.contains(model.color))
+                    .help("Add \(model.color.hex) to the palette")
+                Button("Ramp") { model.addRamp() }
+                    .help("Five steps of \(model.color.hex), darker and lighter, the hue turning as a painter’s shading does")
+                if palette.contains(model.color) {
+                    Button("Remove") { model.removeFromPalette() }
+                        .help("Take \(model.color.hex) out of the palette")
+                }
+            }
+            .controlSize(.small)
+            Text(model.canRecolour ? "Recolour changes the chosen swatch, and every pixel of it, to the colour drawn with." : "Double-click a swatch to change its colour, then Recolour changes every pixel of it as one edit.")
+                .font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -164,6 +237,8 @@ private struct ToolSection: View {
     @ViewBuilder private var tipRows: some View {
         slider("Size", value: $model.tip.size, range: 1...64, shown: "\(model.tip.size) px")
         Toggle("Round", isOn: $model.tip.round).toggleStyle(.checkbox).font(.aeBody)
+        Toggle("Mirror across the middle (m)", isOn: $model.mirrorAcross).toggleStyle(.checkbox).font(.aeBody)
+        Toggle("Mirror down the middle (⇧M)", isOn: $model.mirrorDown).toggleStyle(.checkbox).font(.aeBody)
     }
 
     @ViewBuilder private var brushRows: some View {

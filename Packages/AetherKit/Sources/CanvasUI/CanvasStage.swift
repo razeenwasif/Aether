@@ -20,6 +20,7 @@ struct CanvasStage: NSViewRepresentable {
         _ = document.drawn
         _ = (model.tool, model.brush.size, model.tip.size, model.panning, model.selectShape)
         _ = (document.outline, model.moving?.transform, model.moving?.free)
+        _ = (model.showGrid, model.mirrorAcross, model.mirrorDown)
         view.show(model.viewport)
         view.refreshTiles()
         view.toolChanged()
@@ -43,6 +44,18 @@ final class CanvasStageView: NSView {
     private let selecting = Dashes(marching: false)
     private let box = CAShapeLayer()
     private let grips = CAShapeLayer()
+    /// The pixel grid, and the lines drawing is mirrored across.
+    private let grid = CAShapeLayer()
+    private let mirrors = CAShapeLayer()
+    private var guidesFor: Guides?
+
+    /// What the grid and the mirror lines were last drawn for.
+    private struct Guides: Equatable {
+        var viewport: CanvasViewport
+        var grid: Bool, across: Bool, down: Bool
+        var width: Int, height: Int
+        var bounds: CGSize
+    }
     private var tiles: [Int: CALayer] = [:]
     private var drag: Drag?
     private var tracking: NSTrackingArea?
@@ -99,12 +112,21 @@ final class CanvasStageView: NSView {
         grips.fillColor = NSColor.white.withAlphaComponent(0.95).cgColor
         grips.strokeColor = NSColor.black.withAlphaComponent(0.7).cgColor
         grips.lineWidth = 1
-        for overlay in [box, grips] {
+        // Proton's grid: mid-grey at a third over every pixel's edge.
+        grid.fillColor = nil
+        grid.strokeColor = NSColor(white: 0.5, alpha: 0.35).cgColor
+        mirrors.fillColor = nil
+        mirrors.strokeColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        mirrors.lineWidth = 1
+        mirrors.lineDashPattern = [4, 4]
+        for overlay in [box, grips, grid, mirrors] {
             overlay.actions = Self.still
             overlay.isHidden = true
         }
         layer?.addSublayer(backdrop)
         layer?.addSublayer(world)
+        layer?.addSublayer(grid)
+        layer?.addSublayer(mirrors)
         ants.add(to: layer!)
         selecting.add(to: layer!)
         layer?.addSublayer(box)
@@ -212,10 +234,60 @@ final class CanvasStageView: NSView {
     func drawOverlays() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        drawGuides()
         drawAnts()
         drawSelecting()
         drawMoving()
         CATransaction.commit()
+    }
+
+    /// The pixel grid once a pixel is six points or more — only where the
+    /// canvas shows — and the mirror lines down and across its middle.
+    private func drawGuides() {
+        let v = model.viewport
+        let now = Guides(viewport: v, grid: model.showGrid, across: model.mirrorAcross, down: model.mirrorDown,
+                         width: document.width, height: document.height, bounds: bounds.size)
+        guard now != guidesFor else { return }
+        guidesFor = now
+        let canvas = CGRect(x: v.offset.x, y: v.offset.y, width: CGFloat(document.width) * v.scale, height: CGFloat(document.height) * v.scale)
+        let seen = canvas.intersection(bounds)
+        if now.grid, v.scale >= 6, !seen.isNull {
+            // A hairline: one device pixel, on device pixels.
+            let density = window?.backingScaleFactor ?? 2
+            let snap = { (p: CGFloat) in (p * density).rounded() / density + 0.5 / density }
+            let path = CGMutablePath()
+            let x0 = max(0, Int(floor((seen.minX - v.offset.x) / v.scale))), x1 = min(document.width, Int(ceil((seen.maxX - v.offset.x) / v.scale)))
+            let y0 = max(0, Int(floor((seen.minY - v.offset.y) / v.scale))), y1 = min(document.height, Int(ceil((seen.maxY - v.offset.y) / v.scale)))
+            for i in x0...max(x0, x1) {
+                let x = snap(v.offset.x + CGFloat(i) * v.scale)
+                path.move(to: CGPoint(x: x, y: seen.minY))
+                path.addLine(to: CGPoint(x: x, y: seen.maxY))
+            }
+            for j in y0...max(y0, y1) {
+                let y = snap(v.offset.y + CGFloat(j) * v.scale)
+                path.move(to: CGPoint(x: seen.minX, y: y))
+                path.addLine(to: CGPoint(x: seen.maxX, y: y))
+            }
+            grid.lineWidth = 1 / density
+            grid.path = path
+            grid.isHidden = false
+        } else {
+            grid.isHidden = true
+        }
+        guard now.across || now.down else { return mirrors.isHidden = true }
+        let path = CGMutablePath()
+        if now.across {
+            let x = (canvas.midX).rounded() + 0.5
+            path.move(to: CGPoint(x: x, y: canvas.minY))
+            path.addLine(to: CGPoint(x: x, y: canvas.maxY))
+        }
+        if now.down {
+            let y = (canvas.midY).rounded() + 0.5
+            path.move(to: CGPoint(x: canvas.minX, y: y))
+            path.addLine(to: CGPoint(x: canvas.maxX, y: y))
+        }
+        mirrors.path = path
+        mirrors.isHidden = false
     }
 
     /// The marching ants round what is selected — not while it is moved.
@@ -502,7 +574,7 @@ final class CanvasStageView: NSView {
             if let layer = model.currentLayer {
                 let to = constrained(from: from, to: canvasPoint(event), shape: shape, shift: event.modifierFlags.contains(.shift))
                 model.change(.shape(layer: layer.id, kind: shape, from: [Int32(from.x), Int32(from.y)], to: [Int32(to.x), Int32(to.y)],
-                                    filled: filled, tip: model.tip, color: model.color), label: shape.title)
+                                    filled: filled, tip: model.drawingTip, color: model.color), label: shape.title)
                 model.used(model.color)
             }
         case .pan:
@@ -556,7 +628,7 @@ final class CanvasStageView: NSView {
         let pixel = document.state.preset == .pixel
         let begin: StrokeBegin
         if tool == .pencil || (erasing && pixel) {
-            begin = StrokeBegin(layer: layer.id, tool: erasing ? .eraser : .pencil, tip: model.tip, color: model.color, pixelPerfect: model.pixelPerfect && !erasing)
+            begin = StrokeBegin(layer: layer.id, tool: erasing ? .eraser : .pencil, tip: model.drawingTip, color: model.color, pixelPerfect: model.pixelPerfect && !erasing)
         } else {
             begin = StrokeBegin(layer: layer.id, tool: erasing ? .eraser : .pencil, brush: model.brush, color: model.color)
         }
@@ -586,7 +658,7 @@ final class CanvasStageView: NSView {
         guard case let .shape(shape, from, filled) = drag, let layer = model.currentLayer else { return }
         let to = constrained(from: from, to: c, shape: shape, shift: shift)
         document.preview(.shape(layer: layer.id, kind: shape, from: [Int32(from.x), Int32(from.y)], to: [Int32(to.x), Int32(to.y)],
-                                filled: filled, tip: model.tip, color: model.color))
+                                filled: filled, tip: model.drawingTip, color: model.color))
         refreshTiles()
     }
 

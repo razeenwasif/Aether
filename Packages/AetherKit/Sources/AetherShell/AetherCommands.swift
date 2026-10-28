@@ -125,6 +125,15 @@ public struct AetherCommands: Commands {
                 Button("Mirror Down") { canvas.mirror(across: false) }
             }
             .disabled(!onCanvas || canvas.document == nil)
+            Button("Resize…") { canvas.askingToResize = true }
+                .disabled(!onCanvas || canvas.document == nil)
+            Divider()
+            Toggle("Show the Pixel Grid  (⇧G)", isOn: Binding(get: { canvas.showGrid }, set: { canvas.showGrid = $0 }))
+                .disabled(!onCanvas || canvas.document == nil)
+            Toggle("Draw Mirrored Across  (m)", isOn: Binding(get: { canvas.mirrorAcross }, set: { canvas.mirrorAcross = $0 }))
+                .disabled(!onCanvas || canvas.document == nil)
+            Toggle("Draw Mirrored Down  (⇧M)", isOn: Binding(get: { canvas.mirrorDown }, set: { canvas.mirrorDown = $0 }))
+                .disabled(!onCanvas || canvas.document == nil)
             Divider()
             Button("All Canvases") { canvas.close() }
                 .disabled(!onCanvas || canvas.document == nil)

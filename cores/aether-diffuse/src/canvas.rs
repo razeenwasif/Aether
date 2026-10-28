@@ -263,6 +263,36 @@ pub struct Lifted {
     pub pixels: Vec<u8>,
 }
 
+/// A colour's ramp for a palette: `steps` colours, darkest first, from
+/// `spread` below its lightness to `spread` above (1/65536), the hue turning
+/// by up to `shift` degrees as a painter's shading does. Straight RGBA, four
+/// numbers a colour.
+#[uniffi::export]
+pub fn canvas_ramp(base: Vec<u8>, steps: u32, shift: u32, spread: u32) -> Vec<u8> {
+    let base = [0, 1, 2, 3].map(|i| base.get(i).copied().unwrap_or(255));
+    proton_raster::gen::color::ramp(base, steps, shift, spread).into_iter().flatten().collect()
+}
+
+/// The colours of a small picture, when it has few (32 at most): a pixel
+/// canvas's palette, in the order first met, as Proton's import makes one.
+fn palette_of(canvas: &Canvas) -> Vec<[u8; 4]> {
+    let mut colours: Vec<[u8; 4]> = Vec::new();
+    for grid in canvas.layers.iter().flat_map(|l| l.cels.iter()) {
+        for y in 0..canvas.height {
+            for x in 0..canvas.width {
+                let p = grid.pixel(x, y);
+                if p[3] == 255 && !colours.contains(&p) {
+                    if colours.len() == 32 {
+                        return Vec::new();
+                    }
+                    colours.push(p);
+                }
+            }
+        }
+    }
+    colours
+}
+
 /// The pixels of `grid` within `rect`, straight RGBA row by row.
 fn cut(grid: &Grid, [x, y, w, h]: [u32; 4]) -> Vec<u8> {
     let mut rgba = Vec::with_capacity((w * h * 4) as usize);
@@ -309,9 +339,14 @@ impl CanvasEditor {
     /// one layer; not written until saved.
     #[uniffi::constructor]
     pub fn create(width: u32, height: u32, preset_name: String) -> Result<Arc<CanvasEditor>, DiffuseError> {
-        let mut canvas = Canvas::new(width, height, preset(&preset_name)?).map_err(failed)?;
+        let preset = preset(&preset_name)?;
+        let mut canvas = Canvas::new(width, height, preset).map_err(failed)?;
         if canvas.layers.is_empty() {
             canvas.push_layer("Layer 1".into());
+        }
+        // A pixel canvas starts with colours to pick from, as Proton's does.
+        if preset == Preset::Pixel {
+            canvas.palette = proton_raster::canvas::PALETTE16.to_vec();
         }
         let mut held = Held::new(canvas, None);
         // A new canvas is not dirty until something is drawn.
@@ -332,7 +367,11 @@ impl CanvasEditor {
     #[uniffi::constructor]
     pub fn import(bytes: Vec<u8>, name: String) -> Result<Arc<CanvasEditor>, DiffuseError> {
         let picture = port::read(&bytes, &name).map_err(failed)?;
-        let canvas = port::canvas_of(&picture, port::preset_for(picture.width, picture.height)).map_err(failed)?;
+        let preset = port::preset_for(picture.width, picture.height);
+        let mut canvas = port::canvas_of(&picture, preset).map_err(failed)?;
+        if preset == Preset::Pixel && canvas.palette.is_empty() {
+            canvas.palette = palette_of(&canvas);
+        }
         let mut held = Held::new(canvas, None);
         // Not saved anywhere yet: dirty until it is.
         held.saved = u64::MAX;
@@ -729,6 +768,9 @@ mod tests {
         let imported = CanvasEditor::import(png, "square.png".into()).unwrap();
         let view: serde_json::Value = serde_json::from_str(&imported.view()).unwrap();
         assert_eq!((view["width"].as_u64(), view["preset"].as_str()), (Some(32), Some("pixel")));
+        assert_eq!(view["palette"], serde_json::json!([[10, 20, 30, 255]]), "a small picture's colours are its palette");
+        let fresh: serde_json::Value = serde_json::from_str(&CanvasEditor::create(16, 16, "pixel".into()).unwrap().view()).unwrap();
+        assert_eq!(fresh["palette"].as_array().unwrap().len(), 16, "a new pixel canvas starts with sixteen");
         assert_eq!(imported.pick(5, 5).unwrap(), vec![10, 20, 30, 255]);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -785,5 +827,26 @@ mod tests {
         editor.undo().unwrap();
         let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
         assert_eq!(view["layers"].as_array().unwrap().len(), 1, "one undo step");
+    }
+
+    #[test]
+    fn a_ramp_runs_dark_to_light_and_a_swatch_recolours_its_pixels() {
+        let ramp = canvas_ramp(vec![176, 48, 63, 255], 5, 25, 24000);
+        assert_eq!(ramp.len(), 5 * 4);
+        let light = |c: &[u8]| c[0] as u32 + c[1] as u32 + c[2] as u32;
+        assert!(ramp.chunks_exact(4).collect::<Vec<_>>().windows(2).all(|w| light(w[0]) < light(w[1])), "{ramp:?}");
+
+        let editor = CanvasEditor::create(16, 16, "pixel".into()).unwrap();
+        let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
+        let first: Vec<u8> = serde_json::from_value(view["palette"][0].clone()).unwrap();
+        editor.apply(format!(r#"{{"op": "fillRect", "layer": 1, "rect": [0, 0, 4, 4], "color": {first:?}}}"#), "Fill".into()).unwrap();
+        editor.apply(format!(r#"{{"op": "replaceColor", "from": {first:?}, "to": [1, 2, 3, 255], "swatch": 0}}"#), "Recolour".into()).unwrap();
+        assert_eq!(editor.pick(1, 1).unwrap(), vec![1, 2, 3, 255], "every pixel of it");
+        let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
+        assert_eq!(view["palette"][0], serde_json::json!([1, 2, 3, 255]), "and the swatch, one edit");
+        editor.apply(r#"{"op": "resize", "width": 32, "height": 8}"#.into(), "Resize".into()).unwrap();
+        let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
+        assert_eq!((view["width"].as_u64(), view["height"].as_u64()), (Some(32), Some(8)));
+        assert_eq!(editor.pick(2, 0).unwrap(), vec![1, 2, 3, 255], "by the nearest pixel");
     }
 }

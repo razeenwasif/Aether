@@ -715,6 +715,28 @@ The user took the PI's recommendation on all five.
 - **Not checked in the app:** copy and paste, so as not to overwrite the user's clipboard (the tests use a private one). Also not checked: the lasso, the wand, dropping a picture on an open canvas, crop and turn (all covered by tests), and moving on a 4096² canvas.
 - **Not ported yet:** the palette editor, animation (frames, onion skin, tags), the pixel grid (`⇧G`), mirror drawing (`m`), resizing the canvas, and Proton's Make panel (generators and filters).
 
+**2026-10-28 · Canvas: the palette, the pixel grid, mirror drawing, and resize.** The user asked to "continue Canvas: the palette editor, the pixel grid and mirror drawing, and resize". Ported from Proton's window as it stood before `9111812` (`raster.js`'s palette panel, `toggleGrid`, the tip's mirror and the Canvas panel's resize), with the engine's ops as they are.
+
+- **Fixed on the way:** Proton's core gave a new Pixel canvas its sixteen colours (`PALETTE16`), and a small picture imported as a Pixel canvas a palette of its own colours (32 at most). Aether's bridge did neither, so new pixel canvases had no palette (missed in the first Canvas port). Both are done now.
+- **The bridge** gained `canvas_ramp`, the engine's OKLab ramp. Everything else was already an op: `SetPalette`, `ReplaceColor` (a swatch and every pixel of its colour on layers not locked, one undo step, regardless of the selection), `Resize` (nearest on Pixel, weighed on Paint), and the tip's `mirror`, given as twice the line's place.
+- **The palette section** sits under Colour on both presets.
+  - A click on a swatch draws with it and chooses it. Add puts in the colour drawn with. Ramp adds five steps of it that aren't there already (steps 5, shift 25°, spread 24000, as Proton's). Remove takes it out.
+  - A double-click opens the colour panel on the swatch's colour. Once the colour drawn with differs from the chosen swatch, a Recolour button changes the swatch and its pixels.
+  - Proton opened a colour input on double-click and recoloured on its change. A button keeps it to one edit however long the colour panel is dragged.
+- **The colour's hex** can be typed (`#rgb`, `#rrggbb`, `#rrggbbaa`). A bad code puts the old one back.
+- **The pixel grid** (`⇧G`, the dock's grid button, Canvas ▸ Show the Pixel Grid) is Proton's: a mid-grey hairline at 35% on every pixel edge, one device pixel wide, once a pixel is 6 points or more. It's drawn only over the part of the canvas on screen.
+- **Mirror drawing** (`m` across, `⇧M` down, the pencil's settings, the Canvas menu): the pencil, the eraser on a Pixel canvas, and shapes are mirrored through the tip, as Proton's. The middle lines are dashed white at 35%. The brush doesn't mirror, in Proton or here: the engine mirrors tips, not dabs.
+- **Resize…** (the Canvas menu) opens a sheet: width, height, Keep its shape, and the preset's limit (1024 on Pixel, 4096 on Paint). One undo step, then the canvas is fitted again. The fields update as typed, so a click on Resize uses what's in them.
+- **Tests:** the bridge has 1 more (a ramp darkest first; a swatch recoloured with its pixels in one step; resize by the nearest pixel), and the import test now checks the palettes. Swift has 5 more: recolour and its undo; add, ramp and remove; hex codes; mirrored strokes and shapes and the `m`, `⇧M`, `⇧G` and `g` keys; resize and its limit. 157 Rust and 85 Swift tests pass.
+- **Checked in the app,** on a 64 × 64 Pixel canvas made for the check and deleted after:
+  - The palette's sixteen swatches; the mirror line; a pencil stroke on the left drawn on the right too.
+  - The grid at 1200%, too fine to see in a downscaled capture. Reading pixels showed a lighter line every 24 device pixels.
+  - Choose swatch 0, take red from Lately, Recolour: the swatch and every pixel of the old stroke turned red.
+  - Resize to 32 × 32 with the shape kept (Height followed Width), refitted at 2500%.
+  - On `image_0007`, the Paint inspector (an empty palette, the brush's rows) fits without clipping, after raising the top part's height.
+  - Typing into the hex field couldn't be driven in the background (the automation's keys went to the canvas), so the hex field is checked by tests only.
+- **Not ported yet:** animation (frames, onion skin, tags), Proton's Make panel (generators and filters), Scale2x and Scale3x upscaling, exporting at ×2 to ×8 and as a sheet, PSD export, and vector booleans.
+
 Not yet:
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
@@ -723,7 +745,7 @@ Not yet:
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, and Send to Canvas (§10a). The other four workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, and Send to Canvas (§10a). The other four workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, move to Claude. They're due before M1, since nothing built so far depends on them.
@@ -734,6 +756,6 @@ Not yet:
 3. ~~**Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here~~: done, see §10a.
 4. ~~**Mask painting**~~: done, see §10a. With it, Diffuse matches Proton's window, apart from Send to Canvas and Send to Game, which wait on those workspaces.
 
-Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import. ~~Canvas selections, move and transform, copy and paste~~: done, see §10a.
+Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import. ~~Canvas selections, move and transform, copy and paste~~: done, see §10a. ~~The palette, the pixel grid, mirror drawing and resize~~: done, see §10a.
 
-**Next, proposed:** the rest of Canvas (the palette editor, the pixel grid and mirror drawing, resize, then animation), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.
+**Next, proposed:** the rest of Canvas (animation: frames, onion skin and tags; then the Make panel and export options), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.

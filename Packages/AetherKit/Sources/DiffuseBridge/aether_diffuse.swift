@@ -3117,6 +3117,23 @@ public func writeFile(path: String, bytes: Data, key: SealKey?)throws  -> String
     )
 })
 }
+/**
+ * A colour's ramp for a palette: `steps` colours, darkest first, from
+ * `spread` below its lightness to `spread` above (1/65536), the hue turning
+ * by up to `shift` degrees as a painter's shading does. Straight RGBA, four
+ * numbers a colour.
+ */
+public func canvasRamp(base: Data, steps: UInt32, shift: UInt32, spread: UInt32) -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_canvas_ramp(
+        FfiConverterData.lower(base),
+        FfiConverterUInt32.lower(steps),
+        FfiConverterUInt32.lower(shift),
+        FfiConverterUInt32.lower(spread),uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -3170,6 +3187,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_write_file() != 2637) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_canvas_ramp() != 45216) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_apply() != 29198) {

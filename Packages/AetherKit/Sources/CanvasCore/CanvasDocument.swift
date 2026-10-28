@@ -163,6 +163,14 @@ public final class CanvasDocument {
     /// What was last copied, as a PNG of the part it covers.
     public func clipPNG() -> Data? { editor.clipPng() }
 
+    /// A colour's ramp, darkest first: `steps` colours from `spread` below
+    /// its lightness to `spread` above (1/65536), the hue turning by up to
+    /// `shift` degrees as a painter's shading does.
+    public static func ramp(of base: RGBA, steps: UInt32 = 5, shift: UInt32 = 25, spread: UInt32 = 24000) -> [RGBA] {
+        let bytes = [UInt8](canvasRamp(base: Data(base.array), steps: steps, shift: shift, spread: spread))
+        return stride(from: 0, to: bytes.count - 3, by: 4).map { RGBA(Array(bytes[$0..<$0 + 4])) }
+    }
+
     /// A picture (PNG, PSD or Aseprite) brought in as layers over `above`,
     /// one undo step. What was left out of it is in the answer's `notes`.
     @discardableResult

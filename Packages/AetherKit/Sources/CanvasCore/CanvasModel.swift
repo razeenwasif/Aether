@@ -6,6 +6,9 @@ public enum CanvasPreset: String, Codable, Sendable, CaseIterable {
     case pixel, paint
 
     public var title: String { self == .pixel ? "Pixel" : "Paint" }
+
+    /// The largest side a canvas of it may have.
+    public var most: Int { self == .pixel ? 1024 : 4096 }
 }
 
 /// How a layer lays over those under it, as the W3C names the modes.
@@ -167,11 +170,19 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
     case orient(turns: UInt8, flip: Bool = false)
     /// The canvas cut to a rectangle: left, top, width, height.
     case crop([Int32])
+    /// The whole canvas resized: by the nearest pixel or, `smooth`, weighed.
+    case resize(width: UInt32, height: UInt32, smooth: Bool)
+    /// The canvas's palette, all of it.
+    case setPalette([RGBA])
+    /// One colour made another — on one layer, or every layer not locked —
+    /// and the palette's swatch with it, so recolouring a swatch is one edit.
+    case replaceColor(from: RGBA, to: RGBA, layer: UInt32? = nil, swatch: UInt32? = nil)
 
     private enum Keys: String, CodingKey {
         case op, name, at, layer, to, opacity, blend, hidden, locked, alphaLock, rect, color, x, y, tolerance, contiguous
         case shape, from, filled, tip
         case area, mode, feather, smooth, cut, above, frame, bounds, inverse, turns, flip
+        case width, height, colors, swatch
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -249,6 +260,20 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
         case .crop(let rect):
             try c.encode("crop", forKey: .op)
             try c.encode(rect, forKey: .rect)
+        case let .resize(width, height, smooth):
+            try c.encode("resize", forKey: .op)
+            try c.encode(width, forKey: .width)
+            try c.encode(height, forKey: .height)
+            try c.encode(smooth, forKey: .smooth)
+        case .setPalette(let colors):
+            try c.encode("setPalette", forKey: .op)
+            try c.encode(colors, forKey: .colors)
+        case let .replaceColor(from, to, layer, swatch):
+            try c.encode("replaceColor", forKey: .op)
+            try c.encode(from, forKey: .from)
+            try c.encode(to, forKey: .to)
+            try c.encodeIfPresent(layer, forKey: .layer)
+            try c.encodeIfPresent(swatch, forKey: .swatch)
         }
     }
 }

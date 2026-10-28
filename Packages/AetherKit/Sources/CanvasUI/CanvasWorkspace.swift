@@ -71,6 +71,14 @@ public struct CanvasWorkspace: View {
                 .frame(width: 380)
                 .background(Color.obsidian1)
         }
+        .sheet(isPresented: Binding(get: { model.askingToResize && model.document != nil }, set: { model.askingToResize = $0 })) {
+            if let document = model.document {
+                ResizeForm(model: model, document: document)
+                    .padding(22)
+                    .frame(width: 340)
+                    .background(Color.obsidian1)
+            }
+        }
         .modifier(CanvasKeys(model: model))
     }
 }
@@ -220,6 +228,77 @@ struct Checkerboard: View {
 }
 
 /// A new canvas: a name, Pixel or Paint, a size.
+/// The canvas made another size: every layer, by the nearest pixel on a
+/// pixel canvas and weighed on a painting.
+struct ResizeForm: View {
+    @Bindable var model: CanvasWorkspaceModel
+    let document: CanvasDocument
+    // As typed, so a click on Resize takes what is in the fields.
+    @State private var width = ""
+    @State private var height = ""
+    @State private var keepShape = true
+
+    private var most: Int { document.state.preset.most }
+    private var size: (Int, Int)? {
+        guard let w = Int(width.trimmingCharacters(in: .whitespaces)), let h = Int(height.trimmingCharacters(in: .whitespaces)),
+              (1...most).contains(w), (1...most).contains(h) else { return nil }
+        return (w, h)
+    }
+    private var fits: Bool { size != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Resize the canvas").font(.aeTitle).foregroundStyle(Color.inkHi)
+            HStack(alignment: .bottom, spacing: 10) {
+                // Typing one side sets the other when the shape is kept.
+                number("Width", Binding(get: { width }, set: {
+                    width = $0
+                    if keepShape, let side = Int($0) { height = String(scaled(side, document.width, document.height)) }
+                }))
+                Text(verbatim: "×").foregroundStyle(Color.ink2).padding(.bottom, 4)
+                number("Height", Binding(get: { height }, set: {
+                    height = $0
+                    if keepShape, let side = Int($0) { width = String(scaled(side, document.height, document.width)) }
+                }))
+            }
+            Toggle("Keep its shape", isOn: $keepShape).toggleStyle(.checkbox).font(.aeBody)
+            Text(verbatim: "Now \(document.width) × \(document.height). \(document.state.preset == .pixel ? "By the nearest pixel, so no colours are made" : "Weighed, so it stays smooth"); 1 to \(most) a side.")
+                .font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Cancel") { model.askingToResize = false }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Resize") {
+                    guard let (w, h) = size else { return }
+                    model.askingToResize = false
+                    model.resizeCanvas(width: w, height: h)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.runFill)
+                .foregroundStyle(Color.obsidian0)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!fits)
+                .opacity(fits ? 1 : 0.45)
+            }
+        }
+        .onAppear { (width, height) = (String(document.width), String(document.height)) }
+    }
+
+    /// `side` of a canvas `from` wide, as `to` would be in proportion.
+    private func scaled(_ side: Int, _ from: Int, _ to: Int) -> Int {
+        max(1, Int((Double(side) * Double(to) / Double(max(1, from))).rounded()))
+    }
+
+    private func number(_ label: String, _ value: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label).font(.aeLabel).foregroundStyle(Color.ink2)
+            TextField(label, text: value)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 96)
+        }
+    }
+}
+
 struct NewCanvasForm: View {
     @Bindable var model: CanvasWorkspaceModel
     let inSheet: Bool
@@ -452,6 +531,7 @@ private struct CanvasDock: View {
                 .disabled(!(model.document?.state.canRedo ?? false))
             Divider().frame(height: 20).padding(.horizontal, 4)
             IconButton("arrow.up.left.and.down.right.magnifyingglass", label: "Fit the canvas in view (f)", action: model.fit)
+            IconButton("grid", label: "The pixel grid, from 600% (⇧G)", isOn: model.showGrid) { model.showGrid.toggle() }
         }
         .padding(.horizontal, 6)
         .frame(height: 44)
