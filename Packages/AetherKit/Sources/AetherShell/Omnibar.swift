@@ -3,6 +3,7 @@ import AetherGraph
 import AppKit
 import CanvasUI
 import DiffuseCore
+import ModelUI
 import SwiftUI
 
 extension AppModel {
@@ -28,6 +29,8 @@ extension AppModel {
         case .canvas where canvas.document != nil: canvasItems
         case .canvas: [OmniItem(.here, "New Canvas…", detail: "⌘N") { self.canvas.askForNew() }]
         case .diffuse: diffuseItems
+        case .model where modeling.document != nil: modelItems
+        case .model: [OmniItem(.here, "New Scene…", detail: "⌘N") { self.modeling.askForNew() }]
         default: []
         }
     }
@@ -63,6 +66,25 @@ extension AppModel {
         return items
     }
 
+    private var modelItems: [OmniItem] {
+        let m = modeling
+        var items = SceneAddition.allCases.map { addition in
+            OmniItem(.here, "Add \(addition == .empty ? "an Empty" : "a \(addition.title)")", detail: addition.isMesh ? "Mesh" : nil) { m.add(addition) }
+        }
+        items += [
+            OmniItem(.here, "Frame the Object", detail: "f") { m.frameSelected() },
+            OmniItem(.here, "Frame Everything") { m.frameAll() },
+        ]
+        if let node = m.selectedNode, node.kind == "mesh" {
+            items += ["mirror", "array", "subdivide"].map { kind in
+                OmniItem(.here, "Add \(kind.capitalized) to \(node.name)", detail: "Modifier") { m.addModifier(kind, to: node.id) }
+            }
+            items.append(OmniItem(.here, "Choose a Mesh for \(node.name)…", detail: ".obj") { m.chooseMesh(for: node.id) })
+        }
+        items.append(OmniItem(.here, "All Scenes") { m.close() })
+        return items
+    }
+
     private var diffuseItems: [OmniItem] {
         let d = diffuse
         var items = [
@@ -88,11 +110,21 @@ extension AppModel {
                 self.active = .canvas
                 self.canvas.askForNew()
             },
+            OmniItem(.actions, "New Scene…") {
+                self.active = .model
+                self.modeling.askForNew()
+            },
             OmniItem(.actions, "New Flow") {
                 self.active = .diffuse
                 self.diffuse.newFlow(template: nil)
             },
-            OmniItem(.actions, "Save", detail: "⌘S") { self.active == .canvas ? self.canvas.save() : self.diffuse.save() },
+            OmniItem(.actions, "Save", detail: "⌘S") {
+                switch self.active {
+                case .canvas: self.canvas.save()
+                case .model: self.modeling.saveNow()
+                default: self.diffuse.save()
+                }
+            },
             OmniItem(.actions, "Show or Hide the Inspector", detail: "⌘\\") { self.toggleInspector() },
             OmniItem(.actions, "Show or Hide the Navigator", detail: "⌘0") { self.toggleNavigator() },
         ]
@@ -124,6 +156,12 @@ extension AppModel {
             OmniItem(.goTo, file.name, detail: "Canvas", id: "canvas:\(file.url.path)") {
                 self.active = .canvas
                 self.canvas.open(file.url)
+            }
+        }
+        items += modeling.scenes.map { file in
+            OmniItem(.goTo, file.name, detail: "Scene", id: "scene:\(file.url.path)") {
+                self.active = .model
+                self.modeling.open(file.url)
             }
         }
         items += flowFiles.map { url in

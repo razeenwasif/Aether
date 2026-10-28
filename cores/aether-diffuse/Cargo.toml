@@ -3,7 +3,7 @@ name = "aether-diffuse"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
-description = "Aether's bridge to proton-diffuse: flows, edits and undo, checks, and the Nexus client, for Swift through UniFFI."
+description = "Aether's bridge to Proton's cores — flows and the Nexus client, canvases, scenes and meshes — for Swift through UniFFI."
 
 [lib]
 name = "aether_diffuse"
@@ -13,6 +13,9 @@ crate-type = ["lib", "staticlib", "cdylib"]
 proton-diffuse = { path = "../proton-diffuse" }
 # Straight RGBA in and out of PNGs, for a picture's mask put in its alpha.
 proton-raster = { path = "../proton-raster" }
+# Model: scenes, and the meshes they name.
+proton-scene = { path = "../proton-scene" }
+proton-mesh = { path = "../proton-mesh" }
 serde = "1"
 serde_json = "1"
 uniffi = "0.32"

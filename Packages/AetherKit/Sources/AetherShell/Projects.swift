@@ -17,7 +17,7 @@ extension AppModel {
         let folder = folder.standardizedFileURL
         guard folder.path != project.folder?.standardizedFileURL.path else { return }
         guard ProjectGraph.isProject(folder) else {
-            return say("\(folder.lastPathComponent) isn’t a project: a project is a .aether package, or a folder with Canvases or Flows in it.")
+            return say("\(folder.lastPathComponent) isn’t a project: a project is a .aether package, or a folder with Canvases, Flows or Models in it.")
         }
         guard askToLeave(for: folder.deletingPathExtension().lastPathComponent) else { return }
         do {
@@ -70,10 +70,12 @@ extension AppModel {
     func switchProject(to next: ProjectGraph) {
         let folder = next.folder ?? Self.defaultProjectFolder
         canvas.switchFolder(to: next.canvasesFolder ?? folder.appending(path: "Canvases", directoryHint: .isDirectory))
+        modeling.switchFolder(to: next.modelsFolder ?? folder.appending(path: "Models", directoryHint: .isDirectory))
         diffuse.switchFolder(to: next.flowsFolder ?? folder.appending(path: "Flows", directoryHint: .isDirectory))
         project.saveNow()
         project = next
         canvas.project = next
+        modeling.project = next
         diffuse.project = next
         omnibar.close()
         remember(folder)
@@ -129,7 +131,11 @@ extension AppModel {
 
     /// A note to the person, in the workspace on screen.
     func say(_ text: String) {
-        if active == .canvas { canvas.notice = text } else { diffuse.notice = text }
+        switch active {
+        case .canvas: canvas.notice = text
+        case .model: modeling.notice = text
+        default: diffuse.notice = text
+        }
     }
 }
 

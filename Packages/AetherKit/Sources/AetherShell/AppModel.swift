@@ -2,6 +2,7 @@ import AetherGraph
 import AppKit
 import CanvasUI
 import DiffuseUI
+import ModelUI
 import Observation
 import SwiftUI
 
@@ -19,6 +20,7 @@ public final class AppModel {
     public internal(set) var project: ProjectGraph
     public let diffuse: DiffuseWorkspaceModel
     public let canvas: CanvasWorkspaceModel
+    public let modeling: ModelWorkspaceModel
     /// The omnibar (⌘K): tools, actions, assets and Go to in one list.
     public let omnibar = OmnibarModel()
     /// The flows in the flows folder, for Go to: read off the main actor,
@@ -34,7 +36,7 @@ public final class AppModel {
     @ObservationIgnored private var quitting: (any NSObjectProtocol)?
 
     /// The project last open (or `~/Documents/Aether`), its workspaces
-    /// pointed at its `Canvases/` and `Flows/`. `connecting` false leaves
+    /// pointed at its `Canvases/`, `Flows/` and `Models/`. `connecting` false leaves
     /// Diffuse's gateway alone, for tests.
     public init(project: ProjectGraph? = nil, defaults: UserDefaults = .standard, connecting: Bool = true) {
         self.defaults = defaults
@@ -43,9 +45,11 @@ public final class AppModel {
         let folder = project.folder ?? Self.defaultProjectFolder
         diffuse = DiffuseWorkspaceModel(flowsFolder: folder.appending(path: "Flows", directoryHint: .isDirectory), defaults: defaults, connecting: connecting)
         canvas = CanvasWorkspaceModel(folder: folder.appending(path: "Canvases", directoryHint: .isDirectory), defaults: defaults)
+        modeling = ModelWorkspaceModel(folder: folder.appending(path: "Models", directoryHint: .isDirectory))
         recentProjects = (defaults.stringArray(forKey: "aether.recentProjects") ?? []).map { URL(fileURLWithPath: $0, isDirectory: true) }
         diffuse.project = project
         canvas.project = project
+        modeling.project = project
         // Send to Canvas: the picture as a new canvas, on screen, its layer
         // following the flow's newest picture.
         diffuse.canvasReceiver = { [weak self] bytes, name, keep, asset in
@@ -61,7 +65,10 @@ public final class AppModel {
         canvas.showSource = { [weak self] in self?.showSource($0) }
         Task { await refreshFlowFiles() }
         quitting = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.project.saveNow() }
+            MainActor.assumeIsolated {
+                self?.modeling.saveNow()
+                self?.project.saveNow()
+            }
         }
     }
 
@@ -114,6 +121,7 @@ public final class AppModel {
     public func undo() {
         switch active {
         case .canvas: canvas.undo()
+        case .model: modeling.undo()
         case .diffuse: diffuse.undo()
         default: break
         }
@@ -122,6 +130,7 @@ public final class AppModel {
     public func redo() {
         switch active {
         case .canvas: canvas.redo()
+        case .model: modeling.redo()
         case .diffuse: diffuse.redo()
         default: break
         }
@@ -130,6 +139,7 @@ public final class AppModel {
     public var undoLabel: String? {
         switch active {
         case .canvas: canvas.undoLabel
+        case .model: modeling.undoLabel
         case .diffuse: diffuse.undoLabel
         default: nil
         }
@@ -138,6 +148,7 @@ public final class AppModel {
     public var redoLabel: String? {
         switch active {
         case .canvas: canvas.redoLabel
+        case .model: modeling.redoLabel
         case .diffuse: diffuse.redoLabel
         default: nil
         }
@@ -148,6 +159,7 @@ public final class AppModel {
             switch active {
             case .diffuse: diffuse.libraryOpen.toggle()
             case .canvas: canvas.navigatorOpen.toggle()
+            case .model: modeling.navigatorOpen.toggle()
             default: break
             }
         }
@@ -158,6 +170,7 @@ public final class AppModel {
             switch active {
             case .diffuse: diffuse.inspectorOpen.toggle()
             case .canvas: canvas.inspectorOpen.toggle()
+            case .model: modeling.inspectorOpen.toggle()
             default: break
             }
         }
@@ -168,6 +181,7 @@ public final class AppModel {
         switch active {
         case .diffuse: diffuse.libraryOpen
         case .canvas: canvas.navigatorOpen && canvas.document != nil
+        case .model: modeling.navigatorOpen && modeling.document != nil
         default: false
         }
     }
@@ -176,6 +190,7 @@ public final class AppModel {
         switch active {
         case .diffuse: diffuse.inspectorOpen
         case .canvas: canvas.inspectorOpen && canvas.document != nil
+        case .model: modeling.inspectorOpen && modeling.document != nil
         default: false
         }
     }

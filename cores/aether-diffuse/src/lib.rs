@@ -21,6 +21,8 @@ uniffi::setup_scaffolding!();
 
 mod canvas;
 pub use canvas::{CanvasEditor, Laid};
+mod model;
+pub use model::{SceneEditor, SceneMesh};
 
 /// What went wrong, in words a person can act on.
 #[derive(Debug, uniffi::Error)]

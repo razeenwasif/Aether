@@ -1,0 +1,13 @@
+[package]
+name = "proton-mesh"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license = "MIT"
+description = "Geometry for Modeling mode: Wavefront OBJ, read into triangles."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"

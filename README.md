@@ -2,7 +2,7 @@
 
 A native macOS creative studio: Proton's Design, Model, Game, Canvas, Diffuse and Video modes as one app, in Swift, SwiftUI and Metal. The plan is [RESEARCH_PLAN.md](RESEARCH_PLAN.md); the design is the [canvas](https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv) and the [Status & Plan](https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7) page.
 
-**Diffuse and Canvas are built, and the project graph links them (M1).** The other four are designed and show a placeholder until their milestones.
+**Diffuse and Canvas are built, and the project graph links them (M1). Model's first slice is built: Proton's scenes, the outliner and the modifier stack, on a Metal viewport.** The other three are designed and show a placeholder until their milestones.
 
 ## Building
 
@@ -28,16 +28,16 @@ swift test --package-path Packages/AetherKit       # the graph, flows, canvases,
 
 | | |
 |---|---|
-| `cores/aether-diffuse` | UniFFI bridge over `proton-diffuse` and `proton-raster`: flows, edits and undo, checks, sealed files, pictures, the Nexus client, and `CanvasEditor` (a canvas painted and composited live) |
-| `cores/proton-diffuse`, `cores/proton-raster` | Proton's Diffuse core and raster engine, brought from Proton at `1e1aeb7`, without their TypeScript bindings. The file formats stay Proton's |
+| `cores/aether-diffuse` | UniFFI bridge over `proton-diffuse` and `proton-raster`: flows, edits and undo, checks, sealed files, pictures, the Nexus client, `CanvasEditor` (a canvas painted and composited live), and `SceneEditor` (a scene edited, and each object's triangles with its modifiers applied) |
+| `cores/proton-diffuse`, `cores/proton-raster`, `cores/proton-scene`, `cores/proton-mesh` | Proton's Diffuse core, raster engine, scene format and mesh maths (`.obj`, mirror, array, subdivide), brought from Proton at `1e1aeb7`, without their TypeScript bindings. The file formats stay Proton's |
 | `docs/DIFFUSE.md` | Proton's Diffuse design and the `/img/v1` contract, which `proton-diffuse` cites and tests against |
-| `Packages/AetherKit` | Everything Swift: `AetherGraph` (the project: assets, links, transactions, one history, the package), `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `CanvasCore` (a canvas open for editing, its tiles), `CanvasUI` (the Canvas workspace), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands, the omnibar) |
+| `Packages/AetherKit` | Everything Swift: `AetherGraph` (the project: assets, links, transactions, one history, the package), `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `CanvasCore` (a canvas open for editing, its tiles), `CanvasUI` (the Canvas workspace), `ModelCore` (a scene open for editing, the camera and picking maths, the Metal shader source), `ModelUI` (the Model workspace and its Metal viewport), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands, the omnibar) |
 | `App/` | The app's entry point and icon |
 | `scripts/` | Build scripts, the icon renderer, and a stand-in image gateway |
 
 ## The project
 
-Every workspace views one project. The default is `~/Documents/Aether`, which holds `Canvases/` and `Flows/`; any other is a `Name.aether` package, which the Finder shows as one document.
+Every workspace views one project. The default is `~/Documents/Aether`, which holds `Canvases/`, `Flows/` and `Models/`; any other is a `Name.aether` package, which the Finder shows as one document.
 - **Making and opening:** File ▸ New Project… makes one, Open Project… (`⌥⌘O`) opens one, and so does double-clicking a `.aether`. The rail's top slot names the project open, and clicking it opens a menu of the same with the recent projects.
 - **Switching** asks about unsaved changes first, and each project keeps its own last flow. The last project opens at the next launch.
 
@@ -82,6 +82,20 @@ AETHER_GATEWAY=http://127.0.0.1:7421/img/v1 NEXUS_KEY=dev build/DerivedData/Buil
 ```
 
 Keys: `⌘↩` generate · `⇧⌘↩` run to the selected node · `⇧⌘G` graph / gallery · `⌘`-drag to box-select (`⇧`-drag adds) · `⇥` add a node · `⌫` delete · `⌘D` duplicate · `⌘B` bypass · `⌘Z` / `⇧⌘Z` undo, redo · `⌘S` save · `⇧1` fit · `⌘0` / `⌘\` panels · pinch or `⌘`-scroll to zoom, two fingers to pan.
+
+## Model
+
+Scenes are Proton's `scene.proton.json` format, edited through `proton-scene`, one edit an undo step in the project's one history. They live in `~/Documents/Aether/Models` as `Name.scene.json`, with their meshes beside them as `.obj` files. As in Proton, a scene is saved 300 ms after each edit, so there is no Save to forget. With none open, the home page shows them as cards beside the new-scene form; a new scene starts with a cube.
+
+**The viewport** is Metal, drawn only when something changes: the grid, each mesh lit by one key light with Proton's metal and rough shading, and lines for what has no surface (a burst for a light, a frustum for a camera, a cross for an empty, a box for a mesh that can't be read). A material's graph is compiled by the core and drawn as a Metal shader. Drag, or two fingers, to turn round; `⇧`-drag, a right or middle drag, or `⇧` with two fingers, to slide; pinch or the wheel to zoom. A click chooses what's under it, tinted and lit round its edge in ice. The status bar shows the objects, the triangles and what the GPU took for the last frame.
+
+**The outliner** (`⌘0`) lists every object, parents above children. A click chooses one, a double-click renames it, and ＋ adds a cube, sphere, cylinder, cone, torus or plane (written into `meshes/`), a light, a camera or an empty. Something added while an empty is chosen goes under it. − removes the object and what's under it.
+
+**The inspector** (`⌘\`) shows the chosen object's transform (metres, degrees, a multiplier; typed, kept on ↩ or when the field is left), its `.obj` (Choose… copies one from elsewhere into `meshes/`) and its triangles, and its modifiers: mirror (across x, y or z, welded or not), array (copies, how far apart) and subdivide (levels; each is four times the triangles). They run in order, can be turned off or moved, and are never written into the `.obj`. A modifier from a later Proton is kept and shown as not understood. A scene past 500,000 triangles is refused, with the reason.
+
+Keys: `f` frame the chosen object, or everything · `⇧A` frame everything · `⌫` remove · `⎋` choose nothing · `⌘N` new scene · `⌘O` open · `⇧⌘W` back to all scenes. Scene ▸ Add, and the omnibar, add objects and modifiers.
+
+Not yet: Edit mode and the direct handles the design shows, editing materials, and Render.
 
 ## Canvas
 

@@ -513,6 +513,22 @@ fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+    typealias FfiType = Float
+    typealias SwiftType = Float
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+        return try lift(readFloat(&buf))
+    }
+
+    public static func write(_ value: Float, into buf: inout [UInt8]) {
+        writeFloat(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -2300,6 +2316,261 @@ public func FfiConverterTypeRunEvents_lower(_ value: RunEvents) -> UInt64 {
 
 
 
+public protocol SceneEditorProtocol: AnyObject, Sendable {
+    
+    /**
+     * Apply an edit (JSON, see `Edit`) as one undo step named `label`.
+     * Answers `{changed, id}`: whether anything did, and an added object's id.
+     */
+    func edit(editJson: String, label: String) throws  -> String
+    
+    /**
+     * An object's triangles: its mesh, its modifier stack applied, shaded.
+     * One with no mesh, or a mesh that can't be read or is over the budget,
+     * answers no triangles and why — with the box it would fill, when known.
+     */
+    func mesh(id: String)  -> SceneMesh
+    
+    func redo()  -> String?
+    
+    /**
+     * Write the scene to `path`, or where it was opened; it lives there
+     * from now on.
+     */
+    func save(path: String?) throws 
+    
+    /**
+     * The scene as its file is written.
+     */
+    func text()  -> String
+    
+    /**
+     * Take back the newest step; its name, or `None` with nothing to undo.
+     */
+    func undo()  -> String?
+    
+    /**
+     * What the outliner and inspector show: `{objects, materials, shaders,
+     * undo, redo, dirty}` — objects parents first, with their depth.
+     */
+    func view()  -> String
+    
+}
+open class SceneEditor: SceneEditorProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_sceneeditor(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_sceneeditor(handle, $0) }
+    }
+
+    
+    /**
+     * A new, empty scene, not written until saved.
+     */
+public static func create() -> SceneEditor  {
+    return try!  FfiConverterTypeSceneEditor_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_sceneeditor_create(uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The scene in the file at `path`.
+     */
+public static func `open`(path: String)throws  -> SceneEditor  {
+    return try  FfiConverterTypeSceneEditor_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_sceneeditor_open(
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * Apply an edit (JSON, see `Edit`) as one undo step named `label`.
+     * Answers `{changed, id}`: whether anything did, and an added object's id.
+     */
+open func edit(editJson: String, label: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_edit(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(editJson),
+        FfiConverterString.lower(label),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * An object's triangles: its mesh, its modifier stack applied, shaded.
+     * One with no mesh, or a mesh that can't be read or is over the budget,
+     * answers no triangles and why — with the box it would fill, when known.
+     */
+open func mesh(id: String) -> SceneMesh  {
+    return try!  FfiConverterTypeSceneMesh_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_mesh(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+open func redo() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_redo(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Write the scene to `path`, or where it was opened; it lives there
+     * from now on.
+     */
+open func save(path: String?)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_save(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(path),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The scene as its file is written.
+     */
+open func text() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_text(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Take back the newest step; its name, or `None` with nothing to undo.
+     */
+open func undo() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_undo(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What the outliner and inspector show: `{objects, materials, shaders,
+     * undo, redo, dirty}` — objects parents first, with their depth.
+     */
+open func view() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_view(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSceneEditor: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = SceneEditor
+
+    public static func lift(_ handle: UInt64) throws -> SceneEditor {
+        return SceneEditor(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: SceneEditor) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SceneEditor {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: SceneEditor, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSceneEditor_lift(_ handle: UInt64) throws -> SceneEditor {
+    return try FfiConverterTypeSceneEditor.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSceneEditor_lower(_ value: SceneEditor) -> UInt64 {
+    return FfiConverterTypeSceneEditor.lower(value)
+}
+
+
+
+
+
+
 /**
  * The key Proton seals Diffuse's files with, out of the person's keychain.
  * Its bytes go in and never come back out.
@@ -2738,6 +3009,125 @@ public func FfiConverterTypeMaskPixels_lower(_ value: MaskPixels) -> RustBuffer 
 
 
 /**
+ * An object's triangles, ready to draw.
+ */
+public struct SceneMesh: Equatable, Hashable {
+    /**
+     * Three floats a vertex.
+     */
+    public var positions: [Float]
+    /**
+     * Three floats a vertex; empty draws faceted.
+     */
+    public var normals: [Float]
+    /**
+     * Three vertex numbers a triangle.
+     */
+    public var triangles: [UInt32]
+    /**
+     * Least x, y, z, then most.
+     */
+    public var bounds: [Float]
+    /**
+     * A solid, so its backs may be culled.
+     */
+    public var closed: Bool
+    /**
+     * Faces of the file that couldn't be used.
+     */
+    public var skipped: UInt32
+    /**
+     * Why there are no triangles, when there aren't.
+     */
+    public var problem: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Three floats a vertex.
+         */positions: [Float], 
+        /**
+         * Three floats a vertex; empty draws faceted.
+         */normals: [Float], 
+        /**
+         * Three vertex numbers a triangle.
+         */triangles: [UInt32], 
+        /**
+         * Least x, y, z, then most.
+         */bounds: [Float], 
+        /**
+         * A solid, so its backs may be culled.
+         */closed: Bool, 
+        /**
+         * Faces of the file that couldn't be used.
+         */skipped: UInt32, 
+        /**
+         * Why there are no triangles, when there aren't.
+         */problem: String?) {
+        self.positions = positions
+        self.normals = normals
+        self.triangles = triangles
+        self.bounds = bounds
+        self.closed = closed
+        self.skipped = skipped
+        self.problem = problem
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SceneMesh: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSceneMesh: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SceneMesh {
+        return
+            try SceneMesh(
+                positions: FfiConverterSequenceFloat.read(from: &buf), 
+                normals: FfiConverterSequenceFloat.read(from: &buf), 
+                triangles: FfiConverterSequenceUInt32.read(from: &buf), 
+                bounds: FfiConverterSequenceFloat.read(from: &buf), 
+                closed: FfiConverterBool.read(from: &buf), 
+                skipped: FfiConverterUInt32.read(from: &buf), 
+                problem: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SceneMesh, into buf: inout [UInt8]) {
+        FfiConverterSequenceFloat.write(value.positions, into: &buf)
+        FfiConverterSequenceFloat.write(value.normals, into: &buf)
+        FfiConverterSequenceUInt32.write(value.triangles, into: &buf)
+        FfiConverterSequenceFloat.write(value.bounds, into: &buf)
+        FfiConverterBool.write(value.closed, into: &buf)
+        FfiConverterUInt32.write(value.skipped, into: &buf)
+        FfiConverterOptionString.write(value.problem, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSceneMesh_lift(_ buf: RustBuffer) throws -> SceneMesh {
+    return try FfiConverterTypeSceneMesh.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSceneMesh_lower(_ value: SceneMesh) -> RustBuffer {
+    return FfiConverterTypeSceneMesh.lower(value)
+}
+
+
+/**
  * A starter flow: what the editor calls it and what it is for.
  */
 public struct Template: Equatable, Hashable {
@@ -3091,6 +3481,31 @@ fileprivate struct FfiConverterSequenceInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
+    typealias SwiftType = [Float]
+
+    public static func write(_ value: [Float], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterFloat.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Float] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Float]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterFloat.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -3351,6 +3766,18 @@ public func canvasRamp(base: Data, steps: UInt32, shift: UInt32, spread: UInt32)
     )
 })
 }
+/**
+ * A primitive as an `.obj`, for a new object to name: `cube`, `sphere`,
+ * `cylinder`, `cone`, `plane` or `torus`, about the origin, a metre across.
+ */
+public func scenePrimitive(kind: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_scene_primitive(
+        FfiConverterString.lower(kind),uniffiCallStatus
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -3407,6 +3834,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_canvas_ramp() != 45216) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_scene_primitive() != 60297) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_flowdocument_apply() != 29198) {
@@ -3580,6 +4010,27 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_edit() != 12030) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_mesh() != 16900) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_redo() != 39324) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_save() != 59822) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_text() != 35833) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_undo() != 25394) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_view() != 40919) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_constructor_flowdocument_create() != 53531) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3602,6 +4053,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_canvaseditor_open() != 57588) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_sceneeditor_create() != 65508) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_sceneeditor_open() != 25617) {
         return InitializationResult.apiChecksumMismatch
     }
 

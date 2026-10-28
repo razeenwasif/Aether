@@ -4,10 +4,11 @@ import CanvasUI
 import DiffuseBridge
 import DiffuseCore
 import DiffuseUI
+import ModelUI
 import SwiftUI
 
-/// The menu bar, for the workspace on screen. Undo and Redo go to the flow
-/// or the canvas, and Cut, Copy, Paste and Select All to the canvas, unless
+/// The menu bar, for the workspace on screen. Undo and Redo go to the flow,
+/// the canvas or the scene, and Cut, Copy, Paste and Select All to the canvas, unless
 /// a text field has the keys, so ⌘Z still undoes typing in a prompt.
 public struct AetherCommands: Commands {
     let model: AppModel
@@ -19,6 +20,8 @@ public struct AetherCommands: Commands {
     private var diffuse: DiffuseWorkspaceModel { model.diffuse }
     private var canvas: CanvasWorkspaceModel { model.canvas }
     private var onCanvas: Bool { model.active == .canvas }
+    private var modeling: ModelWorkspaceModel { model.modeling }
+    private var onModel: Bool { model.active == .model }
 
     public var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -29,6 +32,11 @@ public struct AetherCommands: Commands {
                     .keyboardShortcut("o")
                 Button("Make a Canvas of a Picture…") { canvas.chooseAndImport() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
+            } else if onModel {
+                Button("New Scene…") { modeling.askForNew() }
+                    .keyboardShortcut("n")
+                Button("Open…") { modeling.chooseAndOpen() }
+                    .keyboardShortcut("o")
             } else {
                 Button("New Flow") { diffuse.newFlow(template: nil) }
                     .keyboardShortcut("n")
@@ -52,10 +60,17 @@ public struct AetherCommands: Commands {
             .disabled(model.otherRecentProjects.isEmpty)
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { onCanvas ? canvas.save() : diffuse.save() }
+            Button("Save") { onModel ? modeling.saveNow() : onCanvas ? canvas.save() : diffuse.save() }
                 .keyboardShortcut("s")
             Button("Save As…") { onCanvas ? canvas.saveAs() : diffuse.saveAs() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
+                // A scene is saved as it's edited, beside its meshes.
+                .disabled(onModel)
+            if onModel {
+                Button("Close the Scene") { modeling.close() }
+                    .keyboardShortcut("w", modifiers: [.command, .shift])
+                    .disabled(modeling.document == nil)
+            }
             if onCanvas {
                 Button("Export…") { canvas.exportPNG() }
                     .keyboardShortcut("e")
@@ -78,7 +93,9 @@ public struct AetherCommands: Commands {
                 .keyboardShortcut("c")
             Button("Paste") { pasteboard("paste:") { canvas.paste() } }
                 .keyboardShortcut("v")
-            Button("Delete") { pasteboard("delete:") { canvas.clearSelected() } }
+            Button("Delete") {
+                if onModel, modeling.selected != nil, !textHasKeys { modeling.removeSelected() } else { pasteboard("delete:") { canvas.clearSelected() } }
+            }
             Button("Select All") {
                 if model.active == .diffuse, diffuse.stage == .graph, !textHasKeys { diffuse.selectAll() } else { pasteboard("selectAll:") { canvas.selectAll() } }
             }
@@ -103,6 +120,22 @@ public struct AetherCommands: Commands {
                     .keyboardShortcut(.delete, modifiers: .command)
                     .disabled(diffuse.stage != .gallery || diffuse.gallery.picked.isEmpty)
             }
+        }
+        CommandMenu("Scene") {
+            Menu("Add") {
+                ForEach(SceneAddition.allCases) { addition in
+                    Button(addition.title) { modeling.add(addition) }
+                }
+            }
+            .disabled(!onModel || modeling.document == nil)
+            Divider()
+            Button("Frame the Object  (f)") { modeling.frameSelected() }
+                .disabled(!onModel || modeling.document == nil)
+            Button("Frame Everything") { modeling.frameAll() }
+                .disabled(!onModel || modeling.document == nil)
+            Divider()
+            Button("All Scenes") { modeling.close() }
+                .disabled(!onModel || modeling.document == nil)
         }
         CommandMenu("Canvas") {
             Button("Fit in View  (f)") { canvas.fit() }

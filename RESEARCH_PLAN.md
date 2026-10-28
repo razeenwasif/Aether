@@ -444,6 +444,7 @@ The LE was to validate the split above. There's no Metal viewport yet (Canvas dr
   - 2,000 items now take 1.3 ms in release.
   - Real lists are about 80 items: the built-in catalogue has 16 nodes, and forge's may have more.
   - A test fails past 20 ms, since test builds are slower. It hasn't been timed in the app.
+- **The first GPU numbers (Model, 2026-10-28).** Model's viewport reads each frame's GPU time from its command buffer. On the check's scene (a few hundred triangles, the grid, MSAA 4) frames took 0.2 to 2.6 ms, and 5.8 ms for the first frame after a scene opened. That was a background window, not Instruments, so it's a sign, not the measurement §7 asks for. The viewport draws only on a change, so a still scene costs nothing.
 
 ---
 
@@ -1025,10 +1026,33 @@ Not yet:
   - vector layers and booleans (new in Aether's plan, not in Proton)
   - Proton's "To a game" send, which waits for the Game workspace
 
+**2026-10-28 · Model, first slice: scenes, the outliner and the modifier stack, on a Metal viewport.** The user said "go ahead" to starting M2's other half with what Proton's Modeling had. Ported from Proton at `1e1aeb7`: `proton-scene` (the scene format, its edits, materials compiled to instructions) and `proton-mesh` (`.obj`, mirror, array, subdivide, normals), with their 134 tests, and the viewport's conventions from Proton's `gl.js`.
+
+- **The bridge's `SceneEditor`** opens or makes a scene, applies edits as JSON (add, remove, rename, reparent, transform, mesh, and the modifier stack's add, remove, move and set), keeps 200 undo steps, and saves.
+  - `mesh(id)` answers an object's triangles with its stack applied, normals shaded with Proton's crease, its bounds, and whether it's a solid. Meshes are read once per path and time changed.
+  - A scene past 500,000 triangles is refused, with the reason.
+  - `scene_primitive` writes a cube, plane, sphere, cylinder, cone or torus as `.obj`.
+- **ModelCore:** the scene as Swift values, `SceneDocument` (an object's triangles kept until its mesh or stack changes), the transform and camera maths (scale, then Rz·Ry·Rx in degrees, then move, parents first, as Proton), picking by each object's box on screen, and the Metal source a material's instructions become.
+- **The viewport** is an `MTKView` drawn on demand, not every frame: MSAA 4, 32-bit depth, back faces culled on solids. One key light with Proton's metal and rough response, rolled off as Proton does. Lines for the grid and for what has no surface. The GPU time of each frame is read from the command buffer and shown in the status bar.
+- **The workspace:** the scenes as cards and a new-scene form; the outliner; the inspector (transform, the `.obj`, the stack); a dock; the Scene menu; Model's omnibar items, scenes in Go to. Scenes save 300 ms after each edit and on quit. Edits and undo go through the project's one history. Switching projects takes Model to the new project's `Models/`, and a folder with `Models/` counts as a project.
+- **Checked in the app,** on a throwaway scene in `~/Documents/Aether/Models`, deleted after:
+  - A new scene showed its cube, framed, with the outliner and inspector.
+  - A sphere added from the dock, then moved to x = 2 in the inspector; a light and camera drawn as a burst and a frustum. Dragging turned the view.
+  - A click on the cube chose it. Subdivide added from the omnibar gave 48 triangles, then 768 at three levels (12 × 4³).
+  - Undo twice took it back to one level; the dock's buttons read "Undo Add Subdivide" and "Redo Modifier". The file on disk had the undone stack 300 ms later, in Proton's format.
+  - Removing the light from the outliner left three objects.
+- **Faults the check found, fixed and seen fixed:**
+  - Outliner rows were a tap gesture, so pressing one through accessibility chose nothing. They're buttons now, as the omnibar's rows became; a double-click and the context menu rename.
+  - The chosen object's ice tint was too faint against a grey of the same brightness. It's lit round its edge in ice too now, and reads at a glance.
+  - A number typed with a trailing newline was refused; it's trimmed now. The status bar said "1 objects".
+- **Not checked:** the Edit menu's undo label read stale ("Undo Modifier") while the app was in the background, though the workspace's own labels were right. It may only be how a background app's menu is read; it wasn't looked at with the app in front.
+- **Tests:** 11 more in Swift (the transform order, children following parents, picking the nearest box and nothing behind the camera, framing, the shader source, a document's edits, undo and triangle cache, a mesh not there, a new scene, adding under an empty, removing with children, undo through the project, a mesh copied in, framing then picking). 3 more in the bridge. 297 Rust and 132 Swift tests pass.
+- **Not ported yet:** Edit mode and the direct handles the design shows, the material layers that replace the shader graph, and Render.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). The other four workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model's first slice is built: Proton's scenes, the outliner and the modifier stack, on a Metal viewport (§10a). The other three workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, moved to Claude, and were done with M1 (§7a, §6.4a).
@@ -1047,4 +1071,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~The rest of Canvas: the Make panel's generators and filters, and export at ×2 to ×8, as a sprite sheet and as PSD~~: done, see §10a. Canvas now matches Proton's, apart from sending to a game.
 
-**Next, proposed:** M1's last item, the Metal capture for the exit criterion, waits for M2's viewport. Then M2's other half, Model, starting with what Proton's Modeling had: the scene format, the outliner and the modifier stack, on a Metal viewport. That viewport would also give M0 its frame-time measurements, and M1 its Metal capture. After that, the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD).
+~~Model, starting with what Proton's Modeling had: the scene format, the outliner and the modifier stack, on a Metal viewport~~: done, see §10a.
+
+**Next, proposed:** Model's Edit mode and direct handles, as the design shows (select vertices, edges and faces; extrude, inset, bevel, loop cut), then material layers. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.
