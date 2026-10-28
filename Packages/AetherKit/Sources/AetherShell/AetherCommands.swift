@@ -135,6 +135,21 @@ public struct AetherCommands: Commands {
             Toggle("Draw Mirrored Down  (⇧M)", isOn: Binding(get: { canvas.mirrorDown }, set: { canvas.mirrorDown = $0 }))
                 .disabled(!onCanvas || canvas.document == nil)
             Divider()
+            Menu("Frames") {
+                Button(canvas.playing ? "Stop  (↩)" : "Play the Frames  (↩)") { canvas.togglePlaying() }
+                    .disabled(canvas.frameCount < 2)
+                Button("The Frame Before  (,)") { canvas.stepFrame(by: -1) }
+                Button("The Frame After  (.)") { canvas.stepFrame(by: 1) }
+                Divider()
+                Button("New Frame") { canvas.addFrame() }
+                Button("Copy the Frame  (⇧N)") { canvas.copyFrame() }
+                Button("Remove the Frame") { canvas.removeFrame() }
+                    .disabled(canvas.frameCount < 2)
+                Divider()
+                Toggle("Onion Skin  (⇧O)", isOn: Binding(get: { canvas.onionOn }, set: { canvas.onionOn = $0 }))
+            }
+            .disabled(!onCanvas || canvas.document == nil)
+            Divider()
             Button("All Canvases") { canvas.close() }
                 .disabled(!onCanvas || canvas.document == nil)
         }

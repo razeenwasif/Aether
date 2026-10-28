@@ -482,6 +482,8 @@ final class CanvasStageView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        // Drawing stops the frames playing: it is in the frame shown.
+        model.stop()
         let p = convert(event.locationInWindow, from: nil)
         if model.panning {
             drag = .pan(from: p, offset: model.viewport.offset)
@@ -573,7 +575,7 @@ final class CanvasStageView: NSView {
             document.clearPreview()
             if let layer = model.currentLayer {
                 let to = constrained(from: from, to: canvasPoint(event), shape: shape, shift: event.modifierFlags.contains(.shift))
-                model.change(.shape(layer: layer.id, kind: shape, from: [Int32(from.x), Int32(from.y)], to: [Int32(to.x), Int32(to.y)],
+                model.change(.shape(layer: model.cel(layer), kind: shape, from: [Int32(from.x), Int32(from.y)], to: [Int32(to.x), Int32(to.y)],
                                     filled: filled, tip: model.drawingTip, color: model.color), label: shape.title)
                 model.used(model.color)
             }
@@ -628,9 +630,9 @@ final class CanvasStageView: NSView {
         let pixel = document.state.preset == .pixel
         let begin: StrokeBegin
         if tool == .pencil || (erasing && pixel) {
-            begin = StrokeBegin(layer: layer.id, tool: erasing ? .eraser : .pencil, tip: model.drawingTip, color: model.color, pixelPerfect: model.pixelPerfect && !erasing)
+            begin = StrokeBegin(layer: model.cel(layer), tool: erasing ? .eraser : .pencil, tip: model.drawingTip, color: model.color, pixelPerfect: model.pixelPerfect && !erasing)
         } else {
-            begin = StrokeBegin(layer: layer.id, tool: erasing ? .eraser : .pencil, brush: model.brush, color: model.color)
+            begin = StrokeBegin(layer: model.cel(layer), tool: erasing ? .eraser : .pencil, brush: model.brush, color: model.color)
         }
         guard document.beginStroke(begin) else {
             model.notice = document.refusal
@@ -644,7 +646,7 @@ final class CanvasStageView: NSView {
 
     private func fill(at c: CGPoint) {
         guard let layer = model.currentLayer, c.x >= 0, c.y >= 0, c.x < CGFloat(document.width), c.y < CGFloat(document.height) else { return }
-        model.change(.fill(layer: layer.id, x: Int32(c.x), y: Int32(c.y), color: model.color, tolerance: model.tolerance, contiguous: model.contiguous), label: "Fill")
+        model.change(.fill(layer: model.cel(layer), x: Int32(c.x), y: Int32(c.y), color: model.color, tolerance: model.tolerance, contiguous: model.contiguous), label: "Fill")
         model.used(model.color)
         refreshTiles()
     }
@@ -657,7 +659,7 @@ final class CanvasStageView: NSView {
     private func previewShape(to c: CGPoint, shift: Bool) {
         guard case let .shape(shape, from, filled) = drag, let layer = model.currentLayer else { return }
         let to = constrained(from: from, to: c, shape: shape, shift: shift)
-        document.preview(.shape(layer: layer.id, kind: shape, from: [Int32(from.x), Int32(from.y)], to: [Int32(to.x), Int32(to.y)],
+        document.preview(.shape(layer: model.cel(layer), kind: shape, from: [Int32(from.x), Int32(from.y)], to: [Int32(to.x), Int32(to.y)],
                                 filled: filled, tip: model.drawingTip, color: model.color))
         refreshTiles()
     }

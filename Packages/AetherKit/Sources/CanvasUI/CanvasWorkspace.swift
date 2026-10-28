@@ -56,7 +56,10 @@ public struct CanvasWorkspace: View {
                 if let notice = model.notice {
                     CanvasNotice(text: notice) { model.notice = nil }
                 }
-                if model.document != nil { CanvasDock(model: model).padding(.bottom, 16) }
+                if let document = model.document {
+                    CanvasTimeline(model: model, document: document).padding(.horizontal, 24)
+                    CanvasDock(model: model).padding(.bottom, 16)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.leading, leftInset)

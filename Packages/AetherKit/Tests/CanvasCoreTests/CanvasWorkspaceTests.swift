@@ -9,7 +9,7 @@ struct CanvasWorkspaceTests {
     private func model() throws -> CanvasWorkspaceModel {
         let folder = FileManager.default.temporaryDirectory.appending(path: "aether-canvases-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let model = CanvasWorkspaceModel(folder: folder)
+        let model = CanvasWorkspaceModel(folder: folder, defaults: UserDefaults(suiteName: "aether-tests-\(UUID().uuidString)")!)
         model.stageSize = CGSize(width: 1400, height: 900)
         return model
     }

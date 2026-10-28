@@ -21,13 +21,16 @@
 //! - What is selected is given as its edges, for the marching ants, and
 //!   lifted as pixels to be moved: the window draws them where the
 //!   transform puts them until it is kept, then sends the one op it is.
-//!
-//! One frame is shown, the first. Animation and onion skin come later.
+//! - One frame is shown and drawn in. With onion skin, the frames either
+//!   side are laid faintly under each layer, fainter the further they are,
+//!   tinted red before and blue after; only cels in the frame shown or its
+//!   onion skin are laid again when they change.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use proton_raster::blend::Onion;
 use proton_raster::history::Patch;
 use proton_raster::tile::TILE;
 use proton_raster::{blend, brush, cel_of, file, port, select, stroke, Brush, Canvas, Dabs, Grid, History, Op, Preset, Stroke, Tile, Tip, Tool, SELECTION};
@@ -39,6 +42,18 @@ use crate::{failed, json, lock, DiffuseError};
 const WHOLE: [u32; 4] = [0, 0, TILE, TILE];
 /// Tiles of the layers under a stroke kept laid together: 8 MB at 16 bits.
 const BELOW_MOST: usize = 256;
+/// The most frames onion skin reaches each way.
+const ONION_MOST: u32 = 5;
+
+/// Onion skin as asked for: how many frames before and after, how strongly
+/// the nearest shows (of 255), and whether tinted.
+#[derive(Clone, Copy, Default)]
+struct Skin {
+    before: u32,
+    after: u32,
+    opacity: u8,
+    tint: bool,
+}
 
 /// What a stroke being drawn covers: a pencil's pixels, or a brush's dabs.
 enum Marks {
@@ -102,6 +117,11 @@ struct Held {
     preview: Option<Patch>,
     /// Bumped whenever what is selected may have changed.
     selection: u64,
+    /// The frame shown and drawn in, from 0.
+    shown: u32,
+    skin: Skin,
+    /// The frames onion skin shows now, nearest last.
+    onion: Vec<Onion>,
 }
 
 impl Held {
@@ -118,9 +138,38 @@ impl Held {
             below: None,
             preview: None,
             selection: 0,
+            shown: 0,
+            skin: Skin::default(),
+            onion: Vec::new(),
         };
         held.redo_all();
         held
+    }
+
+    /// Whether a cel is seen: in the frame shown, or in its onion skin.
+    fn seen(&self, id: u32) -> bool {
+        let frame = cel_of(id).1;
+        frame == self.shown || self.onion.iter().any(|o| o.frame == frame)
+    }
+
+    /// The frames onion skin shows, for the frame shown and the frames
+    /// there are: the nearest strongest, the furthest faintest.
+    fn reskin(&mut self) {
+        let frames = self.canvas.frames.len().max(1) as u32;
+        self.shown = self.shown.min(frames - 1);
+        let s = self.skin;
+        let reach = s.before.max(s.after).max(1);
+        let mut onion = Vec::new();
+        for d in (1..=reach).rev() {
+            let opacity = (s.opacity as u32 * (reach + 1 - d) / reach) as u8;
+            if d <= s.before && self.shown >= d {
+                onion.push(Onion { frame: self.shown - d, opacity, tint: s.tint.then_some([255, 40, 40]) });
+            }
+            if d <= s.after && self.shown + d < frames {
+                onion.push(Onion { frame: self.shown + d, opacity, tint: s.tint.then_some([40, 90, 255]) });
+            }
+        }
+        self.onion = onion;
     }
 
     /// How many tiles the canvas is cut into.
@@ -150,11 +199,14 @@ impl Held {
         if meta || touched.iter().any(|&(layer, _)| layer == SELECTION) {
             self.selection += 1;
         }
-        if meta {
+        // Frames added or taken out move what is shown and its onion skin.
+        let before = (self.shown, self.onion.iter().map(|o| o.frame).collect::<Vec<_>>());
+        self.reskin();
+        if meta || before != (self.shown, self.onion.iter().map(|o| o.frame).collect::<Vec<_>>()) {
             return self.redo_all();
         }
         for &(layer, index) in touched {
-            if layer != SELECTION && cel_of(layer).1 == 0 {
+            if layer != SELECTION && self.seen(layer) {
                 self.mark(index, WHOLE);
             }
         }
@@ -164,6 +216,9 @@ impl Held {
     /// the parts laid, with their pixels.
     fn lay(&mut self, budget: u64) -> Vec<Laid> {
         let canvas = &self.canvas;
+        let (frame, onion) = (self.shown, &self.onion);
+        // Each layer is laid once, and once more for every frame of onion skin.
+        let skins = 1 + onion.len() as u64;
         let grid = Grid::new(canvas.width, canvas.height);
         let layers = canvas.layers.len() as u32;
         let mut laid = Vec::new();
@@ -175,12 +230,13 @@ impl Held {
                 continue;
             }
             let (w, h) = (part[2] - part[0], part[3] - part[1]);
-            let present = canvas.layers.iter().filter(|l| !l.info.hidden && l.cels.first().and_then(|g| g.tile(index)).is_some()).count() as u64;
-            let cost = match self.below.as_ref() {
-                Some(b) if b.tiles.contains_key(&index) => (w * h) as u64 * (layers - b.place) as u64,
-                Some(b) => (TILE * TILE) as u64 * b.place as u64 + (w * h) as u64 * (layers - b.place) as u64,
-                None => (w * h) as u64 * present.max(1),
-            };
+            let present = canvas.layers.iter().filter(|l| !l.info.hidden && l.cels.get(frame as usize).and_then(|g| g.tile(index)).is_some()).count() as u64;
+            let cost = skins
+                * match self.below.as_ref() {
+                    Some(b) if b.tiles.contains_key(&index) => (w * h) as u64 * (layers - b.place) as u64,
+                    Some(b) => (TILE * TILE) as u64 * b.place as u64 + (w * h) as u64 * (layers - b.place) as u64,
+                    None => (w * h) as u64 * present.max(1),
+                };
             if spent > 0 && spent.saturating_add(cost) > budget {
                 self.dirty.insert(index, part);
                 break;
@@ -189,7 +245,7 @@ impl Held {
             let acc = match self.below.as_mut() {
                 Some(below) => {
                     if !below.tiles.contains_key(&index) {
-                        let under = blend::fold(canvas, 0, index, WHOLE, 0, below.place, vec![0; (TILE * TILE * 4) as usize], &[]);
+                        let under = blend::fold(canvas, frame, index, WHOLE, 0, below.place, vec![0; (TILE * TILE * 4) as usize], onion);
                         below.tiles.insert(index, under.into_iter().map(|v| v as u16).collect());
                         below.order.push_back(index);
                         while below.order.len() > BELOW_MOST {
@@ -204,9 +260,9 @@ impl Held {
                         let from = Tile::at(part[0], part[1] + row);
                         acc.extend(under[from..from + (w * 4) as usize].iter().map(|&v| v as u64));
                     }
-                    blend::fold(canvas, 0, index, part, below.place, layers, acc, &[])
+                    blend::fold(canvas, frame, index, part, below.place, layers, acc, onion)
                 }
-                None => blend::fold(canvas, 0, index, part, 0, layers, vec![0; (w * h * 4) as usize], &[]),
+                None => blend::fold(canvas, frame, index, part, 0, layers, vec![0; (w * h * 4) as usize], onion),
             };
             let px = blend::premultiplied(&acc);
             for row in 0..h {
@@ -379,7 +435,8 @@ impl CanvasEditor {
     }
 
     /// The canvas but its pixels, as JSON: `{width, height, preset, palette,
-    /// layers (bottom to top), frames, dirty, canUndo, canRedo, undo, redo}`.
+    /// layers (bottom to top), frames (each one's milliseconds), tags, shown,
+    /// dirty, canUndo, canRedo, undo, redo}`.
     pub fn view(&self) -> String {
         let h = lock(&self.held);
         let (undo, redo) = h.history.labels();
@@ -390,6 +447,8 @@ impl CanvasEditor {
             "palette": h.canvas.palette,
             "layers": h.canvas.infos(),
             "frames": h.canvas.frames,
+            "tags": h.canvas.tags,
+            "shown": h.shown,
             "dirty": h.canvas.state != h.saved,
             "canUndo": h.history.can_undo(),
             "canRedo": h.history.can_redo(),
@@ -479,8 +538,8 @@ impl CanvasEditor {
             target.put(index, painted);
             marks.push((index, part.unwrap_or(WHOLE)));
         }
-        let shown = cel_of(live.layer).1 == 0;
-        if shown {
+        let layer = live.layer;
+        if held.seen(layer) {
             for (index, part) in marks {
                 held.mark(index, part);
             }
@@ -565,7 +624,7 @@ impl CanvasEditor {
         }
         let grid = Grid::new(h.canvas.width, h.canvas.height);
         let (index, tx, ty) = grid.locate(x, y);
-        let acc = blend::tile(&h.canvas, 0, index);
+        let acc = blend::tile(&h.canvas, h.shown, index);
         let i = Tile::at(tx, ty);
         Some(blend::straight(&acc[i..i + 4]))
     }
@@ -583,9 +642,62 @@ impl CanvasEditor {
         Ok(dir.display().to_string())
     }
 
-    /// The canvas laid together, as a PNG: for exporting and sending.
+    /// The frame shown laid together, as a PNG: for exporting and sending.
     pub fn png(&self) -> Result<Vec<u8>, DiffuseError> {
-        file::flat_png(&lock(&self.held).canvas).map_err(failed)
+        let h = lock(&self.held);
+        port::png(&h.canvas, h.shown, 1).map_err(failed)
+    }
+
+    // Frames and onion skin.
+
+    /// Show frame `frame` (from 0, held to the frames there are): laid
+    /// together again, its onion skin with it. A stroke or a preview under
+    /// way is taken away first. Answers the frame shown.
+    pub fn show_frame(&self, frame: u32) -> u32 {
+        let mut h = lock(&self.held);
+        let frame = frame.min(h.canvas.frames.len().max(1) as u32 - 1);
+        if frame != h.shown {
+            h.cancel();
+            h.clear_preview();
+            h.shown = frame;
+            h.reskin();
+            h.redo_all();
+        }
+        h.shown
+    }
+
+    /// Onion skin: how many frames before and after (to 5 each), how
+    /// strongly the nearest shows (of 255), tinted or not; none with both
+    /// counts 0.
+    pub fn onion(&self, before: u32, after: u32, opacity: u32, tint: bool) {
+        let mut h = lock(&self.held);
+        h.skin = Skin { before: before.min(ONION_MOST), after: after.min(ONION_MOST), opacity: opacity.min(255) as u8, tint };
+        h.reskin();
+        h.redo_all();
+    }
+
+    /// Frame `frame` laid together at `width` × `height` (to 256 each), each
+    /// pixel the one at its middle: premultiplied RGBA, for the timeline.
+    pub fn thumb(&self, frame: u32, width: u32, height: u32) -> Vec<u8> {
+        let held = lock(&self.held);
+        let canvas = &held.canvas;
+        let (w, h) = (width.clamp(1, 256), height.clamp(1, 256));
+        let mut out = vec![0u8; (w * h * 4) as usize];
+        if frame as usize >= canvas.frames.len() {
+            return out;
+        }
+        let grid = Grid::new(canvas.width, canvas.height);
+        for y in 0..h {
+            let sy = ((2 * y + 1) * canvas.height / (2 * h)).min(canvas.height - 1);
+            for x in 0..w {
+                let sx = ((2 * x + 1) * canvas.width / (2 * w)).min(canvas.width - 1);
+                let (index, tx, ty) = grid.locate(sx, sy);
+                let px = blend::premultiplied(&blend::region(canvas, frame, index, [tx, ty, tx + 1, ty + 1]));
+                let at = ((y * w + x) * 4) as usize;
+                out[at..at + 4].copy_from_slice(&px);
+            }
+        }
+        out
     }
 
     // Selections, moving pixels and the clipboard.
@@ -652,7 +764,7 @@ impl CanvasEditor {
         h.cancel();
         h.clear_preview();
         let held = &mut *h;
-        let (w, ht) = (held.canvas.width, held.canvas.height);
+        let (w, ht, shown) = (held.canvas.width, held.canvas.height, held.shown);
         let frames = held.canvas.frames.len();
         let still = picture.frames.len() <= 1;
         fn first(p: &port::Part) -> Option<&port::Image> {
@@ -665,7 +777,12 @@ impl CanvasEditor {
             .iter()
             .map(|p| {
                 let cels = if still {
-                    vec![first(p).map_or_else(|| Grid::new(w, ht), |image| port::grid_of(image, w, ht, if lone { centre(image.width, image.height) } else { [image.left, image.top] }))]
+                    // In the frame shown; clear in those before it.
+                    let mut cels = vec![Grid::new(w, ht); shown as usize + 1];
+                    if let Some(image) = first(p) {
+                        cels[shown as usize] = port::grid_of(image, w, ht, if lone { centre(image.width, image.height) } else { [image.left, image.top] });
+                    }
+                    cels
                 } else {
                     port::cels_of(p, w, ht, picture.frames.len().min(frames) as u32)
                 };
@@ -827,6 +944,38 @@ mod tests {
         editor.undo().unwrap();
         let view: serde_json::Value = serde_json::from_str(&editor.view()).unwrap();
         assert_eq!(view["layers"].as_array().unwrap().len(), 1, "one undo step");
+    }
+
+    #[test]
+    fn one_frame_is_shown_with_its_onion_skin_and_each_has_a_thumbnail() {
+        let editor = CanvasEditor::create(64, 64, "pixel".into()).unwrap();
+        let view = |e: &CanvasEditor| serde_json::from_str::<serde_json::Value>(&e.view()).unwrap();
+        editor.apply(r#"{"op": "fillRect", "layer": 1, "rect": [0, 0, 4, 4], "color": [255, 0, 0, 255]}"#.into(), "Fill".into()).unwrap();
+        editor.apply(r#"{"op": "addFrame"}"#.into(), "New frame".into()).unwrap();
+        let second = 1 + 65536;
+        editor.apply(format!(r#"{{"op": "fillRect", "layer": {second}, "rect": [10, 10, 4, 4], "color": [0, 0, 255, 255]}}"#), "Fill".into()).unwrap();
+        assert_eq!((editor.pick(1, 1).unwrap(), editor.pick(11, 11).unwrap()[3]), (vec![255, 0, 0, 255], 0), "the first frame is shown");
+        assert_eq!(view(&editor)["frames"].as_array().unwrap().len(), 2);
+
+        assert_eq!(editor.show_frame(1), 1);
+        editor.lay(u64::MAX);
+        assert_eq!((editor.pick(11, 11).unwrap(), editor.pick(1, 1).unwrap()[3]), (vec![0, 0, 255, 255], 0), "and now the second");
+        assert_eq!(view(&editor)["shown"], 1);
+
+        // The frame before, faintly and tinted red, under the frame shown.
+        editor.onion(1, 0, 110, true);
+        let laid = editor.lay(u64::MAX);
+        let tile = laid.iter().find(|l| l.x == 0 && l.y == 0 && l.width == 64).unwrap();
+        let p = &tile.pixels[(64 + 1) * 4..(64 + 1) * 4 + 4];
+        assert!(p[3] > 0 && p[3] < 255 && p[0] > p[2], "{p:?}");
+        assert_eq!(editor.pick(1, 1).unwrap()[3], 0, "what is picked is the frame alone");
+
+        let thumb = editor.thumb(0, 16, 16);
+        assert_eq!((thumb.len(), &thumb[..4]), (16 * 16 * 4, &[255, 0, 0, 255][..]));
+        assert_eq!(editor.show_frame(9), 1, "held to the frames there are");
+        editor.apply(r#"{"op": "removeFrame", "frame": 1}"#.into(), "Remove frame".into()).unwrap();
+        assert_eq!(view(&editor)["shown"], 0, "the frame shown taken out: the one before");
+        assert_eq!(view(&editor)["tags"], serde_json::json!([]));
     }
 
     #[test]

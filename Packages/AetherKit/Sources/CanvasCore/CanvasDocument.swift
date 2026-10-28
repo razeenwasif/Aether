@@ -23,10 +23,17 @@ public final class CanvasDocument {
     public private(set) var outline: [Int32] = []
     /// The rectangle round what is selected, in canvas pixels.
     public private(set) var selected: CGRect?
+    /// Bumped whenever a frame's picture may have changed, so the timeline
+    /// knows to draw its thumbnails again: which ones, `takeStaleFrames`.
+    public private(set) var framesDrawn = 0
 
     @ObservationIgnored let editor: CanvasEditor
     @ObservationIgnored private let encoder = JSONEncoder()
     @ObservationIgnored private var selectionVersion = UInt64.max
+    /// Frames whose pictures changed since the timeline last asked; all of
+    /// them when `staleAll`.
+    @ObservationIgnored private var staleFrames: Set<Int> = []
+    @ObservationIgnored private var staleAll = true
 
     private init(editor: CanvasEditor, url: URL) throws {
         self.editor = editor
@@ -69,6 +76,7 @@ public final class CanvasDocument {
             let applied = try JSONDecoder().decode(Applied.self, from: Data(editor.apply(opJson: json, label: label).utf8))
             refusal = nil
             refresh()
+            stale(applied)
             return applied
         } catch {
             refusal = Self.describe(error)
@@ -77,11 +85,15 @@ public final class CanvasDocument {
     }
 
     public func undo() {
-        if editor.undo() != nil { refresh() }
+        guard let step = editor.undo() else { return }
+        refresh()
+        stale(try? JSONDecoder().decode(Applied.self, from: Data(step.utf8)))
     }
 
     public func redo() {
-        if editor.redo() != nil { refresh() }
+        guard let step = editor.redo() else { return }
+        refresh()
+        stale(try? JSONDecoder().decode(Applied.self, from: Data(step.utf8)))
     }
 
     // MARK: Strokes, drawn as the pen moves
@@ -105,8 +117,9 @@ public final class CanvasDocument {
     }
 
     public func endStroke(label: String) {
-        _ = try? editor.strokeEnd(label: label)
+        let ended = try? editor.strokeEnd(label: label)
         refresh()
+        stale(ended.flatMap { try? JSONDecoder().decode(Applied.self, from: Data($0.utf8)) })
     }
 
     public func cancelStroke() {
@@ -179,11 +192,61 @@ public final class CanvasDocument {
             let applied = try JSONDecoder().decode(Applied.self, from: Data(editor.bringIn(bytes: bytes, name: name, above: above).utf8))
             refusal = nil
             refresh()
+            stale(applied)
             return applied
         } catch {
             refusal = Self.describe(error)
             return nil
         }
+    }
+
+    // MARK: Frames
+
+    /// The frame shown and drawn in, from 0.
+    public var frame: Int { Int(state.shown) }
+
+    /// Show frame `frame`, held to the frames there are; a stroke or a
+    /// preview under way is taken away first.
+    public func show(frame: Int) {
+        guard frame != self.frame else { return }
+        _ = editor.showFrame(frame: UInt32(max(0, frame)))
+        refresh()
+    }
+
+    /// Onion skin: how many frames before and after (to 5), how strongly
+    /// the nearest shows (of 255), tinted red before and blue after or not.
+    public func onion(before: Int, after: Int, opacity: Int = 110, tint: Bool) {
+        editor.onion(before: UInt32(max(0, before)), after: UInt32(max(0, after)), opacity: UInt32(max(0, opacity)), tint: tint)
+        lay()
+    }
+
+    /// Frame `frame` laid together, small: fitted in a square `side` a side.
+    public func thumbnail(frame: Int, side: Int) -> CGImage? {
+        let (w, h) = CanvasRun.thumbSize(width, height, most: side)
+        return CanvasPixels.image(editor.thumb(frame: UInt32(frame), width: UInt32(w), height: UInt32(h)), width: w, height: h)
+    }
+
+    /// The frames whose pictures changed since last asked — or `nil` for
+    /// every frame — and forget them.
+    public func takeStaleFrames() -> Set<Int>? {
+        defer {
+            staleFrames = []
+            staleAll = false
+        }
+        return staleAll ? nil : staleFrames
+    }
+
+    /// What a change touched, as the frames whose thumbnails are stale.
+    private func stale(_ applied: Applied?) {
+        guard let applied else { return }
+        if applied.meta {
+            staleAll = true
+        } else {
+            let frames = (applied.touched ?? []).compactMap { $0.first }.filter { $0 != 0 }.map(CanvasCel.frame(of:))
+            guard !frames.isEmpty else { return }
+            staleFrames.formUnion(frames)
+        }
+        framesDrawn &+= 1
     }
 
     // MARK: Reading back
@@ -226,8 +289,10 @@ public final class CanvasDocument {
 
     /// What an op changed, as the core says it.
     public struct Applied: Decodable, Sendable {
-        public var changed: Bool
+        public var changed: Bool?
         public var meta: Bool
+        /// The tiles it touched, as cel and tile index.
+        public var touched: [[UInt32]]?
         public var made: UInt32?
         /// What a picture brought in left out.
         public var notes: [String]?

@@ -641,6 +641,13 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
     func lift(layer: UInt32)  -> Lifted?
     
     /**
+     * Onion skin: how many frames before and after (to 5 each), how
+     * strongly the nearest shows (of 255), tinted or not; none with both
+     * counts 0.
+     */
+    func onion(before: UInt32, after: UInt32, opacity: UInt32, tint: Bool) 
+    
+    /**
      * The edges of what is selected, as segments along pixels' sides — x0,
      * y0, x1, y1, four numbers each — for the marching ants. None when
      * nothing is.
@@ -658,7 +665,7 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
     func pick(x: UInt32, y: UInt32)  -> Data?
     
     /**
-     * The canvas laid together, as a PNG: for exporting and sending.
+     * The frame shown laid together, as a PNG: for exporting and sending.
      */
     func png() throws  -> Data
     
@@ -696,6 +703,13 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
     func selectionVersion()  -> UInt64
     
     /**
+     * Show frame `frame` (from 0, held to the frames there are): laid
+     * together again, its onion skin with it. A stroke or a preview under
+     * way is taken away first. Answers the frame shown.
+     */
+    func showFrame(frame: UInt32)  -> UInt32
+    
+    /**
      * More of the stroke: numbers in threes — x and y in 1/256 px, and the
      * pen's pressure, 0 to 65535.
      */
@@ -720,13 +734,20 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
     func strokeEnd(label: String) throws  -> String
     
     /**
+     * Frame `frame` laid together at `width` × `height` (to 256 each), each
+     * pixel the one at its middle: premultiplied RGBA, for the timeline.
+     */
+    func thumb(frame: UInt32, width: UInt32, height: UInt32)  -> Data
+    
+    /**
      * Undo a step; what it was, or `None` with nothing to undo.
      */
     func undo()  -> String?
     
     /**
      * The canvas but its pixels, as JSON: `{width, height, preset, palette,
-     * layers (bottom to top), frames, dirty, canUndo, canRedo, undo, redo}`.
+     * layers (bottom to top), frames (each one's milliseconds), tags, shown,
+     * dirty, canUndo, canRedo, undo, redo}`.
      */
     func view()  -> String
     
@@ -906,6 +927,23 @@ open func lift(layer: UInt32) -> Lifted?  {
 }
     
     /**
+     * Onion skin: how many frames before and after (to 5 each), how
+     * strongly the nearest shows (of 255), tinted or not; none with both
+     * counts 0.
+     */
+open func onion(before: UInt32, after: UInt32, opacity: UInt32, tint: Bool)  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_onion(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(before),
+        FfiConverterUInt32.lower(after),
+        FfiConverterUInt32.lower(opacity),
+        FfiConverterBool.lower(tint),uniffiCallStatus
+    )
+}
+}
+    
+    /**
      * The edges of what is selected, as segments along pixels' sides — x0,
      * y0, x1, y1, four numbers each — for the marching ants. None when
      * nothing is.
@@ -946,7 +984,7 @@ open func pick(x: UInt32, y: UInt32) -> Data?  {
 }
     
     /**
-     * The canvas laid together, as a PNG: for exporting and sending.
+     * The frame shown laid together, as a PNG: for exporting and sending.
      */
 open func png()throws  -> Data  {
     return try  FfiConverterData.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
@@ -1039,6 +1077,21 @@ open func selectionVersion() -> UInt64  {
 }
     
     /**
+     * Show frame `frame` (from 0, held to the frames there are): laid
+     * together again, its onion skin with it. A stroke or a preview under
+     * way is taken away first. Answers the frame shown.
+     */
+open func showFrame(frame: UInt32) -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_show_frame(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(frame),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * More of the stroke: numbers in threes — x and y in 1/256 px, and the
      * pen's pressure, 0 to 65535.
      */
@@ -1091,6 +1144,22 @@ open func strokeEnd(label: String)throws  -> String  {
 }
     
     /**
+     * Frame `frame` laid together at `width` × `height` (to 256 each), each
+     * pixel the one at its middle: premultiplied RGBA, for the timeline.
+     */
+open func thumb(frame: UInt32, width: UInt32, height: UInt32) -> Data  {
+    return try!  FfiConverterData.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_thumb(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(frame),
+        FfiConverterUInt32.lower(width),
+        FfiConverterUInt32.lower(height),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Undo a step; what it was, or `None` with nothing to undo.
      */
 open func undo() -> String?  {
@@ -1104,7 +1173,8 @@ open func undo() -> String?  {
     
     /**
      * The canvas but its pixels, as JSON: `{width, height, preset, palette,
-     * layers (bottom to top), frames, dirty, canUndo, canRedo, undo, redo}`.
+     * layers (bottom to top), frames (each one's milliseconds), tags, shown,
+     * dirty, canUndo, canRedo, undo, redo}`.
      */
 open func view() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
@@ -3291,6 +3361,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_lift() != 58159) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_onion() != 37550) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_outline() != 50776) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3300,7 +3373,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_pick() != 43330) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aether_diffuse_checksum_method_canvaseditor_png() != 28195) {
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_png() != 23319) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_preview() != 24333) {
@@ -3324,6 +3397,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_selection_version() != 15986) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_show_frame() != 10877) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_stroke_add() != 42638) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3336,10 +3412,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_stroke_end() != 48237) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_thumb() != 17907) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_undo() != 7046) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 31181) {
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_flowdocument_create() != 53531) {

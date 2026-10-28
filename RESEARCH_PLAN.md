@@ -737,6 +737,49 @@ The user took the PI's recommendation on all five.
   - Typing into the hex field couldn't be driven in the background (the automation's keys went to the canvas), so the hex field is checked by tests only.
 - **Not ported yet:** animation (frames, onion skin, tags), Proton's Make panel (generators and filters), Scale2x and Scale3x upscaling, exporting at ×2 to ×8 and as a sheet, PSD export, and vector booleans.
 
+**2026-10-28 · Canvas: animation — frames, onion skin and tags.** The user asked to "continue Canvas: animation — frames, onion skin and tags, as in Proton". Ported from Proton's window before `9111812` (`raster-frames.js`, and `raster.js`'s timeline, playing, onion skin and animation fields) and from `proton-raster-runtime`'s shown frame, onion skin and thumbnails.
+
+- **The engine already had** cels (a layer in a frame, id = layer + frame × 65536), `AddFrame` (clear or a copy, which joins a tag ending on the copied frame), `RemoveFrame`, `MoveFrame`, `SetDuration`, `SetTags`, and `blend::fold` laying a frame with onion skin under each layer.
+- **The bridge (`CanvasEditor`)** now holds a shown frame and onion skin, as the runtime did.
+  - `show_frame` cancels a stroke or a preview, then lays the frame again.
+  - `onion` sets the reach (up to 5 each way), the nearest frame's strength and the tint (red before, blue after). The furthest frame is faintest.
+  - `thumb` samples each pixel at its middle and returns it premultiplied.
+  - Only cels in the shown frame or its onion skin are laid again when they change. The per-tile cost counts each onion frame.
+  - Strokes, pick, pasting a picture in, and the PNG export use the shown frame. `view` gives `tags` and `shown`.
+- **Swift:**
+  - `CanvasTag`, `CanvasDirection` and `CanvasCel`, the frame ops, and `paste` into a frame.
+  - `CanvasRun` is Proton's play order: on and round, back, or to the end and back with each end once, over every frame or a tag.
+  - Every drawing op names the layer's cel in the shown frame. Layer ops still name the layer.
+  - `CanvasDocument` tracks which frames' pictures each change touched, for the thumbnails.
+- **The model:**
+  - Frame actions: show, step round from the ends, add, copy (`⇧N`), remove, move, and this frame's time or every frame's.
+  - Tags: add over the shown frame, edit them (kept in order and within the frame count), remove them.
+  - Playing: each frame waits its own time against a clock, starting over from now if it falls more than 250 ms behind (Proton's rule). Onion skin is off while playing. An edit, drawing, or showing a frame stops it, as do ↩ and ⎋.
+  - Onion settings (on, 0–3 before and after, tint) are kept between launches. Proton kept them in `localStorage`; here it's `UserDefaults`, which tests swap for their own.
+- **The timeline** sits above the dock:
+  - A bar with step back, play or stop, step forward, "3 / 8", this frame's milliseconds, a "what plays" picker once there are tags, onion skin, and add, copy and remove.
+  - A strip of thumbnails with the tags as coloured bars above them. Click a bar to play its tag, drag a frame to move it, click one to show it.
+  - Thumbnails are redrawn 120 ms after frames change, only for the frames that changed. They're drawn at 80 device pixels, so a 40-point cell on Retina shows every pixel of a sprite up to 80 wide. At Proton's 40, a one-pixel line in a 64-pixel frame was missed (seen in the app).
+  - Fitting the canvas leaves room for the timeline.
+- **The inspector's Animation section:** "Frame 3 of 8, shown 100 ms", Every frame N ms, onion skin with its reach and tint, and the tags (name, first and last frame, how they play, remove, ＋ A tag here). The Canvas menu has a Frames submenu.
+- **Tests:** the bridge has 1 more (one frame shown at a time; onion skin faint and red under the frame shown and not picked; thumbnails; held to the frame count; removing the shown frame shows the one before). Swift has 7 more:
+  - the play order
+  - drawing in each frame alone, copy, move, durations, remove and undo
+  - onion skin in the composite and not in pick
+  - tags
+  - the keys, and real playback (waited for, not timed, since other suites share the main actor) stopped by ⎋ and by an edit
+  - thumbnails only for the frames changed
+  - a paste into the shown frame only
+  - 158 Rust and 92 Swift tests pass, and the full Swift suite passed three runs in a row.
+- **Checked in the app,** on a 64 × 64 canvas made for the check and deleted after:
+  - the timeline bar and the Animation section
+  - three frames of a line moving right, drawn with New Frame from the menu
+  - onion skin showing frame 2 faintly in red under frame 3
+  - the strip's thumbnails
+  - This first look found the strip covering the canvas once it appeared, and the missed one-pixel line; both are fixed.
+  - The screen then locked, so the rebuilt timeline (the strip always shown, the canvas fitted above it), the tag bars, playback and dragging frames are covered by tests but not seen in the app.
+- **Not ported yet:** Proton's Make panel (generators and filters), Scale2x and Scale3x upscaling, exporting at ×2 to ×8, as a sprite sheet with its JSON and as PSD, and vector booleans.
+
 Not yet:
 - Dropping a PNG on the graph to open its graph (the Gallery takes drops).
 - Marquee selection.
@@ -745,7 +788,7 @@ Not yet:
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, and Send to Canvas (§10a). The other four workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). The other four workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, move to Claude. They're due before M1, since nothing built so far depends on them.
@@ -756,6 +799,6 @@ Not yet:
 3. ~~**Smaller pieces:** marquee selection, dropping a PNG on the graph, and Run to here~~: done, see §10a.
 4. ~~**Mask painting**~~: done, see §10a. With it, Diffuse matches Proton's window, apart from Send to Canvas and Send to Game, which wait on those workspaces.
 
-Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import. ~~Canvas selections, move and transform, copy and paste~~: done, see §10a. ~~The palette, the pixel grid, mirror drawing and resize~~: done, see §10a.
+Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas workspace and Send to Canvas~~: done, see §10a, as a file import. ~~Canvas selections, move and transform, copy and paste~~: done, see §10a. ~~The palette, the pixel grid, mirror drawing and resize~~: done, see §10a. ~~Animation: frames, onion skin and tags~~: done, see §10a.
 
-**Next, proposed:** the rest of Canvas (animation: frames, onion skin and tags; then the Make panel and export options), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.
+**Next, proposed:** the rest of Canvas (the Make panel's generators and filters, and export: ×2 to ×8, the sprite sheet and PSD), or the omnibar and M1's project graph, which live links between workspaces and Send to Game depend on.

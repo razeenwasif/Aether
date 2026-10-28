@@ -14,9 +14,10 @@ struct CanvasInspector: View {
                     ColourSection(model: model)
                     PaletteSection(model: model)
                     ToolSection(model: model)
+                    AnimationSection(model: model, document: document)
                 }
             }
-            .frame(maxHeight: 540)
+            .frame(maxHeight: 620)
             .fixedSize(horizontal: false, vertical: true)
             LayersSection(model: model, document: document)
         }
@@ -272,6 +273,102 @@ private struct ToolSection: View {
             Slider(value: value, in: range).controlSize(.small)
             Text(shown).font(.aeMono).foregroundStyle(Color.ink).frame(width: 52, alignment: .trailing)
         }
+    }
+}
+
+// MARK: - Animation
+
+/// Proton's animation fields: the frame's time, for every frame too; onion
+/// skin's reach and tint; and the tags — each a name over a run of frames,
+/// played on, back, or to the end and back.
+private struct AnimationSection: View {
+    @Bindable var model: CanvasWorkspaceModel
+    let document: CanvasDocument
+
+    var body: some View {
+        let n = model.frameCount
+        let ms = document.state.frames[safe: model.frame] ?? 100
+        PanelSection("Animation") {
+            Text(verbatim: "Frame \(model.frame + 1) of \(n), shown \(ms) ms." + (n > 1 ? "" : " ＋ or ⇧N under the picture adds a frame."))
+                .font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+            if n > 1 {
+                Button("Every frame \(ms) ms") { model.setDurationForAll() }
+                    .controlSize(.small)
+                    .help("Every frame shown as long as this one")
+            }
+            Toggle("Onion skin (⇧O)", isOn: $model.onionOn).toggleStyle(.checkbox).font(.aeBody)
+            reach("Frames before", $model.onionBefore)
+            reach("Frames after", $model.onionAfter)
+            Toggle("Tinted — before red, after blue", isOn: $model.onionTint).toggleStyle(.checkbox).font(.aeBody)
+            if n > 1 {
+                Text("Tags").font(.aeSmall).foregroundStyle(Color.ink3).padding(.top, 4)
+                ForEach(Array(model.tags.enumerated()), id: \.offset) { i, tag in
+                    TagRow(model: model, index: i, tag: tag, frames: n)
+                }
+                Button("＋ A tag here") { model.addTag() }
+                    .controlSize(.small)
+                    .help("A tag over this frame, to widen")
+            }
+        }
+    }
+
+    private func reach(_ label: String, _ value: Binding<Int>) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 92, alignment: .leading)
+            Picker(label, selection: value) {
+                ForEach(0...3, id: \.self) { Text(verbatim: "\($0)").tag($0) }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            .frame(width: 64)
+            .disabled(!model.onionOn)
+        }
+    }
+}
+
+/// A tag: its colour, its name, its first and last frames, how it plays.
+private struct TagRow: View {
+    @Bindable var model: CanvasWorkspaceModel
+    let index: Int
+    let tag: CanvasTag
+    let frames: Int
+    @State private var name = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Circle().fill(CanvasTimeline.tagColours[index % CanvasTimeline.tagColours.count]).frame(width: 8, height: 8)
+                TextField("Name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .onSubmit { model.editTag(index, name: name) }
+                    .accessibilityLabel("Its name")
+                frameField(Int(tag.from) + 1, label: "Its first frame") { model.editTag(index, from: $0 - 1) }
+                Text(verbatim: "–").foregroundStyle(Color.ink2)
+                frameField(Int(tag.to) + 1, label: "Its last frame") { model.editTag(index, to: $0 - 1) }
+                Button { model.removeTag(index) } label: { Image(systemName: "xmark").font(.system(size: 10, weight: .medium)) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.ink2)
+                    .help("Take the tag away")
+                    .accessibilityLabel("Take the tag away")
+            }
+            Picker("How it plays", selection: Binding(get: { tag.direction }, set: { model.editTag(index, direction: $0) })) {
+                ForEach(CanvasDirection.allCases, id: \.self) { Text($0.title).tag($0) }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            .padding(.leading, 14)
+        }
+        .onAppear { name = tag.name }
+        .onChange(of: tag.name) { name = tag.name }
+    }
+
+    private func frameField(_ value: Int, label: String, set: @escaping (Int) -> Void) -> some View {
+        TextField(label, value: Binding(get: { value }, set: { set(min(frames, max(1, $0))) }), format: .number.grouping(.never))
+            .textFieldStyle(.roundedBorder)
+            .controlSize(.small)
+            .frame(width: 38)
+            .accessibilityLabel(label)
     }
 }
 

@@ -218,9 +218,14 @@ public final class CanvasWorkspaceModel {
 
     public let folder: URL
 
-    public init(folder: URL = CanvasWorkspaceModel.defaultFolder) {
+    /// Where settings kept between launches go; tests use their own.
+    @ObservationIgnored let defaults: UserDefaults
+
+    public init(folder: URL = CanvasWorkspaceModel.defaultFolder, defaults: UserDefaults = .standard) {
         self.folder = folder
+        self.defaults = defaults
         refreshList()
+        loadOnion()
     }
 
     /// `~/Documents/Aether/Canvases`, where canvases go.
@@ -369,6 +374,7 @@ public final class CanvasWorkspaceModel {
     /// Back to the home page.
     public func close() {
         leave {
+            self.stop()
             self.document = nil
             self.layer = nil
             self.refreshList()
@@ -395,9 +401,12 @@ public final class CanvasWorkspaceModel {
     }
 
     private func show(_ doc: CanvasDocument) {
+        stop()
         moving = nil
         swatch = nil
+        thumbs = [:]
         document = doc
+        applyOnion()
         layer = doc.state.layers.last?.id
         if doc.state.preset == .pixel, tool == .brush { tool = .pencil }
         if doc.state.preset == .paint, tool == .pencil { tool = .brush }
@@ -467,6 +476,7 @@ public final class CanvasWorkspaceModel {
     /// kept first: it is what the person sees.
     public func change(_ op: CanvasOp, label: String) {
         guard let document else { return }
+        stop()
         finishTransform()
         if document.apply(op, label: label) == nil { notice = document.refusal }
     }
@@ -529,7 +539,7 @@ public final class CanvasWorkspaceModel {
     /// The magic wand at a canvas point, on the layer drawn on.
     public func selectLike(at c: CGPoint, mode: CanvasSelectMode) {
         guard let layer = currentLayer else { return }
-        select(.wand(layer: layer.id, x: Int32(floor(c.x)), y: Int32(floor(c.y)), tolerance: wandTolerance, contiguous: wandContiguous, diagonal: wandDiagonal), mode: mode)
+        select(.wand(layer: cel(layer), x: Int32(floor(c.x)), y: Int32(floor(c.y)), tolerance: wandTolerance, contiguous: wandContiguous, diagonal: wandDiagonal), mode: mode)
     }
 
     /// The whole pixels from one point's to another's, both in: left, top,
@@ -544,7 +554,7 @@ public final class CanvasWorkspaceModel {
     /// selected.
     public func clearSelected() {
         guard let layer = currentLayer else { return }
-        change(.clear(layer: layer.id), label: "Clear")
+        change(.clear(layer: cel(layer)), label: "Clear")
     }
 
     // MARK: The clipboard
@@ -554,7 +564,7 @@ public final class CanvasWorkspaceModel {
     public func copy(cut: Bool = false) {
         guard let document, let layer = currentLayer else { return }
         finishTransform()
-        guard document.apply(.copy(layer: layer.id, cut: cut), label: cut ? "Cut" : "Copy") != nil else {
+        guard document.apply(.copy(layer: cel(layer), cut: cut), label: cut ? "Cut" : "Copy") != nil else {
             notice = document.refusal
             return
         }
@@ -578,7 +588,7 @@ public final class CanvasWorkspaceModel {
         if board.changeCount != ownClipboard, let (bytes, name) = CanvasPicture.on(board) {
             return bringIn(bytes, named: name)
         }
-        if let made = document.apply(.paste(above: currentLayer?.id), label: "Paste")?.made {
+        if let made = document.apply(.paste(above: currentLayer?.id, frame: UInt32(frame)), label: "Paste")?.made {
             layer = made
         } else {
             notice = document.refusal == "nothing is copied" ? "Nothing’s copied yet: select something and copy it (⌘C)." : document.refusal
@@ -619,12 +629,12 @@ public final class CanvasWorkspaceModel {
             notice = "\(layer.name) is locked."
             return false
         }
-        guard let lifted = document.lift(layer.id) else {
+        guard let lifted = document.lift(cel(layer)) else {
             notice = "There’s nothing on \(layer.name) to move."
             return false
         }
-        document.preview(.clear(layer: layer.id))
-        moving = CanvasMoving(layer: layer.id, rect: lifted.rect, transform: CanvasTransform(lifted.rect), free: free, image: lifted.image)
+        document.preview(.clear(layer: cel(layer)))
+        moving = CanvasMoving(layer: cel(layer), rect: lifted.rect, transform: CanvasTransform(lifted.rect), free: free, image: lifted.image)
         return true
     }
 
@@ -695,6 +705,219 @@ public final class CanvasWorkspaceModel {
         }
         change(.resize(width: UInt32(width), height: UInt32(height), smooth: preset == .paint), label: "Resize")
         fit()
+    }
+
+    // MARK: Frames
+
+    /// The frame shown and drawn in, from 0.
+    public var frame: Int { document?.frame ?? 0 }
+    public var frameCount: Int { document?.state.frames.count ?? 1 }
+    public var tags: [CanvasTag] { document?.state.tags ?? [] }
+
+    /// A layer's cel in the frame shown: what an edit of its pixels names.
+    public func cel(_ layer: CanvasLayer) -> UInt32 { CanvasCel.id(layer: layer.id, frame: frame) }
+
+    /// Show frame `f` (held to the frames there are), keeping what is being
+    /// moved first. Showing one stops playing, unless it is playing that
+    /// shows it.
+    public func showFrame(_ f: Int, keepPlaying: Bool = false) {
+        guard let document else { return }
+        if !keepPlaying { stop() }
+        finishTransform()
+        document.show(frame: max(0, min(frameCount - 1, f)))
+    }
+
+    /// The frame before or after, round from the ends.
+    public func stepFrame(by d: Int) {
+        let n = frameCount
+        showFrame(((frame + d) % n + n) % n)
+    }
+
+    /// A new, clear frame after this one, shown.
+    public func addFrame() {
+        let at = frame + 1
+        change(.addFrame(at: UInt32(at)), label: "New frame")
+        showFrame(at)
+    }
+
+    /// A copy of this frame, after it, shown (⇧N).
+    public func copyFrame() {
+        let at = frame + 1
+        change(.addFrame(at: UInt32(at), copy: UInt32(frame)), label: "Copy the frame")
+        showFrame(at)
+    }
+
+    /// This frame taken out, and every layer's pixels in it.
+    public func removeFrame() {
+        guard frameCount > 1 else { return }
+        change(.removeFrame(UInt32(frame)), label: "Remove the frame")
+    }
+
+    /// A frame moved to another place, shown there.
+    public func moveFrame(_ from: Int, to: Int) {
+        guard from != to, (0..<frameCount).contains(from), (0..<frameCount).contains(to) else { return }
+        change(.moveFrame(UInt32(from), to: UInt32(to)), label: "Move the frame")
+        showFrame(to)
+    }
+
+    /// How long this frame shows, in milliseconds (1 to 60 000).
+    public func setDuration(_ ms: Int) {
+        guard (1...60_000).contains(ms), document?.state.frames[safe: frame] != UInt32(ms) else { return }
+        change(.setDuration(from: UInt32(frame), to: UInt32(frame), duration: UInt32(ms)), label: "Frame time")
+    }
+
+    /// Every frame shown as long as this one.
+    public func setDurationForAll() {
+        guard let ms = document?.state.frames[safe: frame] else { return }
+        change(.setDuration(from: 0, to: UInt32(frameCount - 1), duration: ms), label: "Frame times")
+    }
+
+    // MARK: Tags
+
+    /// The tags made so, as one edit.
+    public func setTags(_ next: [CanvasTag]) {
+        guard next != tags else { return }
+        change(.setTags(next), label: "Tags")
+    }
+
+    /// A tag over the frame shown, named apart, to widen.
+    public func addTag() {
+        var k = tags.count + 1
+        while tags.contains(where: { $0.name == "Tag \(k)" }) { k += 1 }
+        setTags(tags + [CanvasTag(name: "Tag \(k)", from: UInt32(frame), to: UInt32(frame))])
+    }
+
+    /// Tag `i` changed: its name, its first and last frames (held in order
+    /// and to the frames there are), or how it plays.
+    public func editTag(_ i: Int, name: String? = nil, from: Int? = nil, to: Int? = nil, direction: CanvasDirection? = nil) {
+        guard tags.indices.contains(i) else { return }
+        var next = tags
+        var tag = next[i]
+        let last = UInt32(frameCount - 1)
+        if let name {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { tag.name = trimmed }
+        }
+        if let from { tag.from = min(last, UInt32(max(0, from))) }
+        if let to { tag.to = min(last, UInt32(max(0, to))) }
+        if tag.from > tag.to { (tag.from, tag.to) = from != nil ? (tag.from, tag.from) : (tag.to, tag.to) }
+        if let direction { tag.direction = direction }
+        next[i] = tag
+        setTags(next)
+    }
+
+    public func removeTag(_ i: Int) {
+        guard tags.indices.contains(i) else { return }
+        var next = tags
+        let gone = next.remove(at: i)
+        if playTag == gone.name { playTag = "" }
+        setTags(next)
+    }
+
+    // MARK: Playing
+
+    /// Frames playing, each for its time.
+    public private(set) var playing = false
+    /// The tag playing goes round, by name; "" for every frame.
+    public var playTag = "" {
+        didSet {
+            guard playTag != oldValue else { return }
+            if let tag = playingTag, frame < Int(tag.from) || frame > Int(tag.to) { showFrame(Int(tag.from), keepPlaying: true) }
+            if playing { play() }
+        }
+    }
+    @ObservationIgnored private var player: Task<Void, Never>?
+
+    /// The tag playing goes round, if it is still there.
+    public var playingTag: CanvasTag? { tags.first { $0.name == playTag } }
+
+    /// Play the frames — a tag's, or all — from the one shown, each for its
+    /// time, round and round until stopped. Onion skin is off meanwhile.
+    public func play() {
+        guard document != nil, frameCount > 1 else { return }
+        player?.cancel()
+        finishTransform()
+        let first = CanvasRun(frames: frameCount, tag: playingTag).start(at: frame)
+        playing = true
+        applyOnion()
+        showFrame(first.frame, keepPlaying: true)
+        let heading = first.forward
+        player = Task { [weak self] in
+            var forward = heading
+            let clock = ContinuousClock()
+            var due = clock.now
+            while let self, self.playing, !Task.isCancelled {
+                // Fallen far behind — a long frame, a busy Mac — it goes on from now.
+                if due < clock.now - .milliseconds(250) { due = clock.now }
+                due += .milliseconds(Int(self.document?.state.frames[safe: self.frame] ?? 100))
+                try? await clock.sleep(until: due)
+                guard self.playing, !Task.isCancelled else { return }
+                let next = CanvasRun(frames: self.frameCount, tag: self.playingTag).step(at: self.frame, forward: forward)
+                forward = next.forward
+                self.showFrame(next.frame, keepPlaying: true)
+            }
+        }
+    }
+
+    public func stop() {
+        guard playing else { return }
+        player?.cancel()
+        player = nil
+        playing = false
+        applyOnion()
+    }
+
+    public func togglePlaying() { playing ? stop() : play() }
+
+    // MARK: Onion skin
+
+    /// Onion skin: the frames either side shown faintly under each layer,
+    /// how many each way (0 to 3), tinted red before and blue after. Kept
+    /// between launches, as Proton's window kept it.
+    public var onionOn = false { didSet { onionChanged() } }
+    public var onionBefore = 1 { didSet { onionChanged() } }
+    public var onionAfter = 1 { didSet { onionChanged() } }
+    public var onionTint = true { didSet { onionChanged() } }
+
+    /// How strongly the nearest frame shows, of 255: Proton's.
+    static let onionOpacity = 110
+    private static let onionKept = "aether.canvas.onion"
+
+    private func onionChanged() {
+        applyOnion()
+        defaults.set(["on": onionOn, "before": onionBefore, "after": onionAfter, "tint": onionTint], forKey: Self.onionKept)
+    }
+
+    private func loadOnion() {
+        guard let kept = defaults.dictionary(forKey: Self.onionKept) else { return }
+        let reach = { (v: Any?, d: Int) in (v as? Int).map { min(3, max(0, $0)) } ?? d }
+        (onionOn, onionBefore, onionAfter, onionTint) = (kept["on"] as? Bool ?? false, reach(kept["before"], 1), reach(kept["after"], 1), kept["tint"] as? Bool ?? true)
+    }
+
+    /// Onion skin as set, to the canvas: none while frames play.
+    func applyOnion() {
+        let on = onionOn && !playing
+        document?.onion(before: on ? onionBefore : 0, after: on ? onionAfter : 0, opacity: Self.onionOpacity, tint: onionTint)
+    }
+
+    // MARK: Thumbnails
+
+    /// Each frame small, for the timeline, drawn again as frames change.
+    public private(set) var thumbs: [Int: CGImage] = [:]
+    /// Device pixels: a 40-point cell on a Retina screen, so every pixel of
+    /// a small sprite is in it.
+    static let thumbSide = 80
+
+    /// The thumbnails of the frames whose pictures changed, drawn again.
+    public func refreshThumbs() {
+        guard let document else { return thumbs = [:] }
+        let n = frameCount
+        let stale = document.takeStaleFrames() ?? Set(0..<n)
+        var next = thumbs.filter { $0.key < n }
+        for f in stale where f < n {
+            next[f] = document.thumbnail(frame: f, side: Self.thumbSide)
+        }
+        thumbs = next
     }
 
     // MARK: Colour
@@ -811,7 +1034,9 @@ public final class CanvasWorkspaceModel {
     var freeRect: CGRect {
         let left: CGFloat = navigatorOpen ? 264 : 0
         let right: CGFloat = inspectorOpen ? 300 : 0
-        return CGRect(x: left + 32, y: 58, width: max(64, stageSize.width - left - right - 64), height: max(64, stageSize.height - 58 - 84))
+        // The dock, and the timeline over it.
+        let bottom: CGFloat = 84 + CanvasTimeline.height(frames: frameCount) + 10
+        return CGRect(x: left + 32, y: 58, width: max(64, stageSize.width - left - right - 64), height: max(64, stageSize.height - 58 - bottom))
     }
 
     // MARK: Keys
@@ -838,11 +1063,21 @@ public final class CanvasWorkspaceModel {
             clearSelected()
             return true
         }
+        // ↩ plays the frames or stops them; ⎋ stops them too.
+        if code == 36 || code == 76 {
+            togglePlaying()
+            return true
+        }
+        if playing, code == 53 {
+            stop()
+            return true
+        }
         switch key {
         case " ":
             panning = true
         case "b": tool = pixel ? .pencil : .brush
-        case "n": tool = pixel ? .brush : .pencil
+        case "n":
+            if shift { copyFrame() } else { tool = pixel ? .brush : .pencil }
         case "e": tool = .eraser
         case "g":
             if shift { showGrid.toggle() } else { tool = .fill }
@@ -851,7 +1086,10 @@ public final class CanvasWorkspaceModel {
         case "i": tool = .pick
         case "l": tool = .line
         case "r": tool = .rect
-        case "o": tool = .ellipse
+        case "o":
+            if shift { onionOn.toggle() } else { tool = .ellipse }
+        case ",", "<": stepFrame(by: -1)
+        case ".", ">": stepFrame(by: 1)
         case "s":
             // Again, the next shape: a rectangle, an ellipse, a lasso.
             if tool == .select {
@@ -968,4 +1206,9 @@ enum CanvasThumbnail {
                                         kCGImageSourceCreateThumbnailWithTransform: true]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
+}
+
+extension Array {
+    /// The element at `i`, or nil past the ends.
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

@@ -38,6 +38,49 @@ public struct CanvasLayer: Codable, Sendable, Equatable, Identifiable {
     public var alphaLock: Bool
 }
 
+/// The order a tag's frames play in.
+public enum CanvasDirection: String, Codable, Sendable, CaseIterable {
+    case forward, reverse, pingPong, pingPongReverse
+
+    public var title: String {
+        switch self {
+        case .forward: "On"
+        case .reverse: "Back"
+        case .pingPong: "To the end and back"
+        case .pingPongReverse: "Back and on again"
+        }
+    }
+}
+
+/// A run of frames with a name — "idle", "run" — played as one animation.
+public struct CanvasTag: Codable, Sendable, Equatable, Hashable {
+    public var name: String
+    /// The first frame and the last, from 0.
+    public var from: UInt32
+    public var to: UInt32
+    public var direction: CanvasDirection
+    /// How many times it plays; 0 for as long as it is shown.
+    public var `repeat`: UInt32
+
+    public init(name: String, from: UInt32, to: UInt32, direction: CanvasDirection = .forward, repeat: UInt32 = 0) {
+        self.name = name
+        self.from = from
+        self.to = to
+        self.direction = direction
+        self.repeat = `repeat`
+    }
+}
+
+/// A cel — a layer in one frame — is known by its layer's id and this many
+/// times its frame (`proton_raster::FRAME_STEP`): a layer's own id is its
+/// first frame's.
+public enum CanvasCel {
+    public static let step: UInt32 = 1 << 16
+
+    public static func id(layer: UInt32, frame: Int) -> UInt32 { layer + UInt32(frame) * step }
+    public static func frame(of id: UInt32) -> Int { Int(id / step) }
+}
+
 /// The canvas open, but its pixels: what the core's `view` answers.
 public struct CanvasState: Codable, Sendable, Equatable {
     public var width: UInt32
@@ -48,6 +91,9 @@ public struct CanvasState: Codable, Sendable, Equatable {
     public var layers: [CanvasLayer]
     /// How long each frame shows, in milliseconds: one for a still picture.
     public var frames: [UInt32]
+    public var tags: [CanvasTag]
+    /// The frame shown and drawn in, from 0.
+    public var shown: UInt32
     public var dirty: Bool
     public var canUndo: Bool
     public var canRedo: Bool
@@ -161,8 +207,9 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
     /// What is selected of a layer (all of it with nothing) copied, to
     /// paste; cut, cleared as well.
     case copy(layer: UInt32, cut: Bool = false)
-    /// What was copied, as a new layer where it was, over `above`.
-    case paste(above: UInt32?)
+    /// What was copied, as a new layer where it was, over `above`, in frame
+    /// `frame` and clear in the others.
+    case paste(above: UInt32?, frame: UInt32 = 0)
     /// What is selected of a layer moved, scaled or turned: each pixel of
     /// `bounds` sampled from where `inverse` (1/65536) says it came from.
     case transform(layer: UInt32, bounds: [Int32], inverse: [Int64], smooth: Bool)
@@ -177,12 +224,24 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
     /// One colour made another — on one layer, or every layer not locked —
     /// and the palette's swatch with it, so recolouring a swatch is one edit.
     case replaceColor(from: RGBA, to: RGBA, layer: UInt32? = nil, swatch: UInt32? = nil)
+    /// A new frame at place `at` (after the last if not said): clear, or
+    /// with every layer's pixels in frame `copy` and shown as long.
+    case addFrame(at: UInt32? = nil, copy: UInt32? = nil)
+    /// A frame taken out, and every layer's pixels in it.
+    case removeFrame(UInt32)
+    /// A frame moved to place `to`, its pixels with it.
+    case moveFrame(UInt32, to: UInt32)
+    /// How long frames `from` to `to` are each shown, in milliseconds.
+    case setDuration(from: UInt32, to: UInt32, duration: UInt32)
+    /// The canvas's tags, all of them.
+    case setTags([CanvasTag])
 
     private enum Keys: String, CodingKey {
         case op, name, at, layer, to, opacity, blend, hidden, locked, alphaLock, rect, color, x, y, tolerance, contiguous
         case shape, from, filled, tip
         case area, mode, feather, smooth, cut, above, frame, bounds, inverse, turns, flip
         case width, height, colors, swatch
+        case copy, duration, tags
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -243,10 +302,10 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
             try c.encode("copy", forKey: .op)
             try c.encode(layer, forKey: .layer)
             try c.encode(cut, forKey: .cut)
-        case .paste(let above):
+        case let .paste(above, frame):
             try c.encode("paste", forKey: .op)
             try c.encodeIfPresent(above, forKey: .above)
-            try c.encode(0, forKey: .frame)
+            try c.encode(frame, forKey: .frame)
         case let .transform(layer, bounds, inverse, smooth):
             try c.encode("transform", forKey: .op)
             try c.encode(layer, forKey: .layer)
@@ -274,6 +333,25 @@ public enum CanvasOp: Encodable, Sendable, Equatable {
             try c.encode(to, forKey: .to)
             try c.encodeIfPresent(layer, forKey: .layer)
             try c.encodeIfPresent(swatch, forKey: .swatch)
+        case let .addFrame(at, copy):
+            try c.encode("addFrame", forKey: .op)
+            try c.encodeIfPresent(at, forKey: .at)
+            try c.encodeIfPresent(copy, forKey: .copy)
+        case .removeFrame(let frame):
+            try c.encode("removeFrame", forKey: .op)
+            try c.encode(frame, forKey: .frame)
+        case let .moveFrame(frame, to):
+            try c.encode("moveFrame", forKey: .op)
+            try c.encode(frame, forKey: .frame)
+            try c.encode(to, forKey: .to)
+        case let .setDuration(from, to, duration):
+            try c.encode("setDuration", forKey: .op)
+            try c.encode(from, forKey: .from)
+            try c.encode(to, forKey: .to)
+            try c.encode(duration, forKey: .duration)
+        case .setTags(let tags):
+            try c.encode("setTags", forKey: .op)
+            try c.encode(tags, forKey: .tags)
         }
     }
 }
