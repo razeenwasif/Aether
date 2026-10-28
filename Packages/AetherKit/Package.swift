@@ -8,8 +8,8 @@
 //   aether-local-bench  times local runs, and the text encoders on each compute unit
 //   CanvasCore        a canvas open for editing (proton-raster via the bridge), its pixels in tiles
 //   CanvasUI          the Canvas workspace: the canvas, layers, tools
-//   ModelCore         a scene open for editing (proton-scene and proton-mesh via the bridge), its maths, its Metal source
-//   ModelUI           the Model workspace: the Metal viewport, the outliner, the inspector
+//   ModelCore         a scene open for editing (proton-scene and proton-mesh via the bridge), a mesh in Edit mode (aether-poly), its maths, its Metal source
+//   ModelUI           the Model workspace: the Metal viewport, the outliner, the inspector, Edit mode
 //   AetherGraph       the project: one graph of assets and links, transactions, undo, the package
 //   AetherDesign      Velvet Obsidian: tokens, glass, controls
 //   DiffuseUI         the Diffuse workspace: the flow canvas, node library, inspector

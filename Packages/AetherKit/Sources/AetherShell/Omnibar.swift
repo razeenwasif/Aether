@@ -3,6 +3,7 @@ import AetherGraph
 import AppKit
 import CanvasUI
 import DiffuseCore
+import ModelCore
 import ModelUI
 import SwiftUI
 
@@ -68,6 +69,19 @@ extension AppModel {
 
     private var modelItems: [OmniItem] {
         let m = modeling
+        if let edit = m.editing {
+            return EditPart.allCases.map { part in
+                OmniItem(.here, "Choose \(part.title)", detail: part.key) { m.showPart(part) }
+            } + [
+                OmniItem(.here, "Extrude", detail: "e") { m.extrudeChosen() },
+                OmniItem(.here, "Inset", detail: "i") { m.insetChosen() },
+                OmniItem(.here, "Loop Cut", detail: "⌘R") { m.loopCutChosen() },
+                OmniItem(.here, "Delete", detail: "⌫") { m.deleteChosen() },
+                OmniItem(.here, "Choose Everything", detail: "a") { edit.chooseAll() },
+                OmniItem(.here, "Frame What’s Chosen", detail: "f") { m.frameSelected() },
+                OmniItem(.here, "Back to the Objects", detail: "⇥") { m.exitEdit() },
+            ]
+        }
         var items = SceneAddition.allCases.map { addition in
             OmniItem(.here, "Add \(addition == .empty ? "an Empty" : "a \(addition.title)")", detail: addition.isMesh ? "Mesh" : nil) { m.add(addition) }
         }
@@ -80,6 +94,7 @@ extension AppModel {
                 OmniItem(.here, "Add \(kind.capitalized) to \(node.name)", detail: "Modifier") { m.addModifier(kind, to: node.id) }
             }
             items.append(OmniItem(.here, "Choose a Mesh for \(node.name)…", detail: ".obj") { m.chooseMesh(for: node.id) })
+            items.append(OmniItem(.here, "Edit \(node.name)’s Mesh", detail: "⇥") { m.enterEdit() })
         }
         items.append(OmniItem(.here, "All Scenes") { m.close() })
         return items

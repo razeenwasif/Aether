@@ -42,7 +42,8 @@ public enum SceneAddition: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// The Model workspace: the scenes in the project, the scene open, the object
-/// chosen, and the camera — Proton's Modeling, in Object mode, on Metal.
+/// chosen, and the camera — Proton's Modeling, on Metal — and Edit mode, for
+/// the chosen object's mesh (`ModelEditMode.swift`).
 @MainActor
 @Observable
 public final class ModelWorkspaceModel {
@@ -57,6 +58,17 @@ public final class ModelWorkspaceModel {
     public var askingForNew = false
     /// What the last frame drew and how long the GPU took: §7's budget, read.
     public internal(set) var stats = ModelStats()
+    /// The chosen object's mesh, open in Edit mode (⇥).
+    public internal(set) var editing: MeshEditSession?
+    /// How far Extrude pulls, how far in Inset goes, and where along its
+    /// edges a loop cut falls.
+    public var extrudeDistance = 0.25
+    public var insetAmount = 0.1
+    public var cutAt = 0.5
+    /// A drag sliding what's chosen: the last point, the way the slide goes
+    /// on screen in points a metre, and whether it has started (it starts,
+    /// and extrudes, only once the pointer moves).
+    @ObservationIgnored var slideState: (last: CGPoint, perMetre: CGVector, extruding: Bool, started: Bool)?
 
     /// Where scenes go: the project's `Models/`.
     public private(set) var folder: URL
@@ -135,6 +147,7 @@ public final class ModelWorkspaceModel {
 
     /// Back to the scenes.
     public func close() {
+        exitEdit()
         saveNow()
         if let path = documentPath { project?.forget(document: path) }
         document = nil
@@ -150,6 +163,7 @@ public final class ModelWorkspaceModel {
     }
 
     private func show(_ doc: SceneDocument) {
+        exitEdit()
         saveNow()
         if let path = documentPath { project?.forget(document: path) }
         document = doc
@@ -170,7 +184,7 @@ public final class ModelWorkspaceModel {
 
     // MARK: Saving, as Proton's: an edit reaches the disk
 
-    private func scheduleSave() {
+    func scheduleSave() {
         saving?.cancel()
         saving = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(300))
@@ -183,6 +197,7 @@ public final class ModelWorkspaceModel {
     public func saveNow() {
         saving?.cancel()
         saving = nil
+        saveEdit()
         guard let document, document.state.dirty else { return }
         do {
             try document.save()
@@ -208,6 +223,7 @@ public final class ModelWorkspaceModel {
     /// Something added to the scene, under the object chosen when it's an
     /// empty, and chosen.
     public func add(_ addition: SceneAddition) {
+        exitEdit()
         guard let document else { return }
         var mesh = ""
         if addition.isMesh {
@@ -235,6 +251,7 @@ public final class ModelWorkspaceModel {
 
     /// The object chosen taken out, and everything under it.
     public func removeSelected() {
+        exitEdit()
         guard let node = selectedNode else { return }
         if change(.remove(node.id), label: "Remove \(node.name)") != nil || document?.node(node.id) == nil {
             selected = nil
@@ -291,23 +308,27 @@ public final class ModelWorkspaceModel {
     // MARK: Undo, through the project's one history
 
     public func undo() {
+        if let edit = editing { return editUndo(edit, redo: false) }
         guard let document else { return }
         if let project { project.undo(in: project.path(of: document.url)) { document.undo() } } else { document.undo() }
         scheduleSave()
     }
 
     public func redo() {
+        if let edit = editing { return editUndo(edit, redo: true) }
         guard let document else { return }
         if let project { project.redo(in: project.path(of: document.url)) { document.redo() } } else { document.redo() }
         scheduleSave()
     }
 
     public var undoLabel: String? {
+        if let edit = editing { return project.flatMap { $0.undoLabel(in: $0.path(of: edit.url)) } ?? edit.cage.undo }
         guard let project else { return document?.state.undo }
         return documentPath.flatMap { project.undoLabel(in: $0) }
     }
 
     public var redoLabel: String? {
+        if let edit = editing { return project.flatMap { $0.redoLabel(in: $0.path(of: edit.url)) } ?? edit.cage.redo }
         guard let project else { return document?.state.redo }
         return documentPath.flatMap { project.redoLabel(in: $0) }
     }
@@ -324,9 +345,19 @@ public final class ModelWorkspaceModel {
         }
     }
 
-    /// Choose what's under a point of the viewport, or nothing.
-    public func pick(at point: CGPoint, in size: CGSize) {
+    /// Choose what's under a point of the viewport, or nothing; in Edit
+    /// mode, the corner, edge or face, `adding` to what's chosen.
+    public func pick(at point: CGPoint, in size: CGSize, adding: Bool = false) {
+        if let edit = editing, let world = editWorld {
+            return edit.choose(edit.hit(point, size: size, view: camera.view, world: world), adding: adding)
+        }
         selected = SceneMath.pick(point, size: size, view: camera.view, boxes: boxes())
+    }
+
+    /// Choose an object (the outliner): Edit mode ends when it's another.
+    public func choose(_ id: String) {
+        if editing?.nodeID != id { exitEdit() }
+        selected = id
     }
 
     /// The camera aimed at everything (f).
@@ -336,6 +367,14 @@ public final class ModelWorkspaceModel {
 
     /// The camera aimed at the object chosen, or at everything.
     public func frameSelected() {
+        if let edit = editing, let world = editWorld {
+            let corners = edit.chosenVertices.isEmpty ? (0 ..< UInt32(edit.cage.vertexCount)).map { $0 } : edit.chosenVertices
+            let points = corners.map { v in
+                let p = world * SIMD4(edit.cage.position(v), 1)
+                return SIMD3(p.x, p.y, p.z)
+            }
+            return camera.frame(points)
+        }
         guard let selected, let box = boxes().first(where: { $0.id == selected }) else { return frameAll() }
         camera.frame(box.corners)
     }
@@ -347,6 +386,12 @@ public final class ModelWorkspaceModel {
     public func handleKey(_ event: NSEvent) -> Bool {
         guard document != nil, !(NSApplication.shared.keyWindow?.firstResponder is NSTextView) else { return false }
         guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
+        if event.keyCode == 48 {
+            guard editing != nil || canEdit else { return false }
+            toggleEdit()
+            return true
+        }
+        if editing != nil { return handleEditKey(event) }
         switch (event.keyCode, event.charactersIgnoringModifiers) {
         case (_, "f"):
             selected == nil ? frameAll() : frameSelected()

@@ -6,13 +6,18 @@ import simd
 /// without a surface as a stand-in drawn in lines (a cross for an empty, a
 /// burst for a light, a frustum for a camera, a box for a mesh that isn't
 /// here), and the floor grid. Proton's `gl.js` and `viewport.js`, on Metal.
+/// In Edit mode the object being edited draws its own mesh, before its
+/// modifiers, with its edges, its corners and what's chosen over it.
 /// Drawn only when something changes, so a still scene costs nothing.
 @MainActor
 final class ModelRenderer: NSObject, MTKViewDelegate {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private let lines: MTLRenderPipelineState
+    private let overlayLines: MTLRenderPipelineState
+    private let overlayPoints: MTLRenderPipelineState
     private let solid: MTLDepthStencilState
+    private let over: MTLDepthStencilState
     private var surfaces: [String: MTLRenderPipelineState] = [:]
     private var buffers: [String: Held] = [:]
     private let inFlight = DispatchSemaphore(value: 3)
@@ -42,6 +47,12 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     private struct LineVertex {
         var position: SIMD3<Float>
         var color: SIMD4<Float>
+    }
+
+    private struct OverlayUniforms {
+        var view: simd_float4x4
+        var proj: simd_float4x4
+        var size: Float
     }
 
     static let sampleCount = 4
@@ -75,6 +86,11 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             v.layouts[0].stride = MemoryLayout<LineVertex>.stride
             line.vertexDescriptor = v
             lines = try device.makeRenderPipelineState(descriptor: line)
+            line.vertexFunction = library.makeFunction(name: "overlayVertex")
+            overlayLines = try device.makeRenderPipelineState(descriptor: line)
+            line.vertexFunction = library.makeFunction(name: "pointVertex")
+            line.fragmentFunction = library.makeFunction(name: "pointFragment")
+            overlayPoints = try device.makeRenderPipelineState(descriptor: line)
         } catch {
             return nil
         }
@@ -83,6 +99,10 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         depth.isDepthWriteEnabled = true
         guard let solid = device.makeDepthStencilState(descriptor: depth) else { return nil }
         self.solid = solid
+        depth.depthCompareFunction = .lessEqual
+        depth.isDepthWriteEnabled = false
+        guard let over = device.makeDepthStencilState(descriptor: depth) else { return nil }
+        self.over = over
         super.init()
     }
 
@@ -116,8 +136,8 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     }
 
     /// An object's buffers, made again only when its mesh or stack changes.
-    private func held(_ node: SceneNode, _ mesh: SceneMeshData) -> Held? {
-        if let kept = buffers[node.id], kept.shape == node.shape { return kept }
+    private func held(_ id: String, _ shape: String, _ mesh: SceneMeshData) -> Held? {
+        if let kept = buffers[id], kept.shape == shape { return kept }
         guard !mesh.triangles.isEmpty,
               let positions = device.makeBuffer(bytes: mesh.positions, length: mesh.positions.count * 4, options: .storageModeShared),
               let indices = device.makeBuffer(bytes: mesh.triangles, length: mesh.triangles.count * 4, options: .storageModeShared) else { return nil }
@@ -126,8 +146,8 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             ? device.makeBuffer(bytes: mesh.normals, length: mesh.normals.count * 4, options: .storageModeShared)
             : device.makeBuffer(length: mesh.positions.count * 4, options: .storageModeShared)
         guard let normals else { return nil }
-        let made = Held(shape: node.shape, positions: positions, normals: normals, indices: indices, count: mesh.triangles.count, closed: mesh.closed)
-        buffers[node.id] = made
+        let made = Held(shape: shape, positions: positions, normals: normals, indices: indices, count: mesh.triangles.count, closed: mesh.closed)
+        buffers[id] = made
         return made
     }
 
@@ -155,11 +175,15 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         encoder.setDepthStencilState(solid)
         var triangles = 0
         var stand: [LineVertex] = []
+        var overlay: (world: simd_float4x4, edit: MeshEditSession)?
         for node in nodes {
             let world = worlds[node.id] ?? matrix_identity_float4x4
             let picked = node.id == model.selected
-            let mesh = node.kind == "mesh" && !node.mesh.isEmpty ? model.document?.mesh(for: node) : nil
-            guard let mesh, let held = held(node, mesh), let pipeline = surface(node.material.isEmpty ? nil : shaders[node.material]) else {
+            let edit = model.editing.flatMap { $0.nodeID == node.id ? $0 : nil }
+            if let edit { overlay = (world, edit) }
+            let mesh = edit.map(cageMesh) ?? (node.kind == "mesh" && !node.mesh.isEmpty ? model.document?.mesh(for: node) : nil)
+            let shape = edit.map { "edit:\($0.shapeRevision)" } ?? node.shape
+            guard let mesh, let held = held(node.id, shape, mesh), let pipeline = surface(node.material.isEmpty ? nil : shaders[node.material]) else {
                 standIn(for: node, bounds: mesh?.bounds, world: world, picked: picked, into: &stand)
                 continue
             }
@@ -167,7 +191,7 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             let upper = simd_float3x3(SIMD3(modelView.columns.0.x, modelView.columns.0.y, modelView.columns.0.z),
                                       SIMD3(modelView.columns.1.x, modelView.columns.1.y, modelView.columns.1.z),
                                       SIMD3(modelView.columns.2.x, modelView.columns.2.y, modelView.columns.2.z))
-            var object = ObjectUniforms(modelView: modelView, normal: upper.inverse.transpose, picked: picked ? 1 : 0)
+            var object = ObjectUniforms(modelView: modelView, normal: upper.inverse.transpose, picked: picked && edit == nil ? 1 : 0)
             encoder.setRenderPipelineState(pipeline)
             // Backs are culled only on a solid: a sheet would vanish edge-on.
             encoder.setCullMode(held.closed ? .back : .none)
@@ -194,6 +218,10 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             encoder.setVertexBytes(&viewProj, length: MemoryLayout<simd_float4x4>.stride, index: 1)
             encoder.drawPrimitives(type: .line, vertexStart: 0, vertexCount: all.count)
         }
+        if let overlay {
+            let scale = Float(view.drawableSize.width / max(view.bounds.width, 1))
+            drawOverlay(overlay.edit, world: overlay.world, view: viewMatrix, proj: proj, scale: scale, encoder: encoder)
+        }
         encoder.endEncoding()
         commands.present(drawable)
         let (count, drawn) = (nodes.count, triangles)
@@ -210,6 +238,70 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     /// How far the scene reaches from the camera's target, for the far plane.
     private func boxSpan(_ model: ModelWorkspaceModel) -> Float {
         model.boxes().flatMap(\.corners).map { simd_length($0 - model.camera.target) }.max() ?? 10
+    }
+
+    // MARK: Edit mode
+
+    /// The mesh being edited, as a mesh to draw: faceted, before modifiers.
+    private func cageMesh(_ edit: MeshEditSession) -> SceneMeshData {
+        let c = edit.cage
+        var lo = SIMD3<Float>(repeating: .infinity), hi = SIMD3<Float>(repeating: -.infinity)
+        for v in 0 ..< c.vertexCount {
+            lo = simd_min(lo, c.position(UInt32(v)))
+            hi = simd_max(hi, c.position(UInt32(v)))
+        }
+        return SceneMeshData(positions: c.positions, normals: [], triangles: c.triangles, bounds: c.vertexCount > 0 ? [lo.x, lo.y, lo.z, hi.x, hi.y, hi.z] : [], closed: c.closed, problem: nil)
+    }
+
+    /// The faces chosen, filled in ice; every edge, the chosen ones in ice;
+    /// and in Vertices, every corner.
+    private func drawOverlay(_ edit: MeshEditSession, world: simd_float4x4, view: simd_float4x4, proj: simd_float4x4, scale: Float, encoder: MTLRenderCommandEncoder) {
+        let c = edit.cage
+        let at: [SIMD3<Float>] = (0 ..< c.vertexCount).map { v in
+            let p = world * SIMD4(c.position(UInt32(v)), 1)
+            return SIMD3(p.x, p.y, p.z)
+        }
+        // Chosen: a deep blue, since a line is one pixel and a pale one is
+        // lost on the light grey surface.
+        let ice = SIMD4<Float>(0.18, 0.42, 1.0, 1)
+        // Dark on the light grey surface, as a wire must be to read on it.
+        let faint = SIMD4<Float>(0.04, 0.05, 0.07, 0.9)
+        let corners = Set(edit.chosenVertices)
+        let shownFaces: Set<UInt32> = edit.part == .faces ? edit.faces : []
+        let shownEdges: Set<MeshEdge> = switch edit.part {
+        case .edges: edit.edges
+        case .faces: Set(edit.faces.flatMap { c.edges(of: $0) })
+        case .vertices: Set(c.edges.filter { corners.contains($0.a) && corners.contains($0.b) })
+        }
+        var fill: [LineVertex] = []
+        for i in stride(from: 0, to: c.triangles.count - 2, by: 3) where shownFaces.contains(c.triangleFaces[i / 3]) {
+            for k in 0 ..< 3 { fill.append(LineVertex(position: at[Int(c.triangles[i + k])], color: SIMD4(0.42, 0.56, 1.0, 0.55))) }
+        }
+        var wire: [LineVertex] = []
+        for e in c.edges {
+            let color = shownEdges.contains(e) ? ice : faint
+            wire += [LineVertex(position: at[Int(e.a)], color: color), LineVertex(position: at[Int(e.b)], color: color)]
+        }
+        encoder.setDepthStencilState(over)
+        encoder.setCullMode(.none)
+        var uniforms = OverlayUniforms(view: view, proj: proj, size: 0)
+        func draw(_ vertices: [LineVertex], _ type: MTLPrimitiveType, _ pipeline: MTLRenderPipelineState, size: Float = 0) {
+            guard !vertices.isEmpty, let buffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<LineVertex>.stride, options: .storageModeShared) else { return }
+            uniforms.size = size * scale
+            encoder.setRenderPipelineState(pipeline)
+            encoder.setVertexBuffer(buffer, offset: 0, index: 0)
+            encoder.setVertexBytes(&uniforms, length: MemoryLayout<OverlayUniforms>.stride, index: 1)
+            encoder.drawPrimitives(type: type, vertexStart: 0, vertexCount: vertices.count)
+        }
+        draw(fill, .triangle, overlayLines)
+        draw(wire, .line, overlayLines)
+        if edit.part == .vertices {
+            draw(at.indices.filter { !edit.vertices.contains(UInt32($0)) }.map { LineVertex(position: at[$0], color: faint) }, .point, overlayPoints, size: 5)
+        }
+        // The chosen corners, or the ends of the chosen edges, as dots.
+        if edit.part != .faces {
+            draw(corners.sorted().map { LineVertex(position: at[Int($0)], color: ice) }, .point, overlayPoints, size: edit.part == .vertices ? 8 : 6)
+        }
     }
 
     // MARK: Lines

@@ -529,6 +529,22 @@ fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -2044,6 +2060,380 @@ public func FfiConverterTypeGateway_lower(_ value: Gateway) -> UInt64 {
 
 
 
+public protocol MeshEditorProtocol: AnyObject, Sendable {
+    
+    func cage()  -> MeshCage
+    
+    /**
+     * `edges` flattened, two vertex numbers each.
+     */
+    func deleteEdges(edges: [UInt32]) 
+    
+    func deleteFaces(faces: [UInt32]) 
+    
+    func deleteVertices(vertices: [UInt32]) 
+    
+    /**
+     * Which way `vertices` slide: the faces round them, together.
+     */
+    func direction(vertices: [UInt32])  -> [Double]
+    
+    /**
+     * What the file had that writing it would drop: texture coordinates,
+     * normals, materials, group names.
+     */
+    func dropped()  -> [String]
+    
+    /**
+     * Extrude `faces` as one region by `distance`; answers them.
+     */
+    func extrude(faces: [UInt32], distance: Double)  -> [UInt32]
+    
+    func facesOfEdges(edges: [UInt32])  -> [UInt32]
+    
+    func facesOfVertices(vertices: [UInt32])  -> [UInt32]
+    
+    /**
+     * Inset each of `faces` by `amount`; answers the inner faces.
+     */
+    func inset(faces: [UInt32], amount: Double)  -> [UInt32]
+    
+    /**
+     * A loop cut across the ring of quads the edge `a`–`b` is part of, `t`
+     * of the way from `a`'s side; answers the new loop's edges, flattened.
+     */
+    func loopCut(a: UInt32, b: UInt32, t: Double) throws  -> [UInt32]
+    
+    /**
+     * Move `vertices` by (`dx`, `dy`, `dz`). `continuing` joins the step
+     * before (the rest of a drag), so a drag undoes as one. Answers whether
+     * a new step was made.
+     */
+    func moveVertices(vertices: [UInt32], dx: Double, dy: Double, dz: Double, label: String, continuing: Bool)  -> Bool
+    
+    func redo()  -> String?
+    
+    /**
+     * Write the mesh to `path`, or where it was read; it lives there from
+     * now on, and nothing it dropped is missed any more.
+     */
+    func save(path: String?) throws 
+    
+    /**
+     * The mesh as its file is written.
+     */
+    func text()  -> String
+    
+    func undo()  -> String?
+    
+}
+open class MeshEditor: MeshEditorProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_mesheditor(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_mesheditor(handle, $0) }
+    }
+
+    
+    /**
+     * The mesh in the `.obj` at `path`.
+     */
+public static func `open`(path: String)throws  -> MeshEditor  {
+    return try  FfiConverterTypeMeshEditor_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_mesheditor_open(
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+open func cage() -> MeshCage  {
+    return try!  FfiConverterTypeMeshCage_lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_cage(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * `edges` flattened, two vertex numbers each.
+     */
+open func deleteEdges(edges: [UInt32])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_delete_edges(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(edges),uniffiCallStatus
+    )
+}
+}
+    
+open func deleteFaces(faces: [UInt32])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_delete_faces(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(faces),uniffiCallStatus
+    )
+}
+}
+    
+open func deleteVertices(vertices: [UInt32])  {try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_delete_vertices(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(vertices),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Which way `vertices` slide: the faces round them, together.
+     */
+open func direction(vertices: [UInt32]) -> [Double]  {
+    return try!  FfiConverterSequenceDouble.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_direction(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(vertices),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What the file had that writing it would drop: texture coordinates,
+     * normals, materials, group names.
+     */
+open func dropped() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_dropped(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Extrude `faces` as one region by `distance`; answers them.
+     */
+open func extrude(faces: [UInt32], distance: Double) -> [UInt32]  {
+    return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_extrude(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(faces),
+        FfiConverterDouble.lower(distance),uniffiCallStatus
+    )
+})
+}
+    
+open func facesOfEdges(edges: [UInt32]) -> [UInt32]  {
+    return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_faces_of_edges(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(edges),uniffiCallStatus
+    )
+})
+}
+    
+open func facesOfVertices(vertices: [UInt32]) -> [UInt32]  {
+    return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_faces_of_vertices(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(vertices),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Inset each of `faces` by `amount`; answers the inner faces.
+     */
+open func inset(faces: [UInt32], amount: Double) -> [UInt32]  {
+    return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_inset(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(faces),
+        FfiConverterDouble.lower(amount),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * A loop cut across the ring of quads the edge `a`–`b` is part of, `t`
+     * of the way from `a`'s side; answers the new loop's edges, flattened.
+     */
+open func loopCut(a: UInt32, b: UInt32, t: Double)throws  -> [UInt32]  {
+    return try  FfiConverterSequenceUInt32.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_loop_cut(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(a),
+        FfiConverterUInt32.lower(b),
+        FfiConverterDouble.lower(t),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Move `vertices` by (`dx`, `dy`, `dz`). `continuing` joins the step
+     * before (the rest of a drag), so a drag undoes as one. Answers whether
+     * a new step was made.
+     */
+open func moveVertices(vertices: [UInt32], dx: Double, dy: Double, dz: Double, label: String, continuing: Bool) -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_move_vertices(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(vertices),
+        FfiConverterDouble.lower(dx),
+        FfiConverterDouble.lower(dy),
+        FfiConverterDouble.lower(dz),
+        FfiConverterString.lower(label),
+        FfiConverterBool.lower(continuing),uniffiCallStatus
+    )
+})
+}
+    
+open func redo() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_redo(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Write the mesh to `path`, or where it was read; it lives there from
+     * now on, and nothing it dropped is missed any more.
+     */
+open func save(path: String?)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_save(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(path),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * The mesh as its file is written.
+     */
+open func text() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_text(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+open func undo() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_undo(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMeshEditor: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = MeshEditor
+
+    public static func lift(_ handle: UInt64) throws -> MeshEditor {
+        return MeshEditor(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: MeshEditor) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MeshEditor {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: MeshEditor, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMeshEditor_lift(_ handle: UInt64) throws -> MeshEditor {
+    return try FfiConverterTypeMeshEditor.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMeshEditor_lower(_ value: MeshEditor) -> UInt64 {
+    return FfiConverterTypeMeshEditor.lower(value)
+}
+
+
+
+
+
+
 /**
  * What a server can run: its node types and their inputs and outputs.
  */
@@ -3009,6 +3399,147 @@ public func FfiConverterTypeMaskPixels_lower(_ value: MaskPixels) -> RustBuffer 
 
 
 /**
+ * What Edit mode draws and picks from.
+ */
+public struct MeshCage: Equatable, Hashable {
+    /**
+     * Three floats a vertex.
+     */
+    public var positions: [Float]
+    /**
+     * Every face's corners, one face after another.
+     */
+    public var faces: [UInt32]
+    /**
+     * How many corners each face has.
+     */
+    public var faceSizes: [UInt32]
+    /**
+     * Two vertex numbers an edge, every edge once.
+     */
+    public var edges: [UInt32]
+    /**
+     * Three vertex numbers a triangle, fanned from each face's first corner.
+     */
+    public var triangles: [UInt32]
+    /**
+     * The face each triangle belongs to.
+     */
+    public var triangleFaces: [UInt32]
+    public var closed: Bool
+    public var undo: String?
+    public var redo: String?
+    /**
+     * Steps made since it was opened, so a caller can tell one was kept.
+     */
+    public var steps: UInt32
+    /**
+     * Changed since it was read or written.
+     */
+    public var dirty: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Three floats a vertex.
+         */positions: [Float], 
+        /**
+         * Every face's corners, one face after another.
+         */faces: [UInt32], 
+        /**
+         * How many corners each face has.
+         */faceSizes: [UInt32], 
+        /**
+         * Two vertex numbers an edge, every edge once.
+         */edges: [UInt32], 
+        /**
+         * Three vertex numbers a triangle, fanned from each face's first corner.
+         */triangles: [UInt32], 
+        /**
+         * The face each triangle belongs to.
+         */triangleFaces: [UInt32], closed: Bool, undo: String?, redo: String?, 
+        /**
+         * Steps made since it was opened, so a caller can tell one was kept.
+         */steps: UInt32, 
+        /**
+         * Changed since it was read or written.
+         */dirty: Bool) {
+        self.positions = positions
+        self.faces = faces
+        self.faceSizes = faceSizes
+        self.edges = edges
+        self.triangles = triangles
+        self.triangleFaces = triangleFaces
+        self.closed = closed
+        self.undo = undo
+        self.redo = redo
+        self.steps = steps
+        self.dirty = dirty
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MeshCage: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMeshCage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MeshCage {
+        return
+            try MeshCage(
+                positions: FfiConverterSequenceFloat.read(from: &buf), 
+                faces: FfiConverterSequenceUInt32.read(from: &buf), 
+                faceSizes: FfiConverterSequenceUInt32.read(from: &buf), 
+                edges: FfiConverterSequenceUInt32.read(from: &buf), 
+                triangles: FfiConverterSequenceUInt32.read(from: &buf), 
+                triangleFaces: FfiConverterSequenceUInt32.read(from: &buf), 
+                closed: FfiConverterBool.read(from: &buf), 
+                undo: FfiConverterOptionString.read(from: &buf), 
+                redo: FfiConverterOptionString.read(from: &buf), 
+                steps: FfiConverterUInt32.read(from: &buf), 
+                dirty: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MeshCage, into buf: inout [UInt8]) {
+        FfiConverterSequenceFloat.write(value.positions, into: &buf)
+        FfiConverterSequenceUInt32.write(value.faces, into: &buf)
+        FfiConverterSequenceUInt32.write(value.faceSizes, into: &buf)
+        FfiConverterSequenceUInt32.write(value.edges, into: &buf)
+        FfiConverterSequenceUInt32.write(value.triangles, into: &buf)
+        FfiConverterSequenceUInt32.write(value.triangleFaces, into: &buf)
+        FfiConverterBool.write(value.closed, into: &buf)
+        FfiConverterOptionString.write(value.undo, into: &buf)
+        FfiConverterOptionString.write(value.redo, into: &buf)
+        FfiConverterUInt32.write(value.steps, into: &buf)
+        FfiConverterBool.write(value.dirty, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMeshCage_lift(_ buf: RustBuffer) throws -> MeshCage {
+    return try FfiConverterTypeMeshCage.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMeshCage_lower(_ value: MeshCage) -> RustBuffer {
+    return FfiConverterTypeMeshCage.lower(value)
+}
+
+
+/**
  * An object's triangles, ready to draw.
  */
 public struct SceneMesh: Equatable, Hashable {
@@ -3498,6 +4029,31 @@ fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterFloat.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceDouble: FfiConverterRustBuffer {
+    typealias SwiftType = [Double]
+
+    public static func write(_ value: [Double], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterDouble.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Double] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Double]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterDouble.read(from: &buf))
         }
         return seq
     }
@@ -4010,6 +4566,54 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_cage() != 15443) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_delete_edges() != 7358) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_delete_faces() != 32775) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_delete_vertices() != 57245) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_direction() != 10133) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_dropped() != 33135) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_extrude() != 45588) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_faces_of_edges() != 58140) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_faces_of_vertices() != 63801) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_inset() != 34307) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_loop_cut() != 47130) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_move_vertices() != 27878) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_redo() != 10327) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_save() != 8576) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_text() != 27991) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_undo() != 61971) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_sceneeditor_edit() != 12030) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4053,6 +4657,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_canvaseditor_open() != 57588) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_mesheditor_open() != 6838) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_sceneeditor_create() != 65508) {

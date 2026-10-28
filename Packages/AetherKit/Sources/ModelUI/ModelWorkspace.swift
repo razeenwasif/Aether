@@ -19,7 +19,7 @@ public struct ModelWorkspace: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
-                ModelViewport(model: model, camera: model.camera, selected: model.selected, revision: document.revision)
+                ModelViewport(model: model, camera: model.camera, selected: model.selected, revision: document.revision, editRevision: model.editing?.revision ?? -1)
                     .id(ObjectIdentifier(document))
                 HStack(alignment: .top, spacing: 0) {
                     if model.navigatorOpen {
@@ -222,13 +222,13 @@ private struct Outliner: View {
     private func row(_ node: SceneNode) -> some View {
         let chosen = node.id == model.selected
         // A button, so a click, VoiceOver and Press all choose it.
-        return Button { model.selected = node.id } label: { rowLabel(node, chosen: chosen) }
+        return Button { model.choose(node.id) } label: { rowLabel(node, chosen: chosen) }
             .buttonStyle(.plain)
             .simultaneousGesture(TapGesture(count: 2).onEnded { rename(node) })
             .contextMenu {
                 Button("Rename") { rename(node) }
                 Button("Frame It") {
-                    model.selected = node.id
+                    model.choose(node.id)
                     model.frameSelected()
                 }
                 if !node.parent.isEmpty {
@@ -236,7 +236,7 @@ private struct Outliner: View {
                 }
                 Divider()
                 Button("Remove") {
-                    model.selected = node.id
+                    model.choose(node.id)
                     model.removeSelected()
                 }
             }
@@ -316,7 +316,10 @@ private struct ModelInspector: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                if let node = model.selectedNode {
+                if let node = model.selectedNode, let edit = model.editing, edit.nodeID == node.id {
+                    header(node, editing: true)
+                    EditSection(model: model, edit: edit)
+                } else if let node = model.selectedNode {
                     header(node)
                     TransformSection(model: model, node: node)
                     if node.kind == "mesh" {
@@ -344,10 +347,10 @@ private struct ModelInspector: View {
         .aeGlass(.panel)
     }
 
-    private func header(_ node: SceneNode) -> some View {
+    private func header(_ node: SceneNode, editing: Bool = false) -> some View {
         HStack(spacing: 6) {
             Text(node.name).font(.aeTitle).foregroundStyle(Color.inkHi).lineLimit(1)
-            Text("· \(node.kindTitle)").font(.aeBody).foregroundStyle(Color.ink2)
+            Text(editing ? "· Editing its mesh" : "· \(node.kindTitle)").font(.aeBody).foregroundStyle(editing ? Color.ice : Color.ink2)
             Spacer()
         }
         .padding(.horizontal, 14)
@@ -384,7 +387,7 @@ private struct TransformSection: View {
 /// A number typed, kept on ↩ or when the field is left.
 private struct DecimalField: View {
     let value: Double
-    let axis: Int
+    var axis: Int?
     let commit: (Double) -> Void
     @State private var text = ""
     @FocusState private var typing: Bool
@@ -392,17 +395,19 @@ private struct DecimalField: View {
     private static let tints: [Color] = [Color(red: 0.86, green: 0.38, blue: 0.38), Color(red: 0.45, green: 0.78, blue: 0.5), Color(red: 0.38, green: 0.52, blue: 0.92)]
 
     var body: some View {
-        TextField(["x", "y", "z"][axis], text: $text)
+        TextField(axis.map { ["x", "y", "z"][$0] } ?? "amount", text: $text)
             .textFieldStyle(.roundedBorder)
             .font(.aeMono)
             .controlSize(.small)
             .focused($typing)
-            .overlay(alignment: .bottom) { Rectangle().fill(Self.tints[axis].opacity(0.7)).frame(height: 1).padding(.horizontal, 4) }
+            .overlay(alignment: .bottom) {
+                if let axis { Rectangle().fill(Self.tints[axis].opacity(0.7)).frame(height: 1).padding(.horizontal, 4) }
+            }
             .onSubmit(done)
             .onChange(of: typing) { if !typing { done() } }
             .onChange(of: value) { if !typing { text = Self.format(value) } }
             .onAppear { text = Self.format(value) }
-            .accessibilityLabel(["x", "y", "z"][axis])
+            .accessibilityLabel(axis.map { ["x", "y", "z"][$0] } ?? "amount")
     }
 
     private func done() {
@@ -420,6 +425,59 @@ private struct DecimalField: View {
     }
 }
 
+/// Edit mode: what's chosen, and what to do to it.
+private struct EditSection: View {
+    @Bindable var model: ModelWorkspaceModel
+    let edit: MeshEditSession
+
+    private var summary: String {
+        let (one, many, total) = switch edit.part {
+        case .vertices: ("corner", "corners", edit.cage.vertexCount)
+        case .edges: ("edge", "edges", edit.cage.edges.count)
+        case .faces: ("face", "faces", edit.cage.faceCount)
+        }
+        let n = edit.chosenCount
+        return n == 0 ? "None of its \(total) \(total == 1 ? one : many) chosen." : "\(n) of \(total) \(total == 1 ? one : many) chosen."
+    }
+
+    var body: some View {
+        PanelSection("Edit mode") {
+            Picker("Choose", selection: Binding(get: { edit.part }, set: { model.showPart($0) })) {
+                ForEach(EditPart.allCases) { part in Text(part.title).tag(part) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .help("Corners, edges or faces: 1, 2, 3")
+            Text(summary).font(.aeSmall).foregroundStyle(Color.ink2)
+            row("Extrude", key: "e", value: model.extrudeDistance, unit: "m out", set: { model.extrudeDistance = $0 }, action: model.extrudeChosen)
+            row("Inset", key: "i", value: model.insetAmount, unit: "m in", set: { model.insetAmount = $0 }, action: model.insetChosen)
+            row("Loop Cut", key: "⌘R", value: model.cutAt, unit: "along", set: { model.cutAt = min(0.98, max(0.02, $0)) }, action: model.loopCutChosen)
+            HStack {
+                Button("Delete", role: .destructive, action: model.deleteChosen)
+                    .controlSize(.small)
+                    .disabled(edit.isEmpty)
+                Spacer()
+                Button("Done  ⇥") { model.exitEdit() }
+                    .controlSize(.small)
+            }
+            Text("Drag what’s chosen to slide it along its normal; ⌥-drag pulls the faces out first. ⇧-click adds or takes away. Its modifiers are back when you’re done.")
+                .font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func row(_ title: String, key: String, value: Double, unit: String, set: @escaping (Double) -> Void, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Button(title, action: action)
+                .controlSize(.small)
+                .frame(width: 84, alignment: .leading)
+                .help("\(title) (\(key))")
+            DecimalField(value: value, commit: set).frame(width: 64)
+            Text(unit).font(.aeSmall).foregroundStyle(Color.ink2)
+            Spacer()
+        }
+    }
+}
+
 /// The `.obj` it draws, and how many triangles that comes to.
 private struct MeshSection: View {
     let model: ModelWorkspaceModel
@@ -434,6 +492,10 @@ private struct MeshSection: View {
                 Spacer()
                 Button("Choose…") { model.chooseMesh(for: node.id) }.controlSize(.small)
             }
+            Button("Edit the Mesh  ⇥") { model.enterEdit() }
+                .controlSize(.small)
+                .disabled(node.mesh.isEmpty || mesh.problem != nil)
+                .help("Choose its corners, edges or faces, and extrude, inset or cut them")
             if let problem = mesh.problem {
                 Text("Drawn as a box: \(problem).").font(.aeSmall).foregroundStyle(Color.amber).fixedSize(horizontal: false, vertical: true)
             } else {
@@ -556,6 +618,11 @@ private struct ModelStatusBar: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(document.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.inkHi)
+            if model.editing != nil {
+                Text("Edit mode").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.obsidian0)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Capsule().fill(Color.ice))
+            }
             Divider().frame(height: 12)
             Text(verbatim: "\(model.stats.objects) object\(model.stats.objects == 1 ? "" : "s") · \(model.stats.triangles.formatted()) triangle\(model.stats.triangles == 1 ? "" : "s")").font(.system(size: 11.5)).foregroundStyle(Color.ink)
             Divider().frame(height: 12)
@@ -573,15 +640,11 @@ private struct ModelDock: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            ForEach([SceneAddition.cube, .sphere, .cylinder, .plane], id: \.self) { addition in
-                IconButton(addition.symbol, label: "Add a \(addition.rawValue)") { model.add(addition) }
+            if let edit = model.editing {
+                editing(edit)
+            } else {
+                adding
             }
-            Divider().frame(height: 20).padding(.horizontal, 4)
-            ForEach([SceneAddition.light, .camera, .empty], id: \.self) { addition in
-                IconButton(addition.symbol, label: "Add \(addition == .empty ? "an empty" : "a \(addition.rawValue)")") { model.add(addition) }
-            }
-            Divider().frame(height: 20).padding(.horizontal, 4)
-            IconButton("viewfinder", label: "Frame it (f)", action: model.frameSelected)
             Divider().frame(height: 20).padding(.horizontal, 4)
             IconButton("arrow.uturn.backward", label: "Undo \(model.undoLabel ?? "") (⌘Z)", action: model.undo)
                 .disabled(model.undoLabel == nil)
@@ -591,6 +654,34 @@ private struct ModelDock: View {
         .padding(.horizontal, 8)
         .frame(height: 44)
         .aeGlass(.floating, radius: 12)
+    }
+
+    @ViewBuilder private func editing(_ edit: MeshEditSession) -> some View {
+        ForEach(EditPart.allCases) { part in
+            IconButton(part == .vertices ? "circle.grid.2x2" : part == .edges ? "line.diagonal" : "square.fill", label: "\(part.title) (\(part.key))", isOn: edit.part == part) { model.showPart(part) }
+        }
+        Divider().frame(height: 20).padding(.horizontal, 4)
+        IconButton("arrow.up.square", label: "Extrude (e)", action: model.extrudeChosen)
+        IconButton("square.inset.filled", label: "Inset (i)", action: model.insetChosen)
+        IconButton("rectangle.split.2x1", label: "Loop Cut (⌘R)", action: model.loopCutChosen)
+        IconButton("trash", label: "Delete (⌫)", action: model.deleteChosen)
+        Divider().frame(height: 20).padding(.horizontal, 4)
+        IconButton("viewfinder", label: "Frame what’s chosen (f)", action: model.frameSelected)
+        IconButton("checkmark", label: "Done (⇥)", action: model.exitEdit)
+    }
+
+    @ViewBuilder private var adding: some View {
+            ForEach([SceneAddition.cube, .sphere, .cylinder, .plane], id: \.self) { addition in
+                IconButton(addition.symbol, label: "Add a \(addition.rawValue)") { model.add(addition) }
+            }
+            Divider().frame(height: 20).padding(.horizontal, 4)
+            ForEach([SceneAddition.light, .camera, .empty], id: \.self) { addition in
+                IconButton(addition.symbol, label: "Add \(addition == .empty ? "an empty" : "a \(addition.rawValue)")") { model.add(addition) }
+            }
+            Divider().frame(height: 20).padding(.horizontal, 4)
+            IconButton("viewfinder", label: "Frame it (f)", action: model.frameSelected)
+            IconButton("pencil.and.outline", label: "Edit the mesh (⇥)", action: model.enterEdit)
+                .disabled(!model.canEdit)
     }
 }
 

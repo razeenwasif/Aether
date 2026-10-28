@@ -4,6 +4,7 @@ import CanvasUI
 import DiffuseBridge
 import DiffuseCore
 import DiffuseUI
+import ModelCore
 import ModelUI
 import SwiftUI
 
@@ -94,9 +95,12 @@ public struct AetherCommands: Commands {
             Button("Paste") { pasteboard("paste:") { canvas.paste() } }
                 .keyboardShortcut("v")
             Button("Delete") {
-                if onModel, modeling.selected != nil, !textHasKeys { modeling.removeSelected() } else { pasteboard("delete:") { canvas.clearSelected() } }
+                if onModel, !textHasKeys, modeling.editing != nil { modeling.deleteChosen() }
+                else if onModel, modeling.selected != nil, !textHasKeys { modeling.removeSelected() }
+                else { pasteboard("delete:") { canvas.clearSelected() } }
             }
             Button("Select All") {
+                if onModel, !textHasKeys, let edit = modeling.editing { return edit.chooseAll() }
                 if model.active == .diffuse, diffuse.stage == .graph, !textHasKeys { diffuse.selectAll() } else { pasteboard("selectAll:") { canvas.selectAll() } }
             }
             .keyboardShortcut("a")
@@ -133,6 +137,20 @@ public struct AetherCommands: Commands {
                 .disabled(!onModel || modeling.document == nil)
             Button("Frame Everything") { modeling.frameAll() }
                 .disabled(!onModel || modeling.document == nil)
+            Divider()
+            Button(modeling.editing == nil ? "Edit the Mesh  (⇥)" : "Back to the Objects  (⇥)") { modeling.toggleEdit() }
+                .disabled(!onModel || (modeling.editing == nil && !modeling.canEdit))
+            Picker("Choose", selection: Binding(get: { modeling.editing?.part ?? .faces }, set: { modeling.showPart($0) })) {
+                ForEach(EditPart.allCases) { part in Text("\(part.title)  (\(part.key))").tag(part) }
+            }
+            .disabled(!onModel || modeling.editing == nil)
+            Button("Extrude  (e)") { modeling.extrudeChosen() }
+                .disabled(!onModel || modeling.editing == nil)
+            Button("Inset  (i)") { modeling.insetChosen() }
+                .disabled(!onModel || modeling.editing == nil)
+            Button("Loop Cut") { modeling.loopCutChosen() }
+                .keyboardShortcut("r")
+                .disabled(!onModel || modeling.editing == nil)
             Divider()
             Button("All Scenes") { modeling.close() }
                 .disabled(!onModel || modeling.document == nil)

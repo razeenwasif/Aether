@@ -127,6 +127,47 @@ public enum SceneShaderSource {
         return in.color;
     }
 
+    // Edit mode's edges, corners and chosen faces: drawn over the mesh they
+    // belong to, each pulled a fifth of a percent of its distance toward the
+    // eye, so they sit on the surface without showing through from behind.
+    struct Overlay {
+        float4x4 view;
+        float4x4 proj;
+        float size;
+    };
+
+    struct PointOut {
+        float4 position [[position]];
+        float4 color;
+        float size [[point_size]];
+    };
+
+    float4 overlaid(float3 position, constant Overlay &o) {
+        float4 eye = o.view * float4(position, 1.0);
+        eye.xyz *= 0.998;
+        return o.proj * eye;
+    }
+
+    vertex LineOut overlayVertex(Line in [[stage_in]], constant Overlay &o [[buffer(1)]]) {
+        LineOut out;
+        out.position = overlaid(in.position, o);
+        out.color = in.color;
+        return out;
+    }
+
+    vertex PointOut pointVertex(Line in [[stage_in]], constant Overlay &o [[buffer(1)]]) {
+        PointOut out;
+        out.position = overlaid(in.position, o);
+        out.color = in.color;
+        out.size = o.size;
+        return out;
+    }
+
+    fragment float4 pointFragment(PointOut in [[stage_in]], float2 at [[point_coord]]) {
+        if (length(at - 0.5) > 0.5) discard_fragment();
+        return in.color;
+    }
+
     """
 
     /// The source of one surface program, from a material's compiled

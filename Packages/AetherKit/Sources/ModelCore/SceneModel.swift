@@ -206,4 +206,13 @@ public struct SceneMeshData: Sendable {
     public var problem: String?
 
     public var triangleCount: Int { triangles.count / 3 }
+
+    public init(positions: [Float], normals: [Float], triangles: [UInt32], bounds: [Float], closed: Bool, problem: String?) {
+        self.positions = positions
+        self.normals = normals
+        self.triangles = triangles
+        self.bounds = bounds
+        self.closed = closed
+        self.problem = problem
+    }
 }

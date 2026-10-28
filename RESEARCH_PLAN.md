@@ -1049,10 +1049,45 @@ Not yet:
 - **Tests:** 11 more in Swift (the transform order, children following parents, picking the nearest box and nothing behind the camera, framing, the shader source, a document's edits, undo and triangle cache, a mesh not there, a new scene, adding under an empty, removing with children, undo through the project, a mesh copied in, framing then picking). 3 more in the bridge. 297 Rust and 132 Swift tests pass.
 - **Not ported yet:** Edit mode and the direct handles the design shows, the material layers that replace the shader graph, and Render.
 
+**2026-10-28 · Model: Edit mode.** The user said "continue" to the next step proposed: Edit mode and its direct handles. Proton's Modeling had none (it only placed `.obj` files and triangulated them on reading), so this is new, built from the design's Model board: no gizmo, the face is the handle, a bar of Extrude, Inset, Bevel and Loop cut.
+
+- **`cores/aether-poly`,** Aether's own crate: a mesh kept as polygons, read from `.obj` with its faces as the file has them (quads stay quads) and written back.
+  - Reading lists what writing would drop: texture coordinates, normals, materials, group names, vertex colours.
+  - Edits keep the faces they were given at their numbers, so a selection survives them:
+    - move
+    - extrude as one region along the region's normal, walls only round its rim
+    - inset each face, every edge the amount in, held short of the middle
+    - loop cut round the ring of quads through an edge. It stops at a face that isn't a quad or at the mesh's edge; a face beside an open end takes the new vertex into its rim, so no gap opens.
+    - delete faces, edges or corners
+  - Vertices an edit leaves unused are taken out.
+- **The bridge's `MeshEditor`:** the cage (positions, faces, edges, triangles with the face each belongs to), the edits, 200 snapshot undo steps (a drag's moves join its first step), and an atomic save.
+- **ModelCore's `MeshEditSession`:** what's chosen in each part, carried across when the part changes; the edits, refusing with the reason when nothing fits (no faces to extrude, not one edge to cut); and picking. A face is found by the ray through the pointer; a corner within 12 pt or an edge within 10 pt, among the hit face's own when a face is hit, so nothing behind it is chosen.
+- **The workspace:**
+  - ⇥ enters and leaves. The inspector shows Edit mode's section: the part, how many are chosen, Extrude, Inset and Loop Cut with their amounts, Delete and Done. The dock swaps its adds for the parts and the edits. The status bar shows an Edit mode badge.
+  - The viewport draws the cage before modifiers, with dark edges, the chosen faces in blue, the chosen edges in a deep blue with dots at their ends, and corners as dots in Vertices. The overlays are pulled 0.2% of their distance toward the eye, so they sit on the surface but don't show through it.
+  - A press on what's chosen slides it along its normal once the pointer moves 3 pt; with ⌥ it extrudes first. A press anywhere else turns the view.
+  - Edits are steps in the project's one history, under the `.obj`'s path. They're let go when Edit mode ends, and the scene is drawn from the file again.
+- **The copy rule:** Edit mode writes the `.obj`, but only a copy the object owns. A file shared with another object, one of Add's primitives (`meshes/cube.obj` and the rest), or one with things the writer drops is copied to `meshes/<name> mesh.obj` first, as a scene step ("Edit Cube's Mesh"), and the notice says why. "mesh" is in the name because on the Mac's disk, which ignores case, `Cube.obj` would collide with `cube.obj`.
+- **Checked in the app,** on a throwaway scene, deleted after:
+  - Entering showed the badge, the section, the dock and the copy notice.
+  - A click chose the top face (blue, "1 of 6 faces chosen"). Inset then Extrude made a stepped block of 14 faces.
+  - Dragging the chosen face slid it up, and the view didn't turn.
+  - In Edges, a click chose the base's front edge, and Loop Cut ran round the base (36 triangles, the new loop chosen).
+  - Undo took the cut back; the dock read "Undo Move" and "Redo Loop Cut", so the drag was one step.
+  - Done drew the object from `meshes/Cube mesh.obj` (14 faces on disk), and `meshes/cube.obj` kept its 6.
+  - In Vertices, a corner showed as a blue dot when chosen and moved out along its diagonal when dragged. ⇥ left Edit mode.
+- **Faults the check and the tests found, fixed:**
+  - Entering gave up silently after making the copy: it took `change`'s answer, an added object's id, as success, and a mesh change has none.
+  - The copy was named `Cube.obj`, which the disk took for `cube.obj`.
+  - The wire was drawn pale on a pale surface and couldn't be seen; it's dark now. A chosen edge was too faint, so it got a deeper blue and dots at its ends.
+- **Not checked in the app:** ⌥-drag (the testing tool can't hold ⌥ through a drag in the background); the tests cover it. The Scene menu's Edit items read as disabled while the app was in the background, as the undo label had, so they were reached through the inspector and the dock.
+- **Tests:** 8 in `aether-poly`, 2 in the bridge, 7 in Swift (the session's edits and steps, a slide as one step, choosing across parts, picking a face, corner and edge; the copy rule for a primitive and a shared mesh, the file written, the primitive untouched; dragging and ⌥-dragging the chosen face). 307 Rust and 139 Swift tests pass.
+- **Not done:** bevel. A bevel that meets other bevelled edges at a corner needs more than this pass had room for, so it's next. Also not done: undo across leaving Edit mode, and edge and corner slides along anything but the faces' normal.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model's first slice is built: Proton's scenes, the outliner and the modifier stack, on a Metal viewport (§10a). The other three workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, and Edit mode with extrude, inset, loop cut and the face as the handle (§10a). The other three workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, moved to Claude, and were done with M1 (§7a, §6.4a).
@@ -1073,4 +1108,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Model, starting with what Proton's Modeling had: the scene format, the outliner and the modifier stack, on a Metal viewport~~: done, see §10a.
 
-**Next, proposed:** Model's Edit mode and direct handles, as the design shows (select vertices, edges and faces; extrude, inset, bevel, loop cut), then material layers. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.
+~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a, apart from bevel.
+
+**Next, proposed:** bevel, then material layers. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.

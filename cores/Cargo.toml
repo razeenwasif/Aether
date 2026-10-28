@@ -5,9 +5,10 @@
 # last changed there in dca833c), less the TypeScript bindings Proton's web
 # window needed; their file formats — flows, sealed files, PNG heads,
 # canvases, scenes — stay Proton's, so both apps read them.
+# aether-poly is Aether's own: Model's Edit mode, which Proton never had.
 [workspace]
 resolver = "2"
-members = ["aether-diffuse", "proton-diffuse", "proton-mesh", "proton-raster", "proton-scene", "uniffi-bindgen"]
+members = ["aether-diffuse", "aether-poly", "proton-diffuse", "proton-mesh", "proton-raster", "proton-scene", "uniffi-bindgen"]
 
 [workspace.package]
 version = "0.1.0"

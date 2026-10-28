@@ -74,6 +74,15 @@ public enum SceneMath {
         return out
     }
 
+    /// Where a point in the world lands on a viewport `size` points large
+    /// (y down from the top), or `nil` behind the camera.
+    public static func project(_ p: SIMD3<Float>, view: simd_float4x4, size: CGSize) -> CGPoint? {
+        let focal = Float(size.height) * 0.5 / tan(fov / 2)
+        let e = view * SIMD4(p, 1)
+        guard e.z < -0.01 else { return nil }
+        return CGPoint(x: CGFloat(Float(size.width) / 2 + focal * e.x / -e.z), y: CGFloat(Float(size.height) / 2 - focal * e.y / -e.z))
+    }
+
     /// The object under a point on the viewport (points, y down from the
     /// top), by each object's box on screen, the nearest winning; `nil` for
     /// none. Proton's `pick`: on the processor, from numbers to hand.

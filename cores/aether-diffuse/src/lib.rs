@@ -23,6 +23,8 @@ mod canvas;
 pub use canvas::{CanvasEditor, Laid};
 mod model;
 pub use model::{SceneEditor, SceneMesh};
+mod meshedit;
+pub use meshedit::{MeshCage, MeshEditor};
 
 /// What went wrong, in words a person can act on.
 #[derive(Debug, uniffi::Error)]

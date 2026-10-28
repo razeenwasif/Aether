@@ -1,0 +1,9 @@
+[package]
+name = "aether-poly"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license = "MIT"
+description = "Model's Edit mode: a mesh kept as polygons, read from and written to Wavefront OBJ, and the edits made to it."
+
+[dependencies]

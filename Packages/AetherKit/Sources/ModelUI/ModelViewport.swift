@@ -10,6 +10,8 @@ struct ModelViewport: NSViewRepresentable {
     let camera: OrbitCamera
     let selected: String?
     let revision: Int
+    /// Edit mode's: what's chosen and the mesh, so a change draws.
+    let editRevision: Int
 
     final class Coordinator {
         var renderer: ModelRenderer?
@@ -45,12 +47,15 @@ struct ModelViewport: NSViewRepresentable {
 }
 
 /// The viewport's view: the pointer turns, slides and zooms the camera, and
-/// a click chooses what's under it — Proton's controls, and a trackpad's.
+/// a click chooses what's under it — Proton's controls, and a trackpad's. In
+/// Edit mode a drag from what's chosen slides it along its normal (⌥ pulls
+/// the chosen faces out first), and ⇧-click adds to what's chosen.
 final class ModelMTKView: MTKView {
     weak var model: ModelWorkspaceModel?
     private var last: CGPoint?
     private var moved: CGFloat = 0
     private var panning = false
+    private var sliding = false
 
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -65,17 +70,29 @@ final class ModelMTKView: MTKView {
         last = point(event)
         moved = 0
         panning = event.modifierFlags.contains(.shift)
+        sliding = !panning && model?.editing != nil
+            && model?.pressToSlide(at: point(event), in: bounds.size, extruding: event.modifierFlags.contains(.option)) == true
     }
 
     override func mouseDragged(with event: NSEvent) {
-        drag(event)
+        guard sliding else { return drag(event) }
+        let p = point(event)
+        if let from = last { moved += abs(p.x - from.x) + abs(p.y - from.y) }
+        last = p
+        model?.dragSlide(to: p)
     }
 
     override func mouseUp(with event: NSEvent) {
         defer { last = nil }
+        if sliding {
+            sliding = false
+            model?.endSlide()
+            // A press on what's chosen that didn't move is a click on it.
+            guard moved <= 4 else { return }
+        }
         // A drag that ends over an object is a drag, not a click on it.
         guard moved <= 4, let model else { return }
-        model.pick(at: point(event), in: bounds.size)
+        model.pick(at: point(event), in: bounds.size, adding: event.modifierFlags.contains(.shift))
     }
 
     override func rightMouseDown(with event: NSEvent) {
