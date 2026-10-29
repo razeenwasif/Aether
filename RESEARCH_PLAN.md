@@ -1169,10 +1169,43 @@ Not yet:
   - 2 more in Swift: the drawer's layout has a box for every node and a wire for every link, no boxes overlapping, all fitted inside; renaming, and unworn materials removed and restored in one step.
   - 320 Rust and 146 Swift tests pass.
 
+**2026-10-29 · Model: Render, first slice.** The user said "start the render". The design gives Model one verb, Render (§3's Run slot, `⌘↩`). M2's exit criterion wants a Model depth pass available as an asset, and §1 has Diffuse take one as a workspace source.
+
+- **The decision:** Render first makes real pictures from what the viewport already draws, and publishes them into the project graph, rather than starting with a path tracer. It's what ties Model into the rest (a depth pass feeding a flow is the design's showcase), and the asset plumbing it needs is already there: Load Image and canvas layers follow any asset. A path tracer can replace the pictures later without changing where they go.
+- **The renderer:** `ModelRenderer.render(width:height:transparent:)` draws offscreen.
+  - Twice the size asked for, with 4× MSAA, then scaled down by Core Graphics at high quality.
+  - The same surface pipelines and material programs as the view, without the grid, stand-ins, Edit mode's cage or the chosen tint.
+  - The planes are fitted to what the scene spans in front of the camera.
+  - A second pass draws every mesh with `depthFragment` (new in the shared prelude): near white, far black, across that same span.
+  - The model keeps a renderer of its own, so a render doesn't wait on the view.
+- **The workspace:**
+  - `render()` writes `renders/<Scene> render.png` and `<Scene> depth.png` beside the scene.
+  - It publishes them as the assets "<Scene> Render" and "<Scene> Depth". Each asset is made by the scene's path with `#render` or `#depth`, since an asset is one per document. Each render is a new version.
+  - Sizes are 1024², 1536 × 1024, 1024 × 1536 and 2048²; the background is dark or clear.
+  - The render drawer, in the drawer place the graph uses (one at a time), shows both pictures with their versions and sizes, the settings, Render and Show in Finder.
+  - Reached by the rail's Render (lit once a scene is open), `⌘↩`, Scene ▸ Render, and the omnibar. `⌘↩` goes through the one Generate item, routed by workspace, as two menu items can't share a key.
+  - Opening a render's asset from elsewhere opens its scene in Model.
+- **Diffuse:** Load Image's inspector gains From a Render, listing Model's assets. A flow then follows each new render, as it follows a canvas's saves.
+- **Checked in the app,** on a throwaway scene, deleted after:
+  - The rail's Render made a 1024² render of the noise-layered cube and its depth. The drawer showed both as v1, and the notice named the assets.
+  - The files on disk were 1024 × 1024. The render was clean and had the material; the depth was white at the nearest corner, darker away from it, on black.
+  - Publishing made the project's `project.json` and `blobs/` in `~/Documents/Aether`, which weren't there before. They held only the two test assets, so they were removed with the app shut.
+  - Using the render in a flow wasn't tried in the app, because the only flow open was the user's own; the tests cover publishing, and `use` was covered before.
+- **Faults found:** sizes in the drawer read "1,024": a localized interpolation, now verbatim.
+- **Tests:** 3 in Swift.
+  - A wide render is the right size, with a lit cube on dark ground and a grey depth pass, light on the cube and black elsewhere. Both are written into `renders/` and published as two assets made by the scene; a second render after the camera moves is v2 of the same two.
+  - A clear background is clear where nothing is and solid on the cube; the depth stays solid.
+  - No scene, no render.
+  - 320 Rust and 149 Swift tests pass.
+- **Not done:**
+  - Rendering through the scene's own camera, or with its lights; shadows; a path tracer.
+  - Framing for a render (it's the view's camera).
+  - A render's assets outlive a scene that's deleted.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, Edit mode with extrude, inset, loop cut, bevel and the face as the handle, and material layers (§10a). The other three workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, Edit mode with extrude, inset, loop cut, bevel and the face as the handle, material layers, and a first Render, published as assets (§10a). The other three workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, moved to Claude, and were done with M1 (§7a, §6.4a).
@@ -1195,4 +1228,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a. ~~Bevel~~: done, see §10a, one segment. ~~Material layers~~: done, see §10a: the stack, its edits and its inspector, the graph drawer, naming and removing.
 
-**Next, proposed:** Render, the last of Model's pieces in the design. Alongside, M0's frame times under Instruments and M1's Metal capture, and M2's exit criterion, a Model depth pass published as an asset. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.
+~~Render, first slice: the scene and its depth pass, rendered and published as assets~~: done, see §10a. With it, M2's exit criterion's second half, a Model depth pass available as an asset, is met.
+
+**Next, proposed:** Render's second slice: render through the scene's own camera, the scene's lights, and shadows; then a path tracer. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion.

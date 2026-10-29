@@ -108,7 +108,9 @@ Keys: `f` frame the chosen object, or everything · `⇧A` frame everything · `
 
 **The graph drawer** (Graph in the Material section, Scene ▸ Show the Material Graph, or the omnibar) opens under the view and draws the material as its node graph, each box where the file puts it, with its settings and wires, fitted to the drawer. It shows what the file holds and doesn't edit it: a stack is edited as layers, and a graph from Proton is kept as it is. A stack's graph is laid out left to right, a layer a column, so it reads in the drawer.
 
-Not yet: a bevel of more than one segment, editing a graph as a graph, and Render.
+**Render** (`⌘↩`, the rail's Render, or Scene ▸ Render) draws the scene from the view's camera, offscreen: 1024 × 1024, 1536 × 1024, 1024 × 1536 or 2048 × 2048, drawn at twice that with 4× multisampling and scaled down, without the grid, the stand-ins, Edit mode's cage or the chosen object's tint, on the dark ground or a clear one. It draws a depth pass too: near white, far black, across what the scene spans in front of the camera, as a diffusion model's depth control wants. Both are written into `renders/` beside the scene and published as the project's assets, "<Scene> Render" and "<Scene> Depth", a new version each render. A flow's Load Image takes either from its From a Render menu (or the omnibar), and a canvas places either as a layer from the omnibar; both follow each new render. The render drawer shows the last render and its depth, and the size and background.
+
+Not yet: a bevel of more than one segment, editing a graph as a graph, and a path-traced render (shadows, reflections, the scene's own lights and cameras).
 
 ## Canvas
 

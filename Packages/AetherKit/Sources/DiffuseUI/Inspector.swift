@@ -202,6 +202,19 @@ private struct PictureField: View {
                 .controlSize(.small)
                 .help("A canvas, live: each time it's saved, this picture follows")
             }
+            if let project = model.project, !editor.isSealed {
+                let renders = project.assets.filter { $0.source == .model && $0.newest != nil }
+                if !renders.isEmpty {
+                    Menu("From a Render") {
+                        ForEach(renders) { asset in
+                            Button(asset.name) { Task { await model.use(asset, node: node.id, field: field) } }
+                        }
+                    }
+                    .fixedSize()
+                    .controlSize(.small)
+                    .help("A Model render or its depth, live: each new render, this picture follows")
+                }
+            }
             if name != nil {
                 VStack(alignment: .leading, spacing: 4) {
                     Button { Task { await model.openMask(node: node.id, field: field) } } label: {

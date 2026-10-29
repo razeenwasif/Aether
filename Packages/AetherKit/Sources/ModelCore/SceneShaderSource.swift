@@ -106,6 +106,19 @@ public enum SceneShaderSource {
         return sqrt(total / (1.0 + total));
     }
 
+    // A render's depth pass: near white, far black, across the scene's own
+    // depth, as a diffusion model's depth control wants it.
+    struct DepthRange {
+        float near;
+        float far;
+    };
+
+    fragment float4 depthFragment(Out in [[stage_in]], constant DepthRange &range [[buffer(3)]]) {
+        float d = saturate((-in.eye.z - range.near) / max(range.far - range.near, 1e-4));
+        float v = 1.0 - d;
+        return float4(v, v, v, 1.0);
+    }
+
     struct Line {
         float3 position [[attribute(0)]];
         float4 color [[attribute(1)]];

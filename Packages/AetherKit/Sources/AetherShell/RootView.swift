@@ -117,10 +117,9 @@ struct WorkspaceRail: View {
                 .opacity(model.canvas.document == nil ? 0.35 : 1)
                 .disabled(model.canvas.document == nil)
         } else if model.active == .model {
-            // A path-traced render is a later step; the viewport is the picture for now.
-            RailButton("Render", style: .run, help: "Rendering comes in a later step of Model") {}
-                .opacity(0.35)
-                .disabled(true)
+            RailButton("Render", style: .run, help: "Render: the scene from the camera, and its depth, published as assets  ⌘↩") { model.run() }
+                .opacity(model.modeling.document == nil ? 0.35 : 1)
+                .disabled(model.modeling.document == nil)
         } else {
             RailButton(verb(model.active), style: .run, help: "\(model.active.title) is not built yet") {}
                 .opacity(0.35)

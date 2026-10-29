@@ -106,27 +106,32 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         super.init()
     }
 
+    /// A pipeline for a mesh: positions in buffer 0, normals in buffer 3.
+    private static func surfaceDescriptor(_ library: MTLLibrary, fragment: String) -> MTLRenderPipelineDescriptor {
+        let d = MTLRenderPipelineDescriptor()
+        d.vertexFunction = library.makeFunction(name: "surfaceVertex")
+        d.fragmentFunction = library.makeFunction(name: fragment)
+        d.colorAttachments[0].pixelFormat = .bgra8Unorm
+        d.depthAttachmentPixelFormat = .depth32Float
+        d.rasterSampleCount = Self.sampleCount
+        let v = MTLVertexDescriptor()
+        v.attributes[0].format = .float3
+        v.attributes[0].bufferIndex = 0
+        v.attributes[1].format = .float3
+        v.attributes[1].bufferIndex = 3
+        v.layouts[0].stride = 12
+        v.layouts[3].stride = 12
+        d.vertexDescriptor = v
+        return d
+    }
+
     /// The pipeline for a material's program, compiled the first time.
     private func surface(_ shader: SceneShader?) -> MTLRenderPipelineState? {
         let key = SceneShaderSource.key(shader)
         if let made = surfaces[key] { return made }
         do {
             let library = try device.makeLibrary(source: SceneShaderSource.surface(shader), options: nil)
-            let d = MTLRenderPipelineDescriptor()
-            d.vertexFunction = library.makeFunction(name: "surfaceVertex")
-            d.fragmentFunction = library.makeFunction(name: "surfaceFragment")
-            d.colorAttachments[0].pixelFormat = .bgra8Unorm
-            d.depthAttachmentPixelFormat = .depth32Float
-            d.rasterSampleCount = Self.sampleCount
-            let v = MTLVertexDescriptor()
-            v.attributes[0].format = .float3
-            v.attributes[0].bufferIndex = 0
-            v.attributes[1].format = .float3
-            v.attributes[1].bufferIndex = 3
-            v.layouts[0].stride = 12
-            v.layouts[3].stride = 12
-            d.vertexDescriptor = v
-            let made = try device.makeRenderPipelineState(descriptor: d)
+            let made = try device.makeRenderPipelineState(descriptor: Self.surfaceDescriptor(library, fragment: "surfaceFragment"))
             surfaces[key] = made
             return made
         } catch {
@@ -238,6 +243,134 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             }
         }
         commands.commit()
+    }
+
+    // MARK: Render
+
+    /// A render's two pictures: the scene as shaded, and its depth.
+    struct Pictures {
+        var beauty: CGImage
+        var depth: CGImage
+    }
+
+    struct RenderFailure: LocalizedError {
+        var reason: String
+        var errorDescription: String? { reason }
+    }
+
+    private var depthPipeline: MTLRenderPipelineState?
+
+    /// The scene from the camera, `width` by `height`: drawn at twice that
+    /// with 4× multisampling and scaled down, without the grid, the stand-ins,
+    /// Edit mode's cage or the chosen object's tint. Then again for depth,
+    /// near white and far black across what the scene spans in front of the
+    /// camera.
+    func render(width: Int, height: Int, transparent: Bool) throws -> Pictures {
+        guard let model, let document = model.document else { throw RenderFailure(reason: "open a scene to render") }
+        let scale = min(2, 8192 / max(width, height))
+        let (w, h) = (width * max(scale, 1), height * max(scale, 1))
+        let nodes = document.state.objects
+        let worlds = SceneMath.worlds(nodes)
+        let view = model.camera.view
+        // What's in front of the camera, for the depth pass and the planes.
+        let depths = model.boxes().flatMap(\.corners).map { -(view * SIMD4($0, 1)).z }.filter { $0 > 0 }
+        let nearest = max(0.01, (depths.min() ?? 0.1) * 0.98)
+        let farthest = max(nearest * 1.01, (depths.max() ?? 10) * 1.02)
+        let proj = SceneMath.perspective(aspect: Float(width) / Float(max(height, 1)), near: max(0.005, nearest * 0.5), far: farthest * 1.5)
+        let light = view * SIMD4(Self.key, 0)
+        var frame = FrameUniforms(proj: proj, light: SIMD3(light.x, light.y, light.z), tint: Self.ice)
+        let shaders = Dictionary(document.state.shaders.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        if depthPipeline == nil {
+            let library = try device.makeLibrary(source: SceneShaderSource.surface(nil), options: nil)
+            depthPipeline = try device.makeRenderPipelineState(descriptor: Self.surfaceDescriptor(library, fragment: "depthFragment"))
+        }
+        func texture(_ format: MTLPixelFormat, samples: Int, usage: MTLTextureUsage, storage: MTLStorageMode) throws -> MTLTexture {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: w, height: h, mipmapped: false)
+            if samples > 1 {
+                d.textureType = .type2DMultisample
+                d.sampleCount = samples
+            }
+            d.usage = usage
+            d.storageMode = storage
+            guard let made = device.makeTexture(descriptor: d) else { throw RenderFailure(reason: "the GPU couldn’t make a \(w) × \(h) picture") }
+            return made
+        }
+        let color = try texture(.bgra8Unorm, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
+        let depthTarget = try texture(.depth32Float, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
+        let readable: MTLStorageMode = device.hasUnifiedMemory ? .shared : .managed
+        let beauty = try texture(.bgra8Unorm, samples: 1, usage: .renderTarget, storage: readable)
+        let deep = try texture(.bgra8Unorm, samples: 1, usage: .renderTarget, storage: readable)
+
+        guard let commands = queue.makeCommandBuffer() else { throw RenderFailure(reason: "the GPU is busy") }
+        for (resolve, isDepth) in [(beauty, false), (deep, true)] {
+            let pass = MTLRenderPassDescriptor()
+            pass.colorAttachments[0].texture = color
+            pass.colorAttachments[0].resolveTexture = resolve
+            pass.colorAttachments[0].loadAction = .clear
+            pass.colorAttachments[0].storeAction = .multisampleResolve
+            pass.colorAttachments[0].clearColor = isDepth ? MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+                : transparent ? MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0) : MTLClearColor(red: 0.028, green: 0.031, blue: 0.04, alpha: 1)
+            pass.depthAttachment.texture = depthTarget
+            pass.depthAttachment.loadAction = .clear
+            pass.depthAttachment.storeAction = .dontCare
+            pass.depthAttachment.clearDepth = 1
+            guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { throw RenderFailure(reason: "the GPU is busy") }
+            encoder.setDepthStencilState(solid)
+            encoder.setFrontFacing(.counterClockwise)
+            var range = SIMD2<Float>(nearest, farthest)
+            for node in nodes where node.kind == "mesh" && !node.mesh.isEmpty {
+                let shader = node.material.isEmpty ? nil : shaders[node.material]
+                let mesh = document.mesh(for: node)
+                guard let held = held(node.id, node.shape, mesh), let pipeline = isDepth ? depthPipeline : surface(shader) else { continue }
+                let modelView = view * (worlds[node.id] ?? matrix_identity_float4x4)
+                let upper = simd_float3x3(SIMD3(modelView.columns.0.x, modelView.columns.0.y, modelView.columns.0.z),
+                                          SIMD3(modelView.columns.1.x, modelView.columns.1.y, modelView.columns.1.z),
+                                          SIMD3(modelView.columns.2.x, modelView.columns.2.y, modelView.columns.2.z))
+                var object = ObjectUniforms(modelView: modelView, normal: upper.inverse.transpose, picked: 0)
+                encoder.setRenderPipelineState(pipeline)
+                encoder.setCullMode(held.closed ? .back : .none)
+                encoder.setVertexBuffer(held.positions, offset: 0, index: 0)
+                encoder.setVertexBuffer(held.normals, offset: 0, index: 3)
+                encoder.setVertexBytes(&frame, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                encoder.setVertexBytes(&object, length: MemoryLayout<ObjectUniforms>.stride, index: 2)
+                encoder.setFragmentBytes(&frame, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                encoder.setFragmentBytes(&object, length: MemoryLayout<ObjectUniforms>.stride, index: 2)
+                encoder.setFragmentBytes(&range, length: MemoryLayout<SIMD2<Float>>.stride, index: 3)
+                var constants = Array(SceneShaderSource.constants(of: shader).prefix(256))
+                encoder.setFragmentBytes(&constants, length: constants.count * MemoryLayout<SIMD4<Float>>.stride, index: 4)
+                encoder.drawIndexedPrimitives(type: .triangle, indexCount: held.count, indexType: .uint32, indexBuffer: held.indices, indexBufferOffset: 0)
+            }
+            encoder.endEncoding()
+        }
+        if readable == .managed, let blit = commands.makeBlitCommandEncoder() {
+            blit.synchronize(resource: beauty)
+            blit.synchronize(resource: deep)
+            blit.endEncoding()
+        }
+        commands.commit()
+        commands.waitUntilCompleted()
+        if let error = commands.error { throw RenderFailure(reason: error.localizedDescription) }
+        return Pictures(beauty: try Self.image(beauty, width: width, height: height, opaque: !transparent),
+                        depth: try Self.image(deep, width: width, height: height, opaque: true))
+    }
+
+    /// A rendered texture as a picture, scaled down to `width` by `height`.
+    private static func image(_ texture: MTLTexture, width: Int, height: Int, opaque: Bool) throws -> CGImage {
+        let (w, h) = (texture.width, texture.height)
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        texture.getBytes(&bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let info = CGBitmapInfo.byteOrder32Little.rawValue | (opaque ? CGImageAlphaInfo.noneSkipFirst : CGImageAlphaInfo.premultipliedFirst).rawValue
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let full = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space, bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: info) else {
+            throw RenderFailure(reason: "couldn’t make the picture")
+        }
+        context.interpolationQuality = .high
+        context.draw(full, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let small = context.makeImage() else { throw RenderFailure(reason: "couldn’t make the picture") }
+        return small
     }
 
     /// How far the scene reaches from the camera's target, for the far plane.

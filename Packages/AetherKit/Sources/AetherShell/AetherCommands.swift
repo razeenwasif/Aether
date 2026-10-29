@@ -126,6 +126,11 @@ public struct AetherCommands: Commands {
             }
         }
         CommandMenu("Scene") {
+            Button("Render  (⌘↩)") { modeling.render() }
+                .disabled(!onModel || modeling.document == nil)
+            Button(modeling.renderOpen ? "Hide the Render" : "Show the Render") { modeling.toggleRenderDrawer() }
+                .disabled(!onModel || modeling.document == nil)
+            Divider()
             Menu("Add") {
                 ForEach(SceneAddition.allCases) { addition in
                     Button(addition.title) { modeling.add(addition) }
@@ -235,9 +240,11 @@ public struct AetherCommands: Commands {
                 .disabled(!onCanvas || canvas.document == nil)
         }
         CommandMenu("Flow") {
-            Button("Generate") { diffuse.run() }
+            // ⌘↩ is each workspace's one verb: Generate here, and Render in
+            // Model, through the same item, as two items can't share a key.
+            Button("Generate") { model.run() }
                 .keyboardShortcut(.return)
-                .disabled(model.active != .diffuse)
+                .disabled(model.active != .diffuse && !(model.active == .model && modeling.document != nil))
             Button("Run to Selected Node") { if let node = diffuse.runTarget { diffuse.runTo(node) } }
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .disabled(diffuse.runTarget == nil || diffuse.stage != .graph)

@@ -74,7 +74,19 @@ public final class ModelWorkspaceModel {
     /// second (a colour dragged, a slider slid) joins its step.
     @ObservationIgnored var lastLayerEdit: (key: String, at: Date)?
     /// The graph drawer: the chosen object's material as its node graph.
-    public var graphOpen = false
+    public var graphOpen = false {
+        didSet { if graphOpen { renderOpen = false } }
+    }
+    /// The render drawer: the last render, and how the next is made.
+    public var renderOpen = false {
+        didSet { if renderOpen { graphOpen = false } }
+    }
+    public var renderSize: RenderSize = .square
+    /// A render's background left clear, for a picture to sit on another.
+    public var renderTransparent = false
+    public internal(set) var lastRender: Rendered?
+    /// The GPU drawing renders: its own, so a render needn't wait on the view.
+    @ObservationIgnored var renderer: ModelRenderer?
 
     /// Where scenes go: the project's `Models/`.
     public private(set) var folder: URL
@@ -158,6 +170,8 @@ public final class ModelWorkspaceModel {
         if let path = documentPath { project?.forget(document: path) }
         document = nil
         selected = nil
+        lastRender = nil
+        renderOpen = false
         refreshList()
     }
 

@@ -111,6 +111,9 @@ public final class AppModel {
         case .canvas:
             active = .canvas
             canvas.open(url)
+        case .model:
+            active = .model
+            modeling.open(project.url(of: ModelWorkspaceModel.scenePath(ofRender: asset.document)))
         default:
             break
         }
@@ -200,6 +203,7 @@ public final class AppModel {
         switch active {
         case .diffuse: diffuse.run()
         case .canvas: canvas.exportPNG()
+        case .model: modeling.render()
         default: break
         }
     }
