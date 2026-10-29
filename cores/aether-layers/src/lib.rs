@@ -93,6 +93,12 @@ pub struct Stack {
     pub layers: Vec<Layer>,
 }
 
+/// How far apart a graph's columns are, in graph units. It runs left to
+/// right, as it flows, and is wide rather than tall, to fit the drawer
+/// under the view: each layer a column of its three mixes, a pattern
+/// layer's pattern in a column before them, then the surface and the output.
+const COLUMN: f64 = 200.0;
+
 /// The noise's gain at the hardest edge: fractal noise mostly lies between
 /// 0.25 and 0.75, so this takes a tenth of its range to cross from bare to
 /// covered.
@@ -121,36 +127,38 @@ impl Stack {
     pub fn graph(&self, id_: &str, name: &str) -> Material {
         let mut g = Graph::default();
         let base = &self.base;
-        g.node("surface", "principled", [240.0 * (self.layers.len() + 1) as f64, 0.0], vec![
+        let columns: usize = self.layers.iter().map(|l| if l.pattern == Pattern::Solid { 1 } else { 2 }).sum();
+        g.node("surface", "principled", [COLUMN * columns as f64, 60.0], vec![
             ("baseColor", ParamValue::Color(base.color)),
             ("metallic", ParamValue::Number(base.metallic)),
             ("roughness", ParamValue::Number(base.roughness)),
         ]);
-        g.node("out", "output", [240.0 * (self.layers.len() + 2) as f64, 0.0], vec![]);
+        g.node("out", "output", [COLUMN * (columns + 1) as f64, 60.0], vec![]);
         g.link("surface:bsdf", "out:surface");
 
+        let mut x = 0.0;
         for (k, layer) in self.layers.iter().enumerate() {
             let i = k + 1;
-            let x = 240.0 * i as f64;
             // Where it covers: a wire into each channel's mix, or the amount
             // as the mix's own factor for a solid layer.
             let cover = match layer.pattern {
                 Pattern::Solid => None,
                 Pattern::Noise => {
-                    g.node(&id(i, "noise"), "noise", [x - 120.0, 300.0], vec![("scale", ParamValue::Number(layer.scale)), ("detail", ParamValue::Number(layer.detail))]);
+                    g.node(&id(i, "noise"), "noise", [x, 0.0], vec![("scale", ParamValue::Number(layer.scale)), ("detail", ParamValue::Number(layer.detail))]);
                     let (from, to) = ramp_ends(layer.edge, layer.coverage);
-                    g.node(&id(i, "edge"), "ramp", [x - 60.0, 300.0], vec![("from", ParamValue::Number(from)), ("to", ParamValue::Number(to))]);
+                    g.node(&id(i, "edge"), "ramp", [x, 90.0], vec![("from", ParamValue::Number(from)), ("to", ParamValue::Number(to))]);
                     g.link(&format!("{}:fac", id(i, "noise")), &format!("{}:fac", id(i, "edge")));
                     Some(id(i, "edge"))
                 }
                 Pattern::Checker => {
-                    g.node(&id(i, "checker"), "checker", [x - 60.0, 300.0], vec![("scale", ParamValue::Number(layer.scale))]);
+                    g.node(&id(i, "checker"), "checker", [x, 0.0], vec![("scale", ParamValue::Number(layer.scale))]);
                     Some(id(i, "checker"))
                 }
             };
             if let Some(source) = &cover {
-                g.node(&id(i, "cover"), "mix", [x, 300.0], vec![("a", ParamValue::Number(0.0)), ("b", ParamValue::Number(layer.amount))]);
+                g.node(&id(i, "cover"), "mix", [x, 180.0], vec![("a", ParamValue::Number(0.0)), ("b", ParamValue::Number(layer.amount))]);
                 g.link(&format!("{source}:result"), &format!("{}:fac", id(i, "cover")));
+                x += COLUMN;
             }
             let channels = [
                 ("color", ParamValue::Color(layer.surface.color), ParamValue::Color(base.color), "baseColor"),
@@ -165,7 +173,7 @@ impl Stack {
                 if cover.is_none() {
                     params.push(("fac", ParamValue::Number(layer.amount)));
                 }
-                g.node(&id(i, part), "mix", [x, 80.0 * row as f64], params);
+                g.node(&id(i, part), "mix", [x, 90.0 * row as f64], params);
                 if i > 1 {
                     g.link(&format!("{}:result", id(i - 1, part)), &format!("{}:a", id(i, part)));
                 }
@@ -173,6 +181,7 @@ impl Stack {
                     g.link(&format!("{}:result", id(i, "cover")), &format!("{}:fac", id(i, part)));
                 }
             }
+            x += COLUMN;
             if i == self.layers.len() {
                 for (part, _, _, port) in channels {
                     g.link(&format!("{}:result", id(i, part)), &format!("surface:{port}"));

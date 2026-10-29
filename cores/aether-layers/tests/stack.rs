@@ -148,3 +148,35 @@ fn an_object_wears_a_material_and_ids_are_fresh() {
     assert!(!scene.to_text().contains("\"material\":"), "none is no key");
     assert!(scene.wear("nobody", "").is_err());
 }
+
+#[test]
+fn a_material_is_renamed_and_only_one_nobody_wears_is_taken_out() {
+    let mut scene = Scene::parse(r#"{"format": "proton.scene", "objects": [
+        {"id": "a-1", "name": "Cube", "kind": "mesh", "material": "paint-1"},
+        {"id": "b-1", "name": "Ball", "kind": "mesh", "material": "paint-1"}]}"#).unwrap();
+    scene.put_material(&three().graph("paint-1", "Paint"));
+    scene.put_material(&Stack::default().graph("spare-1", "Spare"));
+    assert!(scene.rename_material("paint-1", "Red paint").unwrap());
+    assert!(!scene.rename_material("paint-1", " Red paint ").unwrap(), "trimmed, the same");
+    assert!(scene.rename_material("paint-1", "  ").is_err());
+    assert_eq!(scene.remove_material("paint-1").unwrap_err(), "Cube and 1 more wear it");
+    assert!(scene.remove_material("spare-1").unwrap());
+    assert_eq!(scene.materials().iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["Red paint"]);
+    assert!(scene.remove_material("spare-1").is_err(), "gone");
+}
+
+#[test]
+fn a_stacks_graph_is_laid_out_wide_with_nothing_on_top_of_anything() {
+    let graph = three().graph("m", "M");
+    let mut places: Vec<[i64; 2]> = graph.nodes.iter().map(|n| [n.at[0] as i64, n.at[1] as i64]).collect();
+    places.sort();
+    let before = places.len();
+    places.dedup();
+    assert_eq!(places.len(), before, "no two nodes in one place");
+    let x = |id: &str| graph.nodes.iter().find(|n| n.id == id).unwrap().at[0];
+    assert!(x("layer1-color") < x("layer2-color") && x("layer3-color") < x("surface") && x("surface") < x("out"), "left to right as it flows");
+    assert!(x("layer1-noise") < x("layer1-color"), "a layer's pattern before its mixes");
+    let y = |id: &str| graph.nodes.iter().find(|n| n.id == id).unwrap().at[1];
+    let tallest = graph.nodes.iter().map(|n| n.at[1]).fold(0.0, f64::max);
+    assert!(tallest <= 180.0 && y("layer2-rough") == 180.0, "wide, not tall: three rows");
+}

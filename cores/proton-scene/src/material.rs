@@ -329,6 +329,42 @@ impl crate::Scene {
         Ok(true)
     }
 
+    /// Rename a material.
+    pub fn rename_material(&mut self, material: &str, name: &str) -> Result<bool, String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("a name can't be empty".into());
+        }
+        let one = self.material_mut(material)?;
+        if one.get("name").and_then(Value::as_str) == Some(name) {
+            return Ok(false);
+        }
+        one.insert("name".into(), json!(name));
+        Ok(true)
+    }
+
+    /// Take out a material nothing wears. One something wears is refused,
+    /// with what wears it: taking it would leave a name pointing nowhere.
+    pub fn remove_material(&mut self, material: &str) -> Result<bool, String> {
+        self.material_mut(material)?;
+        let wearers: Vec<String> = self
+            .objects()
+            .into_iter()
+            .filter(|one| one.material == material)
+            .map(|one| one.name)
+            .collect();
+        if let Some(first) = wearers.first() {
+            let more = wearers.len() - 1;
+            return Err(match more {
+                0 => format!("{first} wears it"),
+                _ => format!("{first} and {more} more wear it"),
+            });
+        }
+        let list = self.json.get_mut("materials").and_then(Value::as_array_mut).expect("found above");
+        list.retain(|one| one.get("id").and_then(Value::as_str) != Some(material));
+        Ok(true)
+    }
+
     fn find_object_mut(&mut self, id: &str) -> Result<&mut Map<String, Value>, String> {
         self.json
             .get_mut("objects")

@@ -66,15 +66,56 @@ public struct SceneNode: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// A material, by its name; its graph is compiled into a `SceneShader`.
+/// A material: its name, and its graph, which the core compiles into a
+/// `SceneShader` and the graph drawer draws.
 public struct SceneMaterial: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
-    /// Its graph's nodes, by kind: what the inspector counts.
-    public var nodes: [Kind]?
+    public var nodes: [Node]?
+    public var links: [Link]?
 
-    public struct Kind: Codable, Sendable, Equatable {
+    /// One node: its kind, where its box sits (graph units), its settings.
+    public struct Node: Codable, Sendable, Equatable, Identifiable {
+        public var id: String
         public var kind: String
+        public var at: [Double]
+        public var params: [Param]
+    }
+
+    public struct Param: Codable, Sendable, Equatable {
+        public var name: String
+        public var value: Value
+    }
+
+    /// A number, or a colour in linear RGB (`proton_scene::ParamValue`).
+    public enum Value: Codable, Sendable, Equatable {
+        case number(Double)
+        case color([Double])
+
+        private enum Keys: String, CodingKey { case number, color }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            if let n = try c.decodeIfPresent(Double.self, forKey: .number) {
+                self = .number(n)
+            } else {
+                self = .color(try c.decode([Double].self, forKey: .color))
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: Keys.self)
+            switch self {
+            case .number(let n): try c.encode(n, forKey: .number)
+            case .color(let rgb): try c.encode(rgb, forKey: .color)
+            }
+        }
+    }
+
+    /// A wire, `node:port` to `node:port`.
+    public struct Link: Codable, Sendable, Equatable {
+        public var from: String
+        public var to: String
     }
 }
 
@@ -154,6 +195,9 @@ public enum SceneEdit: Encodable, Sendable, Equatable {
     case setLayers(material: String, stack: SceneStack?)
     /// The object made to wear a material, or none when it's empty.
     case wear(String, material: String)
+    case renameMaterial(String, name: String)
+    /// A material nothing wears, taken out.
+    case removeMaterial(String)
 
     private enum Keys: String, CodingKey { case edit, kind, name, parent, mesh, position, id, part, to, path, index, field, value, material, stack }
 
@@ -217,6 +261,13 @@ public enum SceneEdit: Encodable, Sendable, Equatable {
         case let .wear(id, material):
             try c.encode("wear", forKey: .edit)
             try c.encode(id, forKey: .id)
+            try c.encode(material, forKey: .material)
+        case let .renameMaterial(material, name):
+            try c.encode("renameMaterial", forKey: .edit)
+            try c.encode(material, forKey: .material)
+            try c.encode(name, forKey: .name)
+        case .removeMaterial(let material):
+            try c.encode("removeMaterial", forKey: .edit)
             try c.encode(material, forKey: .material)
         }
     }

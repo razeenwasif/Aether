@@ -45,6 +45,12 @@ public struct ModelWorkspace: View {
 
             VStack(spacing: 10) {
                 Spacer()
+                if model.graphOpen, model.editing == nil, let material = model.selectedMaterial {
+                    MaterialGraphDrawer(model: model, material: material, isStack: model.stack(of: material.id) != nil)
+                        .frame(height: 250)
+                        .padding(.horizontal, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 if let notice = model.notice {
                     ModelNotice(text: notice) { model.notice = nil }
                 }
@@ -58,6 +64,7 @@ public struct ModelWorkspace: View {
         }
         .animation(Motion.panel, value: model.navigatorOpen)
         .animation(Motion.panel, value: model.inspectorOpen)
+        .animation(Motion.panel, value: model.graphOpen)
         .background(Color.obsidian0)
         .modifier(ModelKeys(model: model))
     }

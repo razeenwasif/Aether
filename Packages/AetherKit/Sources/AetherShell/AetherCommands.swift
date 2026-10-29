@@ -146,6 +146,10 @@ public struct AetherCommands: Commands {
                 }
             }
             .disabled(!onModel || modeling.selectedNode == nil || modeling.editing != nil)
+            Button(modeling.graphOpen ? "Hide the Material Graph" : "Show the Material Graph") { modeling.toggleGraph() }
+                .disabled(!onModel || modeling.document == nil)
+            Button("Remove Unworn Materials") { modeling.removeUnwornMaterials() }
+                .disabled(!onModel || modeling.document == nil)
             Divider()
             Button(modeling.editing == nil ? "Edit the Mesh  (⇥)" : "Back to the Objects  (⇥)") { modeling.toggleEdit() }
                 .disabled(!onModel || (modeling.editing == nil && !modeling.canEdit))

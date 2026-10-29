@@ -108,6 +108,9 @@ enum Edit {
     },
     /// Object `id` made to wear `material`, or none when it's empty.
     Wear { id: String, material: String },
+    RenameMaterial { material: String, name: String },
+    /// A material nothing wears, taken out.
+    RemoveMaterial { material: String },
 }
 
 #[uniffi::export]
@@ -270,6 +273,8 @@ impl SceneEditor {
                 h.scene.put_material(&stack.graph(&had.id, &had.name))
             }
             Edit::Wear { id, material } => h.scene.wear(&id, &material).map_err(failed)?,
+            Edit::RenameMaterial { material, name } => h.scene.rename_material(&material, &name).map_err(failed)?,
+            Edit::RemoveMaterial { material } => h.scene.remove_material(&material).map_err(failed)?,
         };
         if changed && join && h.undo.last().is_some_and(|s| s.1 == label) {
             h.redo.clear();

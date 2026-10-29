@@ -32,6 +32,12 @@ struct MaterialSection: View {
                 if let problem = document.state.shaders.first(where: { $0.id == material.id })?.problem, !problem.isEmpty {
                     Text("Drawn grey: \(problem).").font(.aeSmall).foregroundStyle(Color.amber).fixedSize(horizontal: false, vertical: true)
                 }
+                Toggle(isOn: Binding(get: { model.graphOpen }, set: { _ in model.toggleGraph() })) {
+                    Label("Graph", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help("Its node graph, in a drawer under the view: what the file holds")
                 if let stack = model.stack(of: material.id) {
                     ForEach(Array(stack.layers.enumerated()).reversed(), id: \.offset) { index, layer in
                         LayerCard(model: model, index: index, count: stack.layers.count, layer: layer)
@@ -53,7 +59,7 @@ struct MaterialSection: View {
     private var wearing: some View {
         HStack(spacing: 6) {
             if let material {
-                Text(material.name).font(.aeBodyStrong).foregroundStyle(Color.inkHi).lineLimit(1)
+                NameField(name: material.name, commit: model.renameMaterial)
             } else {
                 Text("None: drawn in plain grey.").font(.aeSmall).foregroundStyle(Color.ink2)
             }
@@ -69,12 +75,45 @@ struct MaterialSection: View {
                     Divider()
                     Button("None") { model.wear("") }
                 }
+                if !model.unwornMaterials.isEmpty {
+                    Divider()
+                    Button("Remove Unworn Materials", action: model.removeUnwornMaterials)
+                }
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
             .controlSize(.small)
             .help("A new material, one another object wears, or none")
         }
+    }
+}
+
+/// A material's name, renamed where it's shown: kept on ↩ or when the
+/// field is left.
+private struct NameField: View {
+    let name: String
+    let commit: (String) -> Void
+    @State private var text = ""
+    @FocusState private var typing: Bool
+
+    var body: some View {
+        TextField("Name", text: $text)
+            .textFieldStyle(.plain)
+            .font(.aeBodyStrong)
+            .foregroundStyle(Color.inkHi)
+            .focused($typing)
+            .onSubmit(done)
+            .onChange(of: typing) { if !typing { done() } }
+            .onChange(of: name) { if !typing { text = name } }
+            .onAppear { text = name }
+            .help("Its name: click to rename it")
+            .accessibilityLabel("Material name")
+    }
+
+    private func done() {
+        let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if typed.isEmpty { return text = name }
+        if typed != name { commit(typed) }
     }
 }
 

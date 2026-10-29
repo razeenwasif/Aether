@@ -101,6 +101,10 @@ extension AppModel {
                 OmniItem(.here, "Add a \(pattern.title) Layer to \(node.name)", detail: "Material") { m.addLayer(pattern) }
             }
         }
+        items.append(OmniItem(.here, m.graphOpen ? "Hide the Material Graph" : "Show the Material Graph", detail: "Material") { m.toggleGraph() })
+        if !m.unwornMaterials.isEmpty {
+            items.append(OmniItem(.here, "Remove Unworn Materials", detail: "\(m.unwornMaterials.count)") { m.removeUnwornMaterials() })
+        }
         items.append(OmniItem(.here, "All Scenes") { m.close() })
         return items
     }

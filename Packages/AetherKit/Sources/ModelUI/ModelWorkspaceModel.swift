@@ -73,6 +73,8 @@ public final class ModelWorkspaceModel {
     /// The last change to a material's layers: the same one again within a
     /// second (a colour dragged, a slider slid) joins its step.
     @ObservationIgnored var lastLayerEdit: (key: String, at: Date)?
+    /// The graph drawer: the chosen object's material as its node graph.
+    public var graphOpen = false
 
     /// Where scenes go: the project's `Models/`.
     public private(set) var folder: URL

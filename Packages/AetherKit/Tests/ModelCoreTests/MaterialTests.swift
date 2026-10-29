@@ -1,4 +1,5 @@
 import AetherGraph
+import CoreGraphics
 import Foundation
 import Metal
 import Testing
@@ -116,5 +117,54 @@ struct MaterialLayerTests {
         #expect(SceneShaderSource.key(after) == key, "a new colour, the same program")
         #expect(SceneShaderSource.constants(of: after) != before)
         #expect(SceneShaderSource.surface(after) == source)
+    }
+
+    @Test func theGraphDrawerDrawsEveryNodeAndWireWithNothingOnTopOfAnything() throws {
+        let (model, _) = try setUp()
+        for pattern in LayerPattern.allCases { model.addLayer(pattern) }
+        let material = try #require(model.selectedMaterial)
+        let nodes = try #require(material.nodes)
+        #expect(nodes.contains { $0.kind == "noise" } && nodes.contains { $0.kind == "principled" })
+        let surface = try #require(nodes.first { $0.kind == "principled" })
+        #expect(surface.params.contains { $0.name == "baseColor" && $0.value == .color([0.8, 0.8, 0.8]) }, "settings read with their values")
+
+        let layout = GraphLayout(material)
+        #expect(layout.boxes.count == nodes.count)
+        #expect(layout.wires.count == material.links?.count, "every wire lands on a row")
+        for (i, a) in layout.boxes.enumerated() {
+            for b in layout.boxes[(i + 1)...] {
+                #expect(!a.frame.intersects(b.frame), "\(a.id) and \(b.id) overlap")
+            }
+        }
+        let fit = layout.fit(in: CGSize(width: 800, height: 250))
+        let scale = layout.scale(in: CGSize(width: 800, height: 250))
+        for box in layout.boxes {
+            let p = fit(box.frame.origin), q = fit(CGPoint(x: box.frame.maxX, y: box.frame.maxY))
+            #expect(p.x >= 0 && p.y >= 0 && q.x <= 800 && q.y <= 250, "fitted inside the drawer")
+        }
+        #expect(scale > 0 && scale <= 1.2)
+
+        model.toggleGraph()
+        #expect(model.graphOpen)
+    }
+
+    @Test func aMaterialIsRenamedAndTheUnwornGoInOneStep() throws {
+        let (model, project) = try setUp()
+        model.newMaterial()
+        model.renameMaterial("  Oak  ")
+        #expect(model.selectedMaterial?.name == "Oak" && model.undoLabel == "Rename Material")
+        model.renameMaterial("   ")
+        #expect(model.notice?.contains("empty") == true)
+        model.newMaterial()
+        model.newMaterial()
+        #expect(model.unwornMaterials.map(\.name) == ["Oak", "Cube Material"], "the newest is worn")
+        model.removeUnwornMaterials()
+        #expect(model.document?.state.materials.count == 1 && model.unwornMaterials.isEmpty)
+        #expect(project.undoLabel(in: model.documentPath) == "Remove Unworn Materials")
+        model.undo()
+        #expect(model.document?.state.materials.count == 3, "both back with one undo")
+        model.removeUnwornMaterials()
+        model.removeUnwornMaterials()
+        #expect(model.notice == "Every material is worn by something.")
     }
 }

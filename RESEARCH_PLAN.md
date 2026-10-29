@@ -1150,6 +1150,25 @@ Not yet:
   - The bottom drawer the Model board puts the stack in: it's in the inspector, beside the modifier stack, for now.
   - Texture images.
 
+**2026-10-29 · Model: the graph drawer, naming and removing materials.** The user said "do the next step": the rest of materials the plan proposed.
+
+- **The graph drawer:** the design's "full graph, one toggle away", in the bottom drawer the Model board has.
+  - Opened by Graph in the Material section, Scene ▸ Show the Material Graph, or the omnibar. It sits under the view between the panels, above the dock.
+  - Each node is a box where the file puts it, its header tinted by kind (surface and output, patterns, colours and numbers, mixes). Its rows are its inputs: a setting shows its value or a colour swatch, and a wired input shows a dot where the wire lands. Wires curve from a node's output to the row they feed. The graph is fitted to the drawer and never drawn larger than life, and below about half size the text is left out.
+  - Read-only, by decision: a stack is edited as layers, and a graph from Proton is kept as the file has it. Editing a graph as a graph waits until there's a reason to have both.
+  - `SceneMaterial` now carries the whole graph (nodes with their place and settings, and links), read from the core's view.
+- **A stack's graph laid out wide:** the first check showed the column-a-layer layout as tall and narrow, so in a wide drawer it was too small to read. It now runs left to right, as it flows. Each layer is a column of its three mixes; a pattern layer's noise, ramp and cover come in a column before them; then the surface and the output. Three rows high. The core ignores where boxes sit, so older stacks still read; their next edit lays them out again.
+- **Naming:** the material's name in the inspector is a field, renamed on ↩ or when the field is left (`renameMaterial`; an empty name is refused).
+- **Removing:** `removeMaterial` takes out a material nothing wears, and refuses one that something wears, naming what does ("Cube and 1 more wear it"). Change ▸ Remove Unworn Materials (also in the Scene menu and the omnibar) takes out all of them as one step, by joining the steps.
+- **Checked in the app,** on a throwaway scene, deleted after:
+  - A noise and a checker layer made a 13-node graph. The drawer drew it readably: noise, ramp and cover, then the mixes, the checker, the surface and the output, with values and swatches.
+  - The first layout was found too tall here, and changed.
+- **Not checked in the app:** renaming. The testing tool sets a field's text through accessibility, which doesn't move SwiftUI's focus, so neither ↩ nor leaving the field commits. The full-screen control card timed out, and then the screen locked. The tests cover renaming and removing.
+- **Tests:**
+  - 2 more in `aether-layers`: renaming and the refusal to remove a worn material; the layout wide, with no two nodes in one place.
+  - 2 more in Swift: the drawer's layout has a box for every node and a wire for every link, no boxes overlapping, all fitted inside; renaming, and unworn materials removed and restored in one step.
+  - 320 Rust and 146 Swift tests pass.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1174,6 +1193,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Model, starting with what Proton's Modeling had: the scene format, the outliner and the modifier stack, on a Metal viewport~~: done, see §10a.
 
-~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a. ~~Bevel~~: done, see §10a, one segment. ~~Material layers~~: started, see §10a: the stack, its edits and its inspector.
+~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a. ~~Bevel~~: done, see §10a, one segment. ~~Material layers~~: done, see §10a: the stack, its edits and its inspector, the graph drawer, naming and removing.
 
-**Next, proposed:** the rest of materials: a read-only view of the graph a stack can't show (the toggle the design wants), naming a material, and the design's bottom drawer. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.
+**Next, proposed:** Render, the last of Model's pieces in the design. Alongside, M0's frame times under Instruments and M1's Metal capture, and M2's exit criterion, a Model depth pass published as an asset. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.

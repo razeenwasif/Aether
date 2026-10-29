@@ -72,6 +72,38 @@ extension ModelWorkspaceModel {
         }
     }
 
+    public func renameMaterial(_ name: String) {
+        guard let material = selectedMaterial else { return }
+        change(.renameMaterial(material.id, name: name), label: "Rename Material")
+    }
+
+    /// The materials nothing wears: what Remove Unworn Materials takes.
+    public var unwornMaterials: [SceneMaterial] {
+        guard let document else { return [] }
+        let worn = Set(document.state.objects.map(\.material))
+        return document.state.materials.filter { !worn.contains($0.id) }
+    }
+
+    /// Take out every material nothing wears, as one step.
+    public func removeUnwornMaterials() {
+        guard let document else { return }
+        let gone = unwornMaterials
+        guard !gone.isEmpty else { return notice = "Every material is worn by something." }
+        for (i, material) in gone.enumerated() {
+            guard document.apply(.removeMaterial(material.id), label: "Remove Unworn Materials", joining: i > 0) != nil else {
+                notice = document.refusal
+                return
+            }
+        }
+        notice = gone.count == 1 ? "Took out \(gone[0].name)." : "Took out \(gone.count) materials nothing wore."
+        scheduleSave()
+    }
+
+    /// The graph drawer open or shut.
+    public func toggleGraph() {
+        graphOpen.toggle()
+    }
+
     /// With no material yet, make one, then `then`.
     private func newMaterialThen(_ then: (ModelWorkspaceModel) -> Void) {
         newMaterial()
