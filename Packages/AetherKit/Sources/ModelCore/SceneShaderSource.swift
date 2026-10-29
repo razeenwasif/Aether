@@ -172,16 +172,19 @@ public enum SceneShaderSource {
 
     /// The source of one surface program, from a material's compiled
     /// instructions — or the plain grey with none, or one the core couldn't
-    /// compile. Its fragment function is `surfaceFragment`.
+    /// compile. Its fragment function is `surfaceFragment`. The constants
+    /// aren't in it: they're read from buffer 4 (`constants(of:)`), so a
+    /// colour changed, or dragged, draws with the program already compiled.
     public static func surface(_ shader: SceneShader?) -> String {
         var lines: [String] = []
         if let shader, shader.problem.isEmpty, !shader.ops.isEmpty {
+            var k = 0
             for (at, op) in shader.ops.enumerated() {
                 let r = "r\(at)"
                 switch op {
-                case .constant(let v):
-                    let c = (0..<3).map { num(v.count > $0 ? v[$0] : 0) }
-                    lines.append("    float3 \(r) = float3(\(c.joined(separator: ", ")));")
+                case .constant:
+                    lines.append("    float3 \(r) = k[\(k)].xyz;")
+                    k += 1
                 case .position:
                     lines.append("    float3 \(r) = in.obj;")
                 case let .noise(from, scale, detail):
@@ -203,7 +206,7 @@ public enum SceneShaderSource {
             lines.append("    float rough = 0.55;")
         }
         return prelude + """
-        fragment float4 surfaceFragment(Out in [[stage_in]], bool front [[front_facing]], constant Frame &frame [[buffer(1)]], constant Object &object [[buffer(2)]]) {
+        fragment float4 surfaceFragment(Out in [[stage_in]], bool front [[front_facing]], constant Frame &frame [[buffer(1)]], constant Object &object [[buffer(2)]], constant float4 *k [[buffer(4)]]) {
         \(lines.joined(separator: "\n"))
             float3 v = normalize(-in.eye);
             float3 n;
@@ -225,10 +228,27 @@ public enum SceneShaderSource {
         """
     }
 
-    /// What tells two programs apart: equal for the same instructions.
+    /// What tells two programs apart: equal for the same instructions,
+    /// whatever their constants.
     public static func key(_ shader: SceneShader?) -> String {
         guard let shader, shader.problem.isEmpty, !shader.ops.isEmpty else { return "plain" }
-        return "\(shader.ops)|\(shader.base)|\(shader.metallic)|\(shader.roughness)"
+        let ops = shader.ops.map { op -> String in
+            if case .constant = op { return "k" }
+            return "\(op)"
+        }
+        return "\(ops)|\(shader.base)|\(shader.metallic)|\(shader.roughness)"
+    }
+
+    /// The constants a program reads from buffer 4, in order: never empty,
+    /// as the buffer is bound whatever the program.
+    public static func constants(of shader: SceneShader?) -> [SIMD4<Float>] {
+        var out: [SIMD4<Float>] = []
+        if let shader, shader.problem.isEmpty {
+            for case .constant(let v) in shader.ops {
+                out.append(SIMD4(v.count > 0 ? v[0] : 0, v.count > 1 ? v[1] : 0, v.count > 2 ? v[2] : 0, 1))
+            }
+        }
+        return out.isEmpty ? [SIMD4(0, 0, 0, 1)] : out
     }
 
     /// A float Metal reads as one.

@@ -18,6 +18,8 @@ proton-scene = { path = "../proton-scene" }
 proton-mesh = { path = "../proton-mesh" }
 # Model's Edit mode: meshes as polygons.
 aether-poly = { path = "../aether-poly" }
+# Model's material layers.
+aether-layers = { path = "../aether-layers" }
 serde = "1"
 serde_json = "1"
 uniffi = "0.32"

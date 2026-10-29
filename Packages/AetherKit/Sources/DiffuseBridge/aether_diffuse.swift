@@ -2736,6 +2736,12 @@ public protocol SceneEditorProtocol: AnyObject, Sendable {
     func edit(editJson: String, label: String) throws  -> String
     
     /**
+     * As `edit`, but joining the newest step when it has the same name: the
+     * rest of a colour dragged, or a number scrubbed, undoes as one.
+     */
+    func editJoined(editJson: String, label: String) throws  -> String
+    
+    /**
      * An object's triangles: its mesh, its modifier stack applied, shaded.
      * One with no mesh, or a mesh that can't be read or is over the budget,
      * answers no triangles and why — with the box it would fill, when known.
@@ -2851,6 +2857,21 @@ open func edit(editJson: String, label: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_method_sceneeditor_edit(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(editJson),
+        FfiConverterString.lower(label),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * As `edit`, but joining the newest step when it has the same name: the
+     * rest of a colour dragged, or a number scrubbed, undoes as one.
+     */
+open func editJoined(editJson: String, label: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_sceneeditor_edit_joined(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(editJson),
         FfiConverterString.lower(label),uniffiCallStatus
@@ -4639,6 +4660,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_sceneeditor_edit() != 12030) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_sceneeditor_edit_joined() != 2090) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_sceneeditor_mesh() != 16900) {

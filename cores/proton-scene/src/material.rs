@@ -262,6 +262,81 @@ impl crate::Scene {
         Ok(list.len() != before)
     }
 
+    // Added in Aether: a material written whole, a fresh id for one, and an
+    // object made to wear one. Proton's panel only edited graphs a file
+    // already had; Aether's layer stack makes and replaces them.
+
+    /// Write a material whole: its graph replaced where one has its id, or
+    /// added at the end. Answers whether the file changed.
+    pub fn put_material(&mut self, material: &Material) -> bool {
+        let now = json!({
+            "id": material.id,
+            "name": material.name,
+            "nodes": material.nodes.iter().map(|node| {
+                let mut one = Map::new();
+                one.insert("id".into(), json!(node.id));
+                one.insert("kind".into(), json!(node.kind));
+                one.insert("at".into(), json!([node.at[0], node.at[1]]));
+                let params: Map<String, Value> = node.params.iter().map(|p| (p.name.clone(), write_value(&p.value))).collect();
+                if !params.is_empty() {
+                    one.insert("params".into(), Value::Object(params));
+                }
+                Value::Object(one)
+            }).collect::<Vec<_>>(),
+            "links": material.links.iter().map(|l| json!({ "from": l.from, "to": l.to })).collect::<Vec<_>>(),
+        });
+        if !self.json.get("materials").is_some_and(Value::is_array) {
+            self.json.as_object_mut().expect("a scene is an object").insert("materials".into(), json!([]));
+        }
+        let list = self.json.get_mut("materials").and_then(Value::as_array_mut).expect("made above");
+        match list.iter_mut().find(|one| one.get("id").and_then(Value::as_str) == Some(&material.id)) {
+            Some(had) if crate::write::to_text(had) == crate::write::to_text(&now) => false,
+            Some(had) => {
+                *had = now;
+                true
+            }
+            None => {
+                list.push(now);
+                true
+            }
+        }
+    }
+
+    /// An id no material uses, from a name, as objects' ids are made.
+    pub fn fresh_material_id(&self, name: &str) -> String {
+        let stem: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect();
+        let stem = stem.trim_matches('-');
+        let stem = if stem.is_empty() { "material" } else { stem };
+        let taken: Vec<String> = self.materials().into_iter().map(|one| one.id).collect();
+        (1..).map(|n| format!("{stem}-{n}")).find(|id| !taken.contains(id)).expect("the integers do not run out")
+    }
+
+    /// Have `object` wear `material`, or none when it's empty.
+    pub fn wear(&mut self, object: &str, material: &str) -> Result<bool, String> {
+        if !material.is_empty() && !self.materials().iter().any(|one| one.id == material) {
+            return Err(format!("there is no material {material:?}"));
+        }
+        let one = self.find_object_mut(object)?;
+        let had = one.get("material").and_then(Value::as_str).unwrap_or("").to_string();
+        if had == material {
+            return Ok(false);
+        }
+        if material.is_empty() {
+            one.remove("material");
+        } else {
+            one.insert("material".into(), json!(material));
+        }
+        Ok(true)
+    }
+
+    fn find_object_mut(&mut self, id: &str) -> Result<&mut Map<String, Value>, String> {
+        self.json
+            .get_mut("objects")
+            .and_then(Value::as_array_mut)
+            .and_then(|list| list.iter_mut().filter_map(Value::as_object_mut).find(|one| one.get("id").and_then(Value::as_str) == Some(id)))
+            .ok_or_else(|| format!("there is no object {id:?}"))
+    }
+
     fn links_mut(&mut self, material: &str) -> Result<&mut Vec<Value>, String> {
         let found = self.material_mut(material)?;
         // A graph with no wires yet has no list, which is ordinary.

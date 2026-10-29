@@ -1116,10 +1116,44 @@ Not yet:
   - 312 Rust and 140 Swift tests pass.
 - **Not done:** more than one segment (a rounded bevel); bevelling corners on their own; a width set by dragging.
 
+**2026-10-29 · Model: material layers.** The user said "start material layers". The design (§3, the Model board) has Proton's shader graph become a short material layer stack, "Simple", with the full graph one toggle away.
+
+- **The decision:** a stack is written into the scene as an ordinary Proton material graph, not as a format of its own. So Proton opens the file and draws it, the compiler that turns graphs into Metal needs nothing new, and "the full graph" is the same material seen another way. A graph that isn't a stack's shape is kept untouched.
+- **`cores/aether-layers`,** Aether's own crate:
+  - A `Stack` is a base `Surface` (colour, metal, roughness) and up to 8 `Layer`s, each with a pattern (solid, noise, checker), its own surface, an amount, and the pattern's scale, detail, coverage and edge.
+  - `Stack::graph` writes the graph: the base is the principled node's own settings, and each layer is three `mix` nodes (colour, metal, roughness) mixing what's below toward its own. A solid layer mixes by its amount. A pattern layer mixes by a `cover` node, its amount times the pattern. Noise goes through a `ramp` first, whose ends lie past 0 and 1. Mix clamps its factor, so the ramp is a threshold (coverage) and a contrast (edge) in one node the compiler already knows.
+  - `Stack::read` reads a graph back, and answers nothing unless writing the stack again gives the same nodes, kinds and wires. A graph made by hand, or a stack's graph rewired, isn't shown as a stack that would lose part of it.
+  - `Stack::starting_from` takes the principled node's settings as a base, for replacing a graph with layers. `checked` clamps the numbers and refuses more than 8 layers or a number that isn't one.
+- **Added to `proton-scene`** (marked as Aether's): `put_material` writes a material whole, `fresh_material_id` gives an id, and `wear` has an object wear one (or none). Proton's panel only edited graphs a file already had.
+- **The bridge:** edits `newMaterial`, `setLayers` (with no stack, the one the graph starts) and `wear`. The view gives each material's stack, or null. `edit_joined` joins the newest step when it has the same name, so a colour dragged is one step.
+- **The shader:** a program's constants moved out of its source into a fragment buffer, and its key ignores them. So a colour or slider dragged draws with the pipeline already compiled, rather than compiling Metal on every change.
+- **The workspace:**
+  - The inspector's Material section shows what the object wears, and Change ▸ makes a new material, wears another, or none.
+  - The layers show top first, each a card with its surface, amount, and the pattern's scale, coverage, edge and detail, with up, down and remove. The base is at the bottom.
+  - Add ▸ adds a layer, making a material first if there's none. A graph the stack can't show says so and offers Replace with Layers.
+  - Colours are linear, as the shader wants them, shown in the colour well as colours with their sRGB hex.
+  - The same change within a second joins its step.
+  - Also reached by Scene ▸ New Material and Add a Layer, and the omnibar.
+- **Checked in the app,** on a throwaway scene, deleted after:
+  - Scene ▸ Add a Layer ▸ Noise made "Cube Material" and drew blots on the cube, with the layer card over the base (#E7E7E7, linear 0.8).
+  - Dragging Edge to its end made the blots hard-edged; dragging Coverage up spread them.
+  - One undo took the whole coverage drag back and kept the edge. The file held the ramp at coverage 0.4, edge 1 (−8.3 to 7.7).
+  - The Edit menu's undo label read stale in the background, as before.
+- **Tests:**
+  - 5 in `aether-layers`: a stack read back after a save; the compiled program run on the CPU (a solid layer's amount, checker cells, noise at its threshold); a hand-made graph refused but starting a stack; clamping; wearing and fresh ids.
+  - 1 in the bridge: a new material, a joined drag undone at once, wearing nothing.
+  - 4 in Swift: layers as steps through the project's history; a drag as one step, and the same control later as a new one; another object wearing it, and a Proton graph kept until replaced; a stack's program compiled by Metal, with a colour change leaving the program the same.
+  - 318 Rust and 144 Swift tests pass.
+- **Not done:**
+  - The graph view: the design's toggle. For now a graph the stack can't show is described, not drawn.
+  - Naming a material, and deleting one nobody wears.
+  - The bottom drawer the Model board puts the stack in: it's in the inspector, beside the modifier stack, for now.
+  - Texture images.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, and Edit mode with extrude, inset, loop cut, bevel and the face as the handle (§10a). The other three workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, Edit mode with extrude, inset, loop cut, bevel and the face as the handle, and material layers (§10a). The other three workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, moved to Claude, and were done with M1 (§7a, §6.4a).
@@ -1140,6 +1174,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Model, starting with what Proton's Modeling had: the scene format, the outliner and the modifier stack, on a Metal viewport~~: done, see §10a.
 
-~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a. ~~Bevel~~: done, see §10a, one segment.
+~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a. ~~Bevel~~: done, see §10a, one segment. ~~Material layers~~: started, see §10a: the stack, its edits and its inspector.
 
-**Next, proposed:** material layers. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.
+**Next, proposed:** the rest of materials: a read-only view of the graph a stack can't show (the toggle the design wants), naming a material, and the design's bottom drawer. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.

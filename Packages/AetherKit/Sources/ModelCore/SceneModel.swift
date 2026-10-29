@@ -70,6 +70,12 @@ public struct SceneNode: Codable, Sendable, Equatable, Identifiable {
 public struct SceneMaterial: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
+    /// Its graph's nodes, by kind: what the inspector counts.
+    public var nodes: [Kind]?
+
+    public struct Kind: Codable, Sendable, Equatable {
+        public var kind: String
+    }
 }
 
 /// One instruction of a compiled material (`proton_scene::Op`).
@@ -113,11 +119,13 @@ public struct SceneState: Decodable, Sendable, Equatable {
     public var objects: [SceneNode]
     public var materials: [SceneMaterial]
     public var shaders: [SceneShader]
+    /// Each material as a layer stack, or `nil` for a graph that isn't one.
+    public var stacks: [String: SceneStack?]
     public var undo: String?
     public var redo: String?
     public var dirty: Bool
 
-    public static let empty = SceneState(objects: [], materials: [], shaders: [], undo: nil, redo: nil, dirty: false)
+    public static let empty = SceneState(objects: [], materials: [], shaders: [], stacks: [:], undo: nil, redo: nil, dirty: false)
 }
 
 /// Which part of a transform an edit sets.
@@ -139,8 +147,15 @@ public enum SceneEdit: Encodable, Sendable, Equatable {
     case removeModifier(String, index: Int)
     case moveModifier(String, index: Int, to: Int)
     case setModifier(String, index: Int, field: String, value: String)
+    /// A new material, a stack with nothing over its base, worn by the object.
+    case newMaterial(String, name: String)
+    /// A material's graph written from a stack; with none, the stack its
+    /// graph starts.
+    case setLayers(material: String, stack: SceneStack?)
+    /// The object made to wear a material, or none when it's empty.
+    case wear(String, material: String)
 
-    private enum Keys: String, CodingKey { case edit, kind, name, parent, mesh, position, id, part, to, path, index, field, value }
+    private enum Keys: String, CodingKey { case edit, kind, name, parent, mesh, position, id, part, to, path, index, field, value, material, stack }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Keys.self)
@@ -191,6 +206,18 @@ public enum SceneEdit: Encodable, Sendable, Equatable {
             try c.encode(index, forKey: .index)
             try c.encode(field, forKey: .field)
             try c.encode(value, forKey: .value)
+        case let .newMaterial(id, name):
+            try c.encode("newMaterial", forKey: .edit)
+            try c.encode(id, forKey: .id)
+            try c.encode(name, forKey: .name)
+        case let .setLayers(material, stack):
+            try c.encode("setLayers", forKey: .edit)
+            try c.encode(material, forKey: .material)
+            try c.encodeIfPresent(stack, forKey: .stack)
+        case let .wear(id, material):
+            try c.encode("wear", forKey: .edit)
+            try c.encode(id, forKey: .id)
+            try c.encode(material, forKey: .material)
         }
     }
 }

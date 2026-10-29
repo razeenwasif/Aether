@@ -70,6 +70,9 @@ public final class ModelWorkspaceModel {
     /// on screen in points a metre, and whether it has started (it starts,
     /// and extrudes, only once the pointer moves).
     @ObservationIgnored var slideState: (last: CGPoint, perMetre: CGVector, extruding: Bool, started: Bool)?
+    /// The last change to a material's layers: the same one again within a
+    /// second (a colour dragged, a slider slid) joins its step.
+    @ObservationIgnored var lastLayerEdit: (key: String, at: Date)?
 
     /// Where scenes go: the project's `Models/`.
     public private(set) var folder: URL

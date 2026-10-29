@@ -63,7 +63,8 @@ struct SceneShaderSourceTests {
     @Test func aMaterialBecomesOneLineAnInstruction() {
         let shader = SceneShader(id: "m", ops: [.constant([1, 0, 0]), .position, .noise(at: 1, scale: 4, detail: 3), .mix(a: 0, b: 2, fac: 2)], base: 3, metallic: 0, roughness: 2, problem: "")
         let source = SceneShaderSource.surface(shader)
-        #expect(source.contains("float3 r0 = float3(1.0, 0.0, 0.0);"))
+        #expect(source.contains("float3 r0 = k[0].xyz;"), "a constant is read from the buffer")
+        #expect(SceneShaderSource.constants(of: shader) == [SIMD4(1, 0, 0, 1)])
         #expect(source.contains("float3 r2 = float3(fbm(r1 * 4.0, 3));"))
         #expect(source.contains("float3 base = r3;"))
         #expect(SceneShaderSource.key(shader) != SceneShaderSource.key(nil))

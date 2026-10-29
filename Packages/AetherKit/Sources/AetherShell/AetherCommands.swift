@@ -138,6 +138,15 @@ public struct AetherCommands: Commands {
             Button("Frame Everything") { modeling.frameAll() }
                 .disabled(!onModel || modeling.document == nil)
             Divider()
+            Button("New Material") { modeling.newMaterial() }
+                .disabled(!onModel || modeling.selectedNode == nil || modeling.editing != nil)
+            Menu("Add a Layer") {
+                ForEach(LayerPattern.allCases) { pattern in
+                    Button(pattern.title) { modeling.addLayer(pattern) }
+                }
+            }
+            .disabled(!onModel || modeling.selectedNode == nil || modeling.editing != nil)
+            Divider()
             Button(modeling.editing == nil ? "Edit the Mesh  (⇥)" : "Back to the Objects  (⇥)") { modeling.toggleEdit() }
                 .disabled(!onModel || (modeling.editing == nil && !modeling.canEdit))
             Picker("Choose", selection: Binding(get: { modeling.editing?.part ?? .faces }, set: { modeling.showPart($0) })) {

@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use aether_layers::Stack;
 use proton_mesh::{Mesh, Step};
 use proton_scene::{mesh_path, Material, Modifier, Part, Scene};
 use serde::Deserialize;
@@ -95,6 +96,18 @@ enum Edit {
     RemoveModifier { id: String, index: usize },
     MoveModifier { id: String, index: usize, to: usize },
     SetModifier { id: String, index: usize, field: String, value: String },
+    /// A new material, a layer stack with nothing over its base, worn by
+    /// object `id`; answers its id.
+    NewMaterial { id: String, name: String },
+    /// A material's graph written from a stack; with none, the stack its
+    /// graph starts (its principled node's settings, no layers).
+    SetLayers {
+        material: String,
+        #[serde(default)]
+        stack: Option<Stack>,
+    },
+    /// Object `id` made to wear `material`, or none when it's empty.
+    Wear { id: String, material: String },
 }
 
 #[uniffi::export]
@@ -123,6 +136,8 @@ impl SceneEditor {
             "objects": h.scene.objects(),
             "materials": materials,
             "shaders": shaders,
+            // Each material as a layer stack, or null for a graph that isn't one.
+            "stacks": materials.iter().map(|m| (m.id.clone(), Stack::read(m))).collect::<HashMap<_, _>>(),
             "undo": h.undo.last().map(|s| &s.1),
             "redo": h.redo.last().map(|s| &s.1),
             "dirty": h.scene.to_text() != h.saved,
@@ -132,52 +147,13 @@ impl SceneEditor {
     /// Apply an edit (JSON, see `Edit`) as one undo step named `label`.
     /// Answers `{changed, id}`: whether anything did, and an added object's id.
     pub fn edit(&self, edit_json: String, label: String) -> Result<String, DiffuseError> {
-        let edit: Edit = serde_json::from_str(&edit_json).map_err(|e| failed(format!("not an edit: {e}")))?;
-        let mut h = lock(&self.held);
-        let before = h.scene.clone();
-        let mut made = None;
-        let changed = match edit {
-            Edit::Add { kind, name, parent, mesh, position } => {
-                let id = h.scene.add(&kind, &name, &parent);
-                if !mesh.is_empty() {
-                    h.scene.set_mesh(&id, &mesh).map_err(failed)?;
-                }
-                if let Some(at) = position {
-                    h.scene.set_transform(&id, Part::Position, at).map_err(failed)?;
-                }
-                made = Some(id);
-                true
-            }
-            Edit::Remove { id } => h.scene.remove(&id).map_err(failed)? > 0,
-            Edit::Rename { id, name } => {
-                let name = name.trim();
-                if name.is_empty() {
-                    return Err(failed("a name can't be empty"));
-                }
-                h.scene.rename(&id, name).map_err(failed)?
-            }
-            Edit::Reparent { id, parent } => h.scene.reparent(&id, &parent).map_err(failed)?,
-            Edit::SetTransform { id, part, to } => h.scene.set_transform(&id, part, to).map_err(failed)?,
-            Edit::SetMesh { id, path } => h.scene.set_mesh(&id, &path).map_err(failed)?,
-            Edit::AddModifier { id, kind } => {
-                h.scene.add_modifier(&id, &kind).map_err(failed)?;
-                true
-            }
-            Edit::RemoveModifier { id, index } => h.scene.remove_modifier(&id, index).map_err(failed)?,
-            Edit::MoveModifier { id, index, to } => h.scene.move_modifier(&id, index, to).map_err(failed)?,
-            Edit::SetModifier { id, index, field, value } => h.scene.set_modifier(&id, index, &field, &value).map_err(failed)?,
-        };
-        if changed {
-            let text = before.to_text();
-            h.redo.clear();
-            h.undo.push((text, label));
-            if h.undo.len() > STEPS {
-                h.undo.remove(0);
-            }
-        } else {
-            h.scene = before;
-        }
-        Ok(json(&serde_json::json!({ "changed": changed, "id": made })))
+        self.apply(edit_json, label, false)
+    }
+
+    /// As `edit`, but joining the newest step when it has the same name: the
+    /// rest of a colour dragged, or a number scrubbed, undoes as one.
+    pub fn edit_joined(&self, edit_json: String, label: String) -> Result<String, DiffuseError> {
+        self.apply(edit_json, label, true)
     }
 
     /// Take back the newest step; its name, or `None` with nothing to undo.
@@ -240,6 +216,74 @@ impl SceneEditor {
         }
         let mesh = if steps.is_empty() { base.shade(proton_mesh::CREASE) } else { base.apply(&steps).shade(proton_mesh::CREASE) };
         SceneMesh { positions: mesh.positions, normals: mesh.normals, triangles: mesh.triangles, bounds: mesh.bounds.to_vec(), closed: mesh.closed, skipped: mesh.skipped as u32, problem: None }
+    }
+}
+
+impl SceneEditor {
+    fn apply(&self, edit_json: String, label: String, join: bool) -> Result<String, DiffuseError> {
+        let edit: Edit = serde_json::from_str(&edit_json).map_err(|e| failed(format!("not an edit: {e}")))?;
+        let mut h = lock(&self.held);
+        let before = h.scene.clone();
+        let mut made = None;
+        let changed = match edit {
+            Edit::Add { kind, name, parent, mesh, position } => {
+                let id = h.scene.add(&kind, &name, &parent);
+                if !mesh.is_empty() {
+                    h.scene.set_mesh(&id, &mesh).map_err(failed)?;
+                }
+                if let Some(at) = position {
+                    h.scene.set_transform(&id, Part::Position, at).map_err(failed)?;
+                }
+                made = Some(id);
+                true
+            }
+            Edit::Remove { id } => h.scene.remove(&id).map_err(failed)? > 0,
+            Edit::Rename { id, name } => {
+                let name = name.trim();
+                if name.is_empty() {
+                    return Err(failed("a name can't be empty"));
+                }
+                h.scene.rename(&id, name).map_err(failed)?
+            }
+            Edit::Reparent { id, parent } => h.scene.reparent(&id, &parent).map_err(failed)?,
+            Edit::SetTransform { id, part, to } => h.scene.set_transform(&id, part, to).map_err(failed)?,
+            Edit::SetMesh { id, path } => h.scene.set_mesh(&id, &path).map_err(failed)?,
+            Edit::AddModifier { id, kind } => {
+                h.scene.add_modifier(&id, &kind).map_err(failed)?;
+                true
+            }
+            Edit::RemoveModifier { id, index } => h.scene.remove_modifier(&id, index).map_err(failed)?,
+            Edit::MoveModifier { id, index, to } => h.scene.move_modifier(&id, index, to).map_err(failed)?,
+            Edit::SetModifier { id, index, field, value } => h.scene.set_modifier(&id, index, &field, &value).map_err(failed)?,
+            Edit::NewMaterial { id, name } => {
+                let name = name.trim();
+                let name = if name.is_empty() { "Material" } else { name };
+                let made_id = h.scene.fresh_material_id(name);
+                h.scene.put_material(&Stack::default().graph(&made_id, name));
+                h.scene.wear(&id, &made_id).map_err(failed)?;
+                made = Some(made_id);
+                true
+            }
+            Edit::SetLayers { material, stack } => {
+                let had = h.scene.materials().into_iter().find(|m| m.id == material).ok_or_else(|| failed(format!("there is no material {material:?}")))?;
+                let stack = stack.unwrap_or_else(|| Stack::starting_from(&had)).checked().map_err(failed)?;
+                h.scene.put_material(&stack.graph(&had.id, &had.name))
+            }
+            Edit::Wear { id, material } => h.scene.wear(&id, &material).map_err(failed)?,
+        };
+        if changed && join && h.undo.last().is_some_and(|s| s.1 == label) {
+            h.redo.clear();
+        } else if changed {
+            let text = before.to_text();
+            h.redo.clear();
+            h.undo.push((text, label));
+            if h.undo.len() > STEPS {
+                h.undo.remove(0);
+            }
+        } else {
+            h.scene = before;
+        }
+        Ok(json(&serde_json::json!({ "changed": changed, "id": made })))
     }
 }
 
@@ -422,6 +466,33 @@ mod tests {
         assert_eq!(editor.redo().as_deref(), Some("Add Lamp"));
         editor.edit(format!(r#"{{"edit": "remove", "id": "{rig}"}}"#), "Remove".into()).unwrap();
         assert!(view(&editor)["objects"].as_array().unwrap().is_empty(), "with what's under it");
+    }
+
+    #[test]
+    fn a_material_is_a_layer_stack_and_a_drag_is_one_step() {
+        let editor = SceneEditor::create();
+        let cube: serde_json::Value = serde_json::from_str(&editor.edit(r#"{"edit": "add", "kind": "mesh", "name": "Cube"}"#.into(), "Add Cube".into()).unwrap()).unwrap();
+        let cube = cube["id"].as_str().unwrap().to_string();
+        let made: serde_json::Value = serde_json::from_str(&editor.edit(format!(r#"{{"edit": "newMaterial", "id": "{cube}", "name": "Paint"}}"#), "New Material".into()).unwrap()).unwrap();
+        let paint = made["id"].as_str().unwrap().to_string();
+        let v = view(&editor);
+        assert_eq!(v["objects"][0]["material"], paint.as_str());
+        assert_eq!(v["stacks"][&paint]["layers"].as_array().map(Vec::len), Some(0), "a stack with nothing over its base");
+        assert_eq!(v["shaders"][0]["problem"], "");
+
+        let red = |r: f64| format!(r#"{{"edit": "setLayers", "material": "{paint}", "stack": {{"base": {{"color": [{r}, 0, 0], "metallic": 0, "roughness": 0.5}}, "layers": [
+            {{"pattern": "noise", "surface": {{"color": [0, 0, 0], "metallic": 0, "roughness": 1}}, "amount": 1, "scale": 4, "detail": 3, "coverage": 0.5, "edge": 0.5}}]}}}}"#);
+        editor.edit_joined(red(0.5), "Base Colour".into()).unwrap();
+        editor.edit_joined(red(0.7), "Base Colour".into()).unwrap();
+        editor.edit_joined(red(0.9), "Base Colour".into()).unwrap();
+        let v = view(&editor);
+        assert_eq!(v["stacks"][&paint]["base"]["color"][0].as_f64(), Some(0.9));
+        assert_eq!(v["stacks"][&paint]["layers"][0]["pattern"], "noise");
+        assert_eq!(editor.undo().as_deref(), Some("Base Colour"), "three changes, one step");
+        assert_eq!(view(&editor)["stacks"][&paint]["layers"].as_array().map(Vec::len), Some(0));
+        assert_eq!(editor.undo().as_deref(), Some("New Material"));
+        assert!(view(&editor)["objects"][0]["material"].is_null() || view(&editor)["objects"][0]["material"] == "");
+        assert!(editor.edit(format!(r#"{{"edit": "wear", "id": "{cube}", "material": "nothing-1"}}"#), "Wear".into()).is_err());
     }
 
     #[test]

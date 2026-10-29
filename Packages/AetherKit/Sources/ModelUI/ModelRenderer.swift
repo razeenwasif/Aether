@@ -183,7 +183,8 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             if let edit { overlay = (world, edit) }
             let mesh = edit.map(cageMesh) ?? (node.kind == "mesh" && !node.mesh.isEmpty ? model.document?.mesh(for: node) : nil)
             let shape = edit.map { "edit:\($0.shapeRevision)" } ?? node.shape
-            guard let mesh, let held = held(node.id, shape, mesh), let pipeline = surface(node.material.isEmpty ? nil : shaders[node.material]) else {
+            let shader = node.material.isEmpty ? nil : shaders[node.material]
+            guard let mesh, let held = held(node.id, shape, mesh), let pipeline = surface(shader) else {
                 standIn(for: node, bounds: mesh?.bounds, world: world, picked: picked, into: &stand)
                 continue
             }
@@ -202,6 +203,10 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             encoder.setVertexBytes(&object, length: MemoryLayout<ObjectUniforms>.stride, index: 2)
             encoder.setFragmentBytes(&frame, length: MemoryLayout<FrameUniforms>.stride, index: 1)
             encoder.setFragmentBytes(&object, length: MemoryLayout<ObjectUniforms>.stride, index: 2)
+            // A program's constants (at most 4 KB: 256 of them, far past any
+            // stack's).
+            var constants = Array(SceneShaderSource.constants(of: shader).prefix(256))
+            encoder.setFragmentBytes(&constants, length: constants.count * MemoryLayout<SIMD4<Float>>.stride, index: 4)
             encoder.drawIndexedPrimitives(type: .triangle, indexCount: held.count, indexType: .uint32, indexBuffer: held.indices, indexBufferOffset: 0)
             triangles += held.count / 3
         }

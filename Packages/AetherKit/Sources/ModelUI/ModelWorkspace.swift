@@ -326,14 +326,8 @@ private struct ModelInspector: View {
                         MeshSection(model: model, document: document, node: node)
                         ModifiersSection(model: model, node: node)
                     }
-                    if !node.material.isEmpty {
-                        PanelSection("Material") {
-                            let name = document.state.materials.first { $0.id == node.material }?.name ?? node.material
-                            Text(name).font(.aeBodyStrong).foregroundStyle(Color.inkHi)
-                            if let problem = document.state.shaders.first(where: { $0.id == node.material })?.problem, !problem.isEmpty {
-                                Text("Drawn grey: \(problem).").font(.aeSmall).foregroundStyle(Color.amber).fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
+                    if node.kind == "mesh" || !node.material.isEmpty {
+                        MaterialSection(model: model, document: document, node: node)
                     }
                 } else {
                     PanelSection("Scene") {
@@ -385,7 +379,7 @@ private struct TransformSection: View {
 }
 
 /// A number typed, kept on ↩ or when the field is left.
-private struct DecimalField: View {
+struct DecimalField: View {
     let value: Double
     var axis: Int?
     let commit: (Double) -> Void

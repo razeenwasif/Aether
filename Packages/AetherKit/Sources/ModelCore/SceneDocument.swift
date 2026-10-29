@@ -58,19 +58,22 @@ public final class SceneDocument {
 
     // MARK: Changes
 
-    /// Apply `edit` as one undo step named `label`. Answers whether anything
-    /// changed and an added object's id, or `nil` with the reason in
-    /// `refusal`.
+    /// Apply `edit` as one undo step named `label`. With `joining`, it joins
+    /// the newest step when that has the same name (the rest of a colour
+    /// dragged). Answers whether anything changed and an added object's id,
+    /// or `nil` with the reason in `refusal`.
     @discardableResult
-    public func apply(_ edit: SceneEdit, label: String) -> (changed: Bool, id: String?)? {
+    public func apply(_ edit: SceneEdit, label: String, joining: Bool = false) -> (changed: Bool, id: String?)? {
         struct Answer: Decodable { var changed: Bool; var id: String? }
         do {
             let json = String(decoding: try encoder.encode(edit), as: UTF8.self)
-            let answer = try JSONDecoder().decode(Answer.self, from: Data(editor.edit(editJson: json, label: label).utf8))
+            let joins = joining && state.undo == label
+            let text = joining ? try editor.editJoined(editJson: json, label: label) : try editor.edit(editJson: json, label: label)
+            let answer = try JSONDecoder().decode(Answer.self, from: Data(text.utf8))
             refusal = nil
             if answer.changed {
                 refresh()
-                onStep?(label)
+                if !joins { onStep?(label) }
             }
             return (answer.changed, answer.id)
         } catch {

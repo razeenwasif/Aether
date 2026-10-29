@@ -96,6 +96,10 @@ extension AppModel {
             }
             items.append(OmniItem(.here, "Choose a Mesh for \(node.name)…", detail: ".obj") { m.chooseMesh(for: node.id) })
             items.append(OmniItem(.here, "Edit \(node.name)’s Mesh", detail: "⇥") { m.enterEdit() })
+            items.append(OmniItem(.here, "New Material for \(node.name)", detail: "Material") { m.newMaterial() })
+            items += LayerPattern.allCases.map { pattern in
+                OmniItem(.here, "Add a \(pattern.title) Layer to \(node.name)", detail: "Material") { m.addLayer(pattern) }
+            }
         }
         items.append(OmniItem(.here, "All Scenes") { m.close() })
         return items
