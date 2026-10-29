@@ -151,6 +151,16 @@ impl MeshEditor {
         Ok(made.into_iter().flatten().collect())
     }
 
+    /// Bevel `edges` (flattened, two vertex numbers each) `width` wide, one
+    /// segment; answers the new faces.
+    pub fn bevel(&self, edges: Vec<u32>, width: f64) -> Result<Vec<u32>, DiffuseError> {
+        let mut h = lock(&self.held);
+        let before = h.poly.clone();
+        let made = h.poly.bevel(&pairs(&edges), width).map_err(failed)?;
+        h.step(before, "Bevel");
+        Ok(made)
+    }
+
     pub fn delete_faces(&self, faces: Vec<u32>) {
         let mut h = lock(&self.held);
         let before = h.poly.clone();
@@ -255,6 +265,10 @@ mod tests {
         assert_eq!(editor.redo().as_deref(), Some("Extrude"));
         assert!(editor.extrude(vec![99], 1.0).is_empty() && editor.cage().undo.as_deref() == Some("Extrude"), "nothing chosen is no step");
 
+        let edge = editor.cage().edges[0..2].to_vec();
+        assert!(editor.bevel(edge.clone(), 5.0).is_err() && editor.cage().undo.as_deref() == Some("Extrude"), "a refused bevel is no step");
+        assert_eq!(editor.bevel(edge, 0.1).unwrap().len(), 1);
+        assert_eq!(editor.undo().as_deref(), Some("Bevel"));
         let edge = editor.cage().edges[0..2].to_vec();
         assert!(editor.loop_cut(edge[0], edge[1], 0.5).is_ok());
         editor.save(None).unwrap();

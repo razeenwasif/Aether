@@ -60,10 +60,11 @@ public final class ModelWorkspaceModel {
     public internal(set) var stats = ModelStats()
     /// The chosen object's mesh, open in Edit mode (⇥).
     public internal(set) var editing: MeshEditSession?
-    /// How far Extrude pulls, how far in Inset goes, and where along its
-    /// edges a loop cut falls.
+    /// How far Extrude pulls, how far in Inset goes, how wide a bevel is,
+    /// and where along its edges a loop cut falls.
     public var extrudeDistance = 0.25
     public var insetAmount = 0.1
+    public var bevelWidth = 0.05
     public var cutAt = 0.5
     /// A drag sliding what's chosen: the last point, the way the slide goes
     /// on screen in points a metre, and whether it has started (it starts,

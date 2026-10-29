@@ -7,7 +7,7 @@
 //! [`Poly`], a list of positions and a list of faces (each a ring of vertex
 //! numbers, counter-clockwise seen from outside, as OBJ has them), writes
 //! them back, and makes the edits Edit mode offers: move, extrude, inset,
-//! loop cut and delete.
+//! loop cut, bevel and delete.
 //!
 //! ## What writing loses
 //!
@@ -464,6 +464,236 @@ impl Poly {
                 None => return (crosses, false),
             }
         }
+    }
+
+    /// Bevel `edges`, one segment: each becomes a face of its own, its sides
+    /// `width` in from where the edge was on each face beside it. Where a
+    /// bevelled edge meets one that isn't, the end slides along that one;
+    /// where two meet on a face, the face's corner moves in from both; where
+    /// a vertex is left with a gap, a face fills it (three bevelled edges at
+    /// a cube's corner make a triangle), or, where one bevel ends among four
+    /// faces or more, its own face reaches into it. Answers the new faces:
+    /// the bevels, then the corners.
+    pub fn bevel(&mut self, edges: &[[u32; 2]], width: f64) -> Result<Vec<u32>, String> {
+        if width.is_nan() || width <= 0.0 {
+            return Err("a bevel needs a width above nothing".into());
+        }
+        let mut sides: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+        for (i, f) in self.faces.iter().enumerate() {
+            for (a, b) in ring(f) {
+                sides.entry(key(a, b)).or_default().push(i);
+            }
+        }
+        let chosen: HashSet<(u32, u32)> = edges.iter().map(|e| key(e[0], e[1])).filter(|e| sides.contains_key(e)).collect();
+        if chosen.is_empty() {
+            return Err("choose the edges to bevel".into());
+        }
+        if chosen.iter().any(|e| sides[e].len() != 2) {
+            return Err("a bevel runs between two faces, and one of these edges has one face, or more than two".into());
+        }
+        let bevelled = |a: u32, b: u32| chosen.contains(&key(a, b));
+        let touched: HashSet<u32> = chosen.iter().flat_map(|&(a, b)| [a, b]).collect();
+
+        // Each corner of a face at a touched vertex: where it goes. A corner
+        // between two bevelled edges is a new point; one beside one bevelled
+        // edge slides along its other edge, as far as puts it `width` from
+        // the bevelled one. `reach` keeps how far along each edge from each
+        // end the bevel takes, to refuse one wider than the edges allow.
+        enum Corner {
+            Both(Vec3),
+            Slide(u32),
+            Neither,
+        }
+        let mut corner: HashMap<(usize, u32), Corner> = HashMap::new();
+        let mut slides: HashMap<(u32, u32), Vec<f64>> = HashMap::new();
+        let mut reach: HashMap<(u32, u32), f64> = HashMap::new();
+        for (f, face) in self.faces.iter().enumerate() {
+            let k = face.len();
+            for i in 0..k {
+                let v = face[i];
+                if !touched.contains(&v) {
+                    continue;
+                }
+                let (p, n) = (face[(i + k - 1) % k], face[(i + 1) % k]);
+                let (inward, outward) = (bevelled(p, v), bevelled(v, n));
+                let here = self.positions[v as usize];
+                let u1 = normalize(sub(self.positions[p as usize], here));
+                let u2 = normalize(sub(self.positions[n as usize], here));
+                let sin = length(cross(u1, u2));
+                if (inward || outward) && sin < 1e-6 {
+                    return Err("a bevelled edge meets another in a straight line, so there's no corner to bevel".into());
+                }
+                let t = width / sin;
+                let mut far = |end: u32, by: f64| {
+                    let r = reach.entry((v, end)).or_insert(0.0);
+                    *r = r.max(by);
+                };
+                corner.insert(
+                    (f, v),
+                    match (inward, outward) {
+                        (true, true) => {
+                            let along = t * (1.0 + dot(u1, u2));
+                            far(p, along);
+                            far(n, along);
+                            Corner::Both(add(here, scale(add(u1, u2), t)))
+                        }
+                        (true, false) => {
+                            far(n, t);
+                            slides.entry((v, n)).or_default().push(t);
+                            Corner::Slide(n)
+                        }
+                        (false, true) => {
+                            far(p, t);
+                            slides.entry((v, p)).or_default().push(t);
+                            Corner::Slide(p)
+                        }
+                        (false, false) => Corner::Neither,
+                    },
+                );
+            }
+        }
+        for (&(v, end), &r) in &reach {
+            let back = reach.get(&(end, v)).copied().unwrap_or(0.0);
+            if r + back >= length(sub(self.positions[end as usize], self.positions[v as usize])) * 0.999 {
+                return Err("the bevel is wider than the edges beside it allow: try a narrower one".into());
+            }
+        }
+
+        // The points: the slides along each edge, one shared by both faces.
+        let old: Vec<u32> = touched.iter().copied().collect();
+        let mut slid: HashMap<(u32, u32), u32> = HashMap::new();
+        let mut order: Vec<_> = slides.into_iter().collect();
+        order.sort_by_key(|s| s.0);
+        for ((v, end), ts) in order {
+            let t = ts.iter().sum::<f64>() / ts.len() as f64;
+            let (a, b) = (self.positions[v as usize], self.positions[end as usize]);
+            slid.insert((v, end), self.positions.len() as u32);
+            self.positions.push(add(a, scale(normalize(sub(b, a)), t)));
+        }
+        // Each corner's points, in the face's winding.
+        let mut points: HashMap<(usize, u32), Vec<u32>> = HashMap::new();
+        let mut keys: Vec<_> = corner.keys().copied().collect();
+        keys.sort();
+        for (f, v) in keys {
+            let face = &self.faces[f];
+            let k = face.len();
+            let i = face.iter().position(|&x| x == v).expect("a corner of its face");
+            let (p, n) = (face[(i + k - 1) % k], face[(i + 1) % k]);
+            let run = match corner[&(f, v)] {
+                Corner::Both(at) => {
+                    self.positions.push(at);
+                    vec![(self.positions.len() - 1) as u32]
+                }
+                Corner::Slide(end) => vec![slid[&(v, end)]],
+                Corner::Neither => {
+                    let (a, b) = (slid.get(&(v, p)).copied().unwrap_or(v), slid.get(&(v, n)).copied().unwrap_or(v));
+                    if a == b {
+                        vec![a]
+                    } else {
+                        vec![a, b]
+                    }
+                }
+            };
+            points.insert((f, v), run);
+        }
+
+        // Each bevelled edge's face, between the two faces' new sides.
+        let mut made = Vec::new();
+        let mut sorted: Vec<_> = chosen.iter().copied().collect();
+        sorted.sort();
+        let mut bevel_of: HashMap<u32, Vec<usize>> = HashMap::new();
+        for (a, b) in sorted {
+            bevel_of.entry(a).or_default().push(made.len());
+            bevel_of.entry(b).or_default().push(made.len());
+            let fs = &sides[&(a, b)];
+            let forward = |f: usize| ring(&self.faces[f]).any(|e| e == (a, b));
+            let (fwd, back) = match (forward(fs[0]), forward(fs[1])) {
+                (true, false) => (fs[0], fs[1]),
+                (false, true) => (fs[1], fs[0]),
+                _ => return Err("the faces either side of a bevelled edge face opposite ways: the mesh needs its normals made consistent".into()),
+            };
+            let first = |f: usize, v: u32| points[&(f, v)][0];
+            let last = |f: usize, v: u32| *points[&(f, v)].last().expect("a point at least");
+            made.push(vec![first(fwd, b), last(fwd, a), first(back, a), last(back, b)]);
+        }
+        // The gap left at a vertex, if any: the corners' points round it.
+        let mut around: Vec<u32> = touched.iter().copied().collect();
+        around.sort();
+        for v in around {
+            let mut next_of: HashMap<u32, (usize, u32)> = HashMap::new();
+            for (f, face) in self.faces.iter().enumerate() {
+                let k = face.len();
+                if let Some(i) = face.iter().position(|&x| x == v) {
+                    next_of.insert(face[(i + k - 1) % k], (f, face[(i + 1) % k]));
+                }
+            }
+            let ends: HashSet<u32> = next_of.values().map(|c| c.1).collect();
+            let mut starts: Vec<u32> = next_of.keys().copied().filter(|p| !ends.contains(p)).collect();
+            starts.sort();
+            let start = starts.first().copied().or_else(|| next_of.keys().copied().min());
+            let Some(mut at) = start else { continue };
+            let mut gap: Vec<u32> = Vec::new();
+            let mut seen = HashSet::new();
+            while let Some(&(f, n)) = next_of.get(&at) {
+                if !seen.insert(f) {
+                    break;
+                }
+                for &q in &points[&(f, v)] {
+                    if gap.last() != Some(&q) {
+                        gap.push(q);
+                    }
+                }
+                at = n;
+            }
+            if gap.len() > 1 && gap.first() == gap.last() {
+                gap.pop();
+            }
+            if gap.len() < 3 {
+                continue;
+            }
+            gap.reverse();
+            // Where one bevel ends among four or more faces, the gap is the
+            // end of that bevel's face (often all in a line with it), so it
+            // joins it: the run of the gap from one of the face's corners
+            // there round to the other goes between them.
+            match bevel_of[&v].as_slice() {
+                &[only] => {
+                    let face = &mut made[only];
+                    let k = face.len();
+                    let Some((i, at)) = (0..k).find_map(|i| {
+                        let (x, y) = (face[i], face[(i + 1) % k]);
+                        let at = gap.iter().position(|&q| q == x)?;
+                        (gap[(at + gap.len() - 1) % gap.len()] == y).then_some((i, at))
+                    }) else {
+                        made.push(gap);
+                        continue;
+                    };
+                    let run: Vec<u32> = (1..gap.len() - 1).map(|j| gap[(at + j) % gap.len()]).collect();
+                    face.splice(i + 1..i + 1, run);
+                }
+                _ => made.push(gap),
+            }
+        }
+
+        for (f, face) in self.faces.iter_mut().enumerate() {
+            let mut out: Vec<u32> = Vec::with_capacity(face.len() + 2);
+            for &v in face.iter() {
+                for &q in points.get(&(f, v)).map(|r| r.as_slice()).unwrap_or(&[v]) {
+                    if out.last() != Some(&q) {
+                        out.push(q);
+                    }
+                }
+            }
+            if out.len() > 1 && out.first() == out.last() {
+                out.pop();
+            }
+            *face = out;
+        }
+        let from = self.faces.len() as u32;
+        let count = made.len() as u32;
+        self.faces.extend(made);
+        self.compact(&old);
+        Ok((from..from + count).collect())
     }
 
     /// Take out `faces`, and the vertices only they used.

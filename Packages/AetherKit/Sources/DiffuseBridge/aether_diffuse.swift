@@ -2062,6 +2062,12 @@ public func FfiConverterTypeGateway_lower(_ value: Gateway) -> UInt64 {
 
 public protocol MeshEditorProtocol: AnyObject, Sendable {
     
+    /**
+     * Bevel `edges` (flattened, two vertex numbers each) `width` wide, one
+     * segment; answers the new faces.
+     */
+    func bevel(edges: [UInt32], width: Double) throws  -> [UInt32]
+    
     func cage()  -> MeshCage
     
     /**
@@ -2191,6 +2197,21 @@ public static func `open`(path: String)throws  -> MeshEditor  {
 }
     
 
+    
+    /**
+     * Bevel `edges` (flattened, two vertex numbers each) `width` wide, one
+     * segment; answers the new faces.
+     */
+open func bevel(edges: [UInt32], width: Double)throws  -> [UInt32]  {
+    return try  FfiConverterSequenceUInt32.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_mesheditor_bevel(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceUInt32.lower(edges),
+        FfiConverterDouble.lower(width),uniffiCallStatus
+    )
+})
+}
     
 open func cage() -> MeshCage  {
     return try!  FfiConverterTypeMeshCage_lift(try! rustCall() {
@@ -4564,6 +4585,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_mesheditor_bevel() != 31540) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_mesheditor_cage() != 15443) {

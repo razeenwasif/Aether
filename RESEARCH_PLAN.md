@@ -1084,10 +1084,42 @@ Not yet:
 - **Tests:** 8 in `aether-poly`, 2 in the bridge, 7 in Swift (the session's edits and steps, a slide as one step, choosing across parts, picking a face, corner and edge; the copy rule for a primitive and a shared mesh, the file written, the primitive untouched; dragging and ⌥-dragging the chosen face). 307 Rust and 139 Swift tests pass.
 - **Not done:** bevel. A bevel that meets other bevelled edges at a corner needs more than this pass had room for, so it's next. Also not done: undo across leaving Edit mode, and edge and corner slides along anything but the faces' normal.
 
+**2026-10-29 · Model: bevel.** The user said "continue with the impl", and bevel was the next step proposed.
+
+- **`Poly::bevel` in `aether-poly`:** one segment, a chamfer.
+  - Each chosen edge becomes a face, its sides `width` in from where the edge was, on each face beside it.
+  - Each corner of a face at a touched vertex moves:
+    - between two bevelled edges: in from both, to where the two offset lines meet
+    - beside one bevelled edge: along its other edge, as far as puts it `width` from the bevelled one, the point shared with the face across that edge (averaged when both faces want one)
+    - between two edges that aren't bevelled: the slide points on those edges, or the vertex itself where an edge has none
+  - The gap then left round a vertex is the corners' points in order round it. With three points or more:
+    - Where two or more bevels meet, a face fills it (a triangle at a cube's corner).
+    - Where one bevel ends among four faces or more, the gap goes into that bevel's own face, because there the gap's points lie in a line (both slides and the kept vertex sit on the cube's edge), so a face of its own would be flat.
+  - Refused, with the reason: a width of nothing; no edges; an edge with one face or more than two; a bevel wider than the edges beside it (what both ends take from an edge must be less than its length); a bevelled edge meeting another in a straight line; faces either side winding the same way.
+  - The old faces keep their numbers and the new ones are answered, so they stay chosen.
+- **Through the bridge:** `MeshEditor.bevel`, one step named "Bevel"; a refused bevel makes no step.
+- **In Edit mode:**
+  - The edges bevelled are the chosen ones in Edges, those with both ends chosen in Vertices, and every edge of the faces chosen in Faces.
+  - The new faces are chosen after, in Faces.
+  - Reached by `b`, an inspector row with the width (0.05 m to start), the dock, Scene ▸ Bevel and the omnibar.
+- **A fault the app check turned up, guarded against but not yet confirmed in the app:** a face chosen by clicking was let go about a second later, with nothing else pressed, so Bevel, Extrude and `b` each found nothing chosen. Only a viewport click with nothing under it lets go like that, so the likely cause is a mouse-up with no mouse-down before it, probably sent by the testing tool's background clicks at the real pointer's place. The viewport counted such a release as a click; it now ignores one.
+- **Checked in the app,** on a throwaway scene, deleted after, with real clicks (full-screen control):
+  - A clicked top face stayed chosen, 2 s on.
+  - Bevel bevelled its four edges: "4 of 10 faces chosen", the bevels drawn in blue round the top.
+  - After undo, in Edges, one edge chosen and `b` made a single bevel: "1 of 7 faces chosen".
+  - At a width of 1.5 m the bevel was refused with "The bevel is wider than the edges beside it allow: try a narrower one."
+  - The copy on disk held its 6 faces after the undo and the refusal.
+- **Not confirmed:** the release guard, since after the screen lock the testing tool couldn't capture the window in the background, where the stray release happened. Real clicks keep what's chosen either way. Once, the first viewport click straight after typing a width chose nothing; the same click a moment later worked.
+- **Tests:**
+  - 5 in `aether-poly`: one edge (a face and two pentagons), all twelve (26 faces, a triangle each corner), two meeting at a corner, one ending among four faces, and refusals. Each checks the result is a sound solid: closed, wound one way, every face outward, V − E + F = 2.
+  - The bridge's test, and 1 in Swift: refusals change nothing, the bevel chosen after, a face's four edges.
+  - 312 Rust and 140 Swift tests pass.
+- **Not done:** more than one segment (a rounded bevel); bevelling corners on their own; a width set by dragging.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, and Edit mode with extrude, inset, loop cut and the face as the handle (§10a). The other three workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, and Edit mode with extrude, inset, loop cut, bevel and the face as the handle (§10a). The other three workspaces are placeholders.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, moved to Claude, and were done with M1 (§7a, §6.4a).
@@ -1108,6 +1140,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Model, starting with what Proton's Modeling had: the scene format, the outliner and the modifier stack, on a Metal viewport~~: done, see §10a.
 
-~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a, apart from bevel.
+~~Model's Edit mode and direct handles (choose corners, edges and faces; extrude, inset, loop cut)~~: done, see §10a. ~~Bevel~~: done, see §10a, one segment.
 
-**Next, proposed:** bevel, then material layers. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.
+**Next, proposed:** material layers. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. M2's exit criterion also wants a Model depth pass published as an asset.

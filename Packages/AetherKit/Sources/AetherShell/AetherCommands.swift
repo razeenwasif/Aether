@@ -148,6 +148,8 @@ public struct AetherCommands: Commands {
                 .disabled(!onModel || modeling.editing == nil)
             Button("Inset  (i)") { modeling.insetChosen() }
                 .disabled(!onModel || modeling.editing == nil)
+            Button("Bevel  (b)") { modeling.bevelChosen() }
+                .disabled(!onModel || modeling.editing == nil)
             Button("Loop Cut") { modeling.loopCutChosen() }
                 .keyboardShortcut("r")
                 .disabled(!onModel || modeling.editing == nil)

@@ -83,6 +83,9 @@ final class ModelMTKView: MTKView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        // A release with no press here before it (one sent on its own) is
+        // no click.
+        guard last != nil else { return }
         defer { last = nil }
         if sliding {
             sliding = false

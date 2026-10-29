@@ -451,6 +451,7 @@ private struct EditSection: View {
             Text(summary).font(.aeSmall).foregroundStyle(Color.ink2)
             row("Extrude", key: "e", value: model.extrudeDistance, unit: "m out", set: { model.extrudeDistance = $0 }, action: model.extrudeChosen)
             row("Inset", key: "i", value: model.insetAmount, unit: "m in", set: { model.insetAmount = $0 }, action: model.insetChosen)
+            row("Bevel", key: "b", value: model.bevelWidth, unit: "m wide", set: { model.bevelWidth = $0 }, action: model.bevelChosen)
             row("Loop Cut", key: "⌘R", value: model.cutAt, unit: "along", set: { model.cutAt = min(0.98, max(0.02, $0)) }, action: model.loopCutChosen)
             HStack {
                 Button("Delete", role: .destructive, action: model.deleteChosen)
@@ -663,6 +664,7 @@ private struct ModelDock: View {
         Divider().frame(height: 20).padding(.horizontal, 4)
         IconButton("arrow.up.square", label: "Extrude (e)", action: model.extrudeChosen)
         IconButton("square.inset.filled", label: "Inset (i)", action: model.insetChosen)
+        IconButton("skew", label: "Bevel (b)", action: model.bevelChosen)
         IconButton("rectangle.split.2x1", label: "Loop Cut (⌘R)", action: model.loopCutChosen)
         IconButton("trash", label: "Delete (⌫)", action: model.deleteChosen)
         Divider().frame(height: 20).padding(.horizontal, 4)

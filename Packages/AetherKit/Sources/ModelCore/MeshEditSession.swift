@@ -166,6 +166,17 @@ public final class MeshEditSession {
         }
     }
 
+    /// The edges what's chosen makes up: those with both ends chosen, in
+    /// Vertices; every edge of each face, in Faces.
+    public var chosenEdges: [MeshEdge] {
+        let set: Set<MeshEdge> = switch part {
+        case .vertices: Set(cage.edges.filter { vertices.contains($0.a) && vertices.contains($0.b) })
+        case .edges: edges
+        case .faces: Set(faces.flatMap { cage.edges(of: $0) })
+        }
+        return set.sorted { ($0.a, $0.b) < ($1.a, $1.b) }
+    }
+
     /// Choose corners, edges or faces, carrying over what was chosen.
     public func show(_ next: EditPart) {
         guard next != part else { return }
@@ -269,6 +280,23 @@ public final class MeshEditSession {
             let made = try editor.loopCut(a: edge.a, b: edge.b, t: t)
             let loop = stride(from: 0, to: made.count - 1, by: 2).map { MeshEdge(made[$0], made[$0 + 1]) }
             settle(.edges, edges: Set(loop), step: "Loop Cut")
+            return true
+        } catch {
+            let why = SceneDocument.describe(error)
+            return refuse(why.prefix(1).uppercased() + why.dropFirst() + ".")
+        }
+    }
+
+    /// Bevel the chosen edges `width` wide, one segment; the new faces are
+    /// chosen after.
+    @discardableResult
+    public func bevel(by width: Double) -> Bool {
+        let chosen = chosenEdges
+        guard !chosen.isEmpty else { return refuse("Choose edges to bevel: in Faces, every edge of the faces chosen is bevelled.") }
+        guard width > 0 else { return refuse("Bevel by more than nothing.") }
+        do {
+            let made = try editor.bevel(edges: chosen.flatMap { [$0.a, $0.b] }, width: width)
+            settle(.faces, faces: made, step: "Bevel")
             return true
         } catch {
             let why = SceneDocument.describe(error)

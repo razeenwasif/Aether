@@ -29,7 +29,7 @@ swift test --package-path Packages/AetherKit       # the graph, flows, canvases,
 | | |
 |---|---|
 | `cores/aether-diffuse` | UniFFI bridge over `proton-diffuse` and `proton-raster`: flows, edits and undo, checks, sealed files, pictures, the Nexus client, `CanvasEditor` (a canvas painted and composited live), `SceneEditor` (a scene edited, and each object's triangles with its modifiers applied), and `MeshEditor` (a mesh in Edit mode) |
-| `cores/aether-poly` | Aether's own: a mesh kept as polygons, read from and written to `.obj`, and Edit mode's extrude, inset, loop cut and delete |
+| `cores/aether-poly` | Aether's own: a mesh kept as polygons, read from and written to `.obj`, and Edit mode's extrude, inset, loop cut, bevel and delete |
 | `cores/proton-diffuse`, `cores/proton-raster`, `cores/proton-scene`, `cores/proton-mesh` | Proton's Diffuse core, raster engine, scene format and mesh maths (`.obj`, mirror, array, subdivide), brought from Proton at `1e1aeb7`, without their TypeScript bindings. The file formats stay Proton's |
 | `docs/DIFFUSE.md` | Proton's Diffuse design and the `/img/v1` contract, which `proton-diffuse` cites and tests against |
 | `Packages/AetherKit` | Everything Swift: `AetherGraph` (the project: assets, links, transactions, one history, the package), `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `CanvasCore` (a canvas open for editing, its tiles), `CanvasUI` (the Canvas workspace), `ModelCore` (a scene open for editing, a mesh in Edit mode, the camera and picking maths, the Metal shader source), `ModelUI` (the Model workspace and its Metal viewport), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands, the omnibar) |
@@ -96,14 +96,14 @@ Scenes are Proton's `scene.proton.json` format, edited through `proton-scene`, o
 
 **Edit mode** (`⇥`, Edit the Mesh in the inspector, or the dock's pencil) opens the chosen object's mesh: its faces as the file has them, quads kept as quads, drawn without its modifiers, with its edges over it. Choose corners, edges or faces (`1` `2` `3`) with a click, `⇧`-click to add or take away. Then:
 - **Drag what's chosen** to slide it along its normal: the face is the handle, as the design has it. `⌥`-drag pulls the chosen faces out first. A drag anywhere else still turns the view.
-- **Extrude** (`e`) pulls the chosen faces out together, walls round their rim. **Inset** (`i`) makes a smaller face inside each, its edges the amount in. **Loop Cut** (`⌘R`) cuts across the ring of quads the chosen edge belongs to, part of the way along each edge. **Delete** (`⌫`) takes out what's chosen. The amounts are in the inspector.
+- **Extrude** (`e`) pulls the chosen faces out together, walls round their rim. **Inset** (`i`) makes a smaller face inside each, its edges the amount in. **Loop Cut** (`⌘R`) cuts across the ring of quads the chosen edge belongs to, part of the way along each edge. **Bevel** (`b`) turns each chosen edge into a face of its own, the width across (in Faces, every edge of the faces chosen), one segment; a cube's corner where three bevels meet gets a triangle. **Delete** (`⌫`) takes out what's chosen. The amounts are in the inspector.
 - Each is one undo step, and a drag is one step however long. Edit mode's steps are its own: they go when you leave it.
 
 Edit mode writes the `.obj`, 300 ms after each edit and on leaving, but only a copy the object owns. A file another object draws, one of the primitives Add writes, or one with texture coordinates, normals, materials or groups (which Edit mode can't keep) is copied to `meshes/<name> mesh.obj` first, and the notice says so. So a file from Blender is never written over. Leaving (`⇥`, or Done) draws it with its modifiers again.
 
-Keys: `f` frame the chosen object, or everything · `⇧A` frame everything · `⌫` remove · `⎋` choose nothing · `⇥` Edit mode · `⌘N` new scene · `⌘O` open · `⇧⌘W` back to all scenes. In Edit mode: `1` `2` `3` corners, edges, faces · `e` extrude · `i` inset · `⌘R` loop cut · `a` everything · `⌫` delete · `f` frame what's chosen · `⎋` nothing, then back to the objects. Scene ▸ Add, and the omnibar, add objects and modifiers.
+Keys: `f` frame the chosen object, or everything · `⇧A` frame everything · `⌫` remove · `⎋` choose nothing · `⇥` Edit mode · `⌘N` new scene · `⌘O` open · `⇧⌘W` back to all scenes. In Edit mode: `1` `2` `3` corners, edges, faces · `e` extrude · `i` inset · `b` bevel · `⌘R` loop cut · `a` everything · `⌫` delete · `f` frame what's chosen · `⎋` nothing, then back to the objects. Scene ▸ Add, and the omnibar, add objects and modifiers.
 
-Not yet: bevel, editing materials, and Render.
+Not yet: a bevel of more than one segment, editing materials, and Render.
 
 ## Canvas
 

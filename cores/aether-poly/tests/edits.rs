@@ -167,3 +167,106 @@ fn moving_and_deleting() {
     cut.delete_edges(&edges[..1]);
     assert_eq!(cut.faces.len(), 4, "the two faces along it");
 }
+
+/// A solid whose faces all wind the same way, outward from the middle,
+/// with V − E + F = 2.
+fn sound(poly: &Poly) {
+    assert!(poly.closed(), "closed");
+    let mut directed = std::collections::HashSet::new();
+    for f in &poly.faces {
+        for i in 0..f.len() {
+            assert!(directed.insert((f[i], f[(i + 1) % f.len()])), "each edge run once each way");
+        }
+    }
+    for f in 0..poly.faces.len() {
+        let (c, n) = (poly.centroid(f), poly.face_normal(f));
+        assert!(c[0] * n[0] + c[1] * n[1] + c[2] * n[2] > 0.0, "face {f} faces out");
+    }
+    let (v, e, f) = (poly.positions.len() as i64, poly.edges().len() as i64, poly.faces.len() as i64);
+    assert_eq!(v - e + f, 2, "a sphere's worth of faces");
+}
+
+/// The cube's edge between the faces facing `a` and `b`.
+fn between(poly: &Poly, a: [f64; 3], b: [f64; 3]) -> [u32; 2] {
+    let (fa, fb) = (&poly.faces[facing(poly, a) as usize], &poly.faces[facing(poly, b) as usize]);
+    let shared: Vec<u32> = fa.iter().copied().filter(|v| fb.contains(v)).collect();
+    [shared[0], shared[1]]
+}
+
+#[test]
+fn bevelling_one_edge_makes_a_face_and_two_pentagons() {
+    let mut poly = cube();
+    let edge = between(&poly, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let made = poly.bevel(&[edge], 0.1).unwrap();
+    assert_eq!(made, vec![6], "one new face, after the old ones");
+    assert_eq!((poly.positions.len(), poly.faces.len()), (10, 7));
+    let sizes: Vec<usize> = poly.faces.iter().map(|f| f.len()).collect();
+    assert_eq!(sizes.iter().filter(|&&s| s == 5).count(), 2, "the ends take a corner each");
+    sound(&poly);
+    // The bevel faces up and forward, its sides 0.1 in from the edge.
+    let n = poly.face_normal(6);
+    assert!((n[1] - n[2]).abs() < 1e-9 && n[1] > 0.7);
+    for &v in &poly.faces[6] {
+        let p = poly.positions[v as usize];
+        assert!(close([0.0, (p[1] - 0.5).abs().max((p[2] - 0.5).abs()), 0.0], [0.0, 0.1, 0.0]), "{p:?}");
+    }
+}
+
+#[test]
+fn bevelling_every_edge_of_a_cube_fills_its_corners() {
+    let mut poly = cube();
+    let edges = poly.edges();
+    let made = poly.bevel(&edges, 0.1).unwrap();
+    assert_eq!(made.len(), 12 + 8, "a face an edge, a triangle a corner");
+    assert_eq!((poly.positions.len(), poly.faces.len()), (24, 26));
+    assert!(poly.faces[20..].iter().all(|f| f.len() == 3));
+    assert!(poly.faces[..6].iter().all(|f| f.len() == 4), "the old faces shrink, still quads");
+    sound(&poly);
+    let top = facing(&poly, [0.0, 1.0, 0.0]) as usize;
+    assert!(poly.faces[top].iter().all(|&v| close(poly.positions[v as usize].map(f64::abs), [0.4, 0.5, 0.4])));
+}
+
+#[test]
+fn bevelling_two_edges_meeting_at_a_corner_shares_their_end() {
+    let mut poly = cube();
+    let a = between(&poly, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    let b = between(&poly, [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+    let made = poly.bevel(&[a, b], 0.1).unwrap();
+    assert_eq!(made.len(), 2, "two bevels, no corner to fill");
+    sound(&poly);
+}
+
+#[test]
+fn a_bevel_ending_among_four_faces_takes_in_the_gap() {
+    let mut poly = cube();
+    let cut = between(&poly, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+    // A loop round the cube's middle, across the top at x = 0: the ends of
+    // its edge there have four faces round them.
+    poly.loop_cut(cut, 0.5).unwrap();
+    let edge = poly
+        .edges()
+        .into_iter()
+        .find(|e| [e[0], e[1]].iter().all(|&v| {
+            let p = poly.positions[v as usize];
+            p[0].abs() < 1e-9 && p[1] > 0.49
+        }))
+        .expect("the loop's edge across the top");
+    let made = poly.bevel(&[edge], 0.1).unwrap();
+    assert_eq!(made.len(), 1, "no triangle at the ends: they'd be flat");
+    assert_eq!(poly.faces[made[0] as usize].len(), 6, "the bevel reaches back to where each end was");
+    sound(&poly);
+}
+
+#[test]
+fn a_bevel_too_wide_or_on_an_open_edge_is_refused() {
+    let mut poly = cube();
+    let before = poly.clone();
+    let edges = poly.edges();
+    assert!(poly.bevel(&edges, 0.5).is_err(), "two bevels meeting across a 1 m edge");
+    assert!(poly.bevel(&[edges[0]], 0.0).is_err());
+    assert!(poly.bevel(&[[0, 7]], 0.1).is_err(), "not an edge");
+    assert_eq!(poly, before, "nothing changed");
+    poly.delete_faces(&[0]);
+    let rim = poly.edges().into_iter().find(|e| poly.faces.iter().filter(|f| f.contains(&e[0]) && f.contains(&e[1])).count() == 1).unwrap();
+    assert!(poly.bevel(&[rim], 0.1).is_err());
+}

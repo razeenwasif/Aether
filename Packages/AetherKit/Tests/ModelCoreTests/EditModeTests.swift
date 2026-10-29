@@ -80,6 +80,31 @@ struct MeshEditSessionTests {
         #expect(edit.undo() && edit.cage.faceCount == 6, "one undo takes the extrude and its slide")
     }
 
+    @Test func bevellingTheChosenEdgesChoosesTheNewFaces() throws {
+        let edit = try MeshEditSession(nodeID: "cube-1", url: try cube())
+        var steps: [String] = []
+        edit.onStep = { steps.append($0) }
+        #expect(!edit.bevel(by: 0.1) && edit.refusal?.contains("Choose edges") == true)
+
+        edit.show(.edges)
+        let one = try #require(edit.cage.edges.first)
+        edit.choose(.edge(one), adding: false)
+        #expect(!edit.bevel(by: 1.5) && edit.refusal?.contains("wider") == true, "\(edit.refusal ?? "")")
+        #expect(steps.isEmpty && edit.cage.faceCount == 6, "a refused bevel changes nothing")
+        #expect(edit.bevel(by: 0.1))
+        #expect(edit.part == .faces && edit.faces == [6] && edit.cage.faceCount == 7, "the bevel chosen")
+        #expect(edit.cage.closed)
+
+        // In Faces, every edge of the face chosen: four bevels, four corners.
+        #expect(edit.undo())
+        edit.show(.faces)
+        edit.choose(.face(top(edit)), adding: false)
+        #expect(edit.chosenEdges.count == 4)
+        #expect(edit.bevel(by: 0.1))
+        #expect(edit.faces.count == 4 && edit.cage.faceCount == 10 && edit.cage.closed)
+        #expect(steps == ["Bevel", "Bevel"])
+    }
+
     @Test func choosingCarriesAcrossPartsAndAddsWithShift() throws {
         let edit = try MeshEditSession(nodeID: "cube-1", url: try cube())
         edit.show(.vertices)

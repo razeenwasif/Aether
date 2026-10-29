@@ -126,6 +126,11 @@ extension ModelWorkspaceModel {
         notice = edit.refusal
     }
 
+    public func bevelChosen() {
+        guard let edit = editing, !edit.bevel(by: bevelWidth) else { return }
+        notice = edit.refusal
+    }
+
     public func loopCutChosen() {
         guard let edit = editing, !edit.loopCut(at: cutAt) else { return }
         notice = edit.refusal
@@ -191,7 +196,8 @@ extension ModelWorkspaceModel {
     // MARK: Keys
 
     /// Edit mode's keys: 1 2 3 corners, edges, faces · e extrude · i inset ·
-    /// a everything · ⌫ delete · f frame · ⎋ nothing, then Object mode.
+    /// b bevel · a everything · ⌫ delete · f frame · ⎋ nothing, then Object
+    /// mode.
     func handleEditKey(_ event: NSEvent) -> Bool {
         guard let edit = editing else { return false }
         switch (event.keyCode, event.charactersIgnoringModifiers) {
@@ -200,6 +206,7 @@ extension ModelWorkspaceModel {
         case (_, "3"): showPart(.faces)
         case (_, "e"): extrudeChosen()
         case (_, "i"): insetChosen()
+        case (_, "b"): bevelChosen()
         case (_, "a"): edit.chooseAll()
         case (_, "f"): frameSelected()
         case (51, _), (117, _): deleteChosen()

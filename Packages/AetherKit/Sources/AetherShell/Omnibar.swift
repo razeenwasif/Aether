@@ -75,6 +75,7 @@ extension AppModel {
             } + [
                 OmniItem(.here, "Extrude", detail: "e") { m.extrudeChosen() },
                 OmniItem(.here, "Inset", detail: "i") { m.insetChosen() },
+                OmniItem(.here, "Bevel", detail: "b") { m.bevelChosen() },
                 OmniItem(.here, "Loop Cut", detail: "⌘R") { m.loopCutChosen() },
                 OmniItem(.here, "Delete", detail: "⌫") { m.deleteChosen() },
                 OmniItem(.here, "Choose Everything", detail: "a") { edit.chooseAll() },
