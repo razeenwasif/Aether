@@ -79,7 +79,7 @@ extension ModelWorkspaceModel {
         guard let renderer else { return notice = "This Mac’s GPU can’t render." }
         let (width, height) = renderSize.pixels
         if let id = renderCamera, document.node(id)?.kind != "camera" { renderCamera = nil }
-        let settings = ModelRenderer.RenderSettings(width: width, height: height, transparent: renderTransparent, camera: renderCamera, floor: renderFloor, shadows: renderShadows)
+        let settings = ModelRenderer.RenderSettings(width: width, height: height, transparent: renderTransparent, camera: renderCamera, floor: renderFloor, shadows: renderShadows, denoise: renderDenoise)
         if renderEngine == .traced {
             guard renderTask == nil else { return }
             guard renderer.canTrace else { return notice = "This Mac’s GPU can’t trace rays: the quick render is the one there is." }
@@ -129,8 +129,10 @@ extension ModelWorkspaceModel {
             let folder = document.folder.appending(path: "renders", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let files = (folder.appending(path: "\(document.name) render.png"), folder.appending(path: "\(document.name) depth.png"))
+            let encoding = ModelRenderer.signposter.beginInterval("png")
             let beautyPNG = try Self.png(pictures.beauty)
             let depthPNG = try Self.png(pictures.depth)
+            ModelRenderer.signposter.endInterval("png", encoding)
             try beautyPNG.write(to: files.0, options: .atomic)
             try depthPNG.write(to: files.1, options: .atomic)
             lastRender = Rendered(beauty: pictures.beauty, depth: pictures.depth, files: files, versions: nil, at: Date())

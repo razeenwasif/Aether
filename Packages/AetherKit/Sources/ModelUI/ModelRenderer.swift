@@ -1,5 +1,6 @@
 import MetalKit
 import ModelCore
+import os
 import simd
 
 /// Draws a scene: each mesh with its material run per pixel, everything
@@ -307,6 +308,8 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         /// A floor under everything, for shadows to fall on.
         var floor = true
         var shadows = true
+        /// A path-traced render smoothed by the denoiser.
+        var denoise = true
     }
 
     /// The scene `width` by `height`, through the view's camera or one of the
@@ -317,6 +320,8 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     /// under everything if asked for. Then again for depth, near white and
     /// far black across what the scene spans in front of the camera.
     func render(_ settings: RenderSettings) throws -> Pictures {
+        let state = Self.signposter.beginInterval("render", "\(settings.width) × \(settings.height)")
+        defer { Self.signposter.endInterval("render", state) }
         guard let model, let document = model.document else { throw RenderFailure(reason: "open a scene to render") }
         let (width, height) = (settings.width, settings.height)
         let scale = max(1, min(2, 8192 / max(width, height)))
@@ -498,8 +503,8 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
 
     /// The render path traced: the scene's triangles, its materials and its
     /// lights (each with a size, so shadows soften), light bouncing off
-    /// everything and in from a dim room round it, `samples` a pixel. The
-    /// depth pass is the quick render's. `progress` hears the samples so
+    /// everything and in from a dim room round it, `samples` a pixel, then
+    /// denoised if the settings ask. The depth pass is the quick render's. `progress` hears the samples so
     /// far after each pass and answers whether to go on.
     func pathTrace(_ settings: RenderSettings, samples: Int, progress: @MainActor (Int) -> Bool) async throws -> Pictures {
         guard let model, let document = model.document else { throw RenderFailure(reason: "open a scene to render") }
@@ -555,7 +560,7 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         }
         scene.lights = Array(scene.lights.prefix(16))
         let picture = try await tracer.trace(scene, eye: view.inverse, fov: fov, width: settings.width, height: settings.height,
-                                             samples: samples, transparent: settings.transparent, progress: progress)
+                                             samples: samples, transparent: settings.transparent, denoise: settings.denoise, progress: progress)
         return Pictures(beauty: try Self.image(picture, width: settings.width, height: settings.height, opaque: !settings.transparent), depth: quick.depth)
     }
 
@@ -629,8 +634,14 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         return SceneMath.perspective(aspect: 1, near: near, far: distance + radius * 10, fov: fov) * look(from: at, at: centre)
     }
 
+    /// A render's steps, timed for Instruments under `dev.razeen.aether` /
+    /// `render` (§7a).
+    static let signposter = OSSignposter(subsystem: "dev.razeen.aether", category: "render")
+
     /// A rendered texture as a picture, scaled down to `width` by `height`.
     private static func image(_ texture: MTLTexture, width: Int, height: Int, opaque: Bool) throws -> CGImage {
+        let state = signposter.beginInterval("readback", "\(texture.width) × \(texture.height)")
+        defer { signposter.endInterval("readback", state) }
         let (w, h) = (texture.width, texture.height)
         var bytes = [UInt8](repeating: 0, count: w * h * 4)
         texture.getBytes(&bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)

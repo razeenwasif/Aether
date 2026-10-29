@@ -31,25 +31,23 @@ public struct DiffuseWorkspace: View {
             }
 
             HStack(alignment: .top, spacing: 0) {
-                if model.libraryOpen, onGraph, let editor = model.editor {
+                if onGraph, let editor = model.editor {
                     NodeLibraryPanel(model: model, library: editor.library)
                         .frame(width: 248)
                         .padding(8)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .sliding(open: model.libraryOpen, from: .leading, by: 264)
                 }
                 Spacer(minLength: 0)
-                if model.inspectorOpen {
-                    Group {
-                        if !onGraph {
-                            GalleryInspector(model: model)
-                        } else if let editor = model.editor {
-                            DiffuseInspector(model: model, editor: editor)
-                        }
+                Group {
+                    if !onGraph {
+                        GalleryInspector(model: model)
+                    } else if let editor = model.editor {
+                        DiffuseInspector(model: model, editor: editor)
                     }
-                    .frame(width: 284)
-                    .padding(8)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
+                .frame(width: 284)
+                .padding(8)
+                .sliding(open: model.inspectorOpen, from: .trailing, by: 300)
             }
 
             Group {

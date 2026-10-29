@@ -134,6 +134,8 @@ public struct AetherCommands: Commands {
                 ForEach(RenderEngine.allCases) { Text($0.title).tag($0) }
             }
             .disabled(!onModel || modeling.document == nil)
+            Toggle("Denoise Path-Traced Renders", isOn: Binding(get: { modeling.renderDenoise }, set: { modeling.renderDenoise = $0 }))
+                .disabled(!onModel || modeling.document == nil)
             Divider()
             Menu("Add") {
                 ForEach(SceneAddition.allCases) { addition in

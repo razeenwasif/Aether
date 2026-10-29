@@ -94,6 +94,8 @@ public final class ModelWorkspaceModel {
     public var renderEngine: RenderEngine = .quick
     /// A path-traced render's samples a pixel.
     public var renderSamples = 128
+    /// A path-traced render smoothed by the denoiser, so fewer samples do.
+    public var renderDenoise = true
     /// A path-traced render under way: the samples so far.
     public internal(set) var renderProgress: Int?
     @ObservationIgnored var renderTask: Task<Void, Never>?

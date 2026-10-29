@@ -12,6 +12,17 @@ public extension View {
     func aeGlass(_ elevation: Elevation = .panel, radius: CGFloat? = nil) -> some View {
         modifier(GlassSurface(elevation: elevation, radius: radius))
     }
+
+    /// A side panel slid `distance` off its `edge` while shut, and kept in
+    /// the tree so opening it only moves it. Inserting an inspector built
+    /// and laid it out from nothing: 50 to 200 ms, a dozen frames or more
+    /// at 120 Hz (RESEARCH_PLAN.md §7a).
+    func sliding(open: Bool, from edge: HorizontalEdge, by distance: CGFloat) -> some View {
+        offset(x: open ? 0 : (edge == .leading ? -distance : distance))
+            .opacity(open ? 1 : 0)
+            .allowsHitTesting(open)
+            .accessibilityHidden(!open)
+    }
 }
 
 private struct GlassSurface: ViewModifier {

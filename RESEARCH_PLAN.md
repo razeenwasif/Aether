@@ -446,6 +446,66 @@ The LE was to validate the split above. There's no Metal viewport yet (Canvas dr
   - A test fails past 20 ms, since test builds are slower. It hasn't been timed in the app.
 - **The first GPU numbers (Model, 2026-10-28).** Model's viewport reads each frame's GPU time from its command buffer. On the check's scene (a few hundred triangles, the grid, MSAA 4) frames took 0.2 to 2.6 ms, and 5.8 ms for the first frame after a scene opened. That was a background window, not Instruments, so it's a sign, not the measurement §7 asks for. The viewport draws only on a change, so a still scene costs nothing.
 
+### 7b. What M0 and M1 measured, under Instruments (2026-10-30)
+
+The plan put these measurements off until the shell had a Metal viewport. Model has one now.
+
+**How:** a Release build on this Mac (M2 Pro, built-in 120 Hz Liquid Retina XDR), recorded with `xctrace` and read back from its exported tables. Three templates were used:
+- App Launch, three launches each.
+- Animation Hitches, over 22 s with Model's outliner and inspector toggled 16 times over the Metal viewport, the window in front.
+- Metal System Trace with `os_signpost`, over three renders, each published to a canvas layer that follows it.
+
+Two traps, for next time:
+- `xctrace --launch` with the Release `.app` started the Debug build, because LaunchServices found it first by bundle id. The Debug app was set aside and re-registered after.
+- The Debug build's `Aether.debug.dylib` shows in its stacks, which is how the mix-up showed.
+
+**M0 · cold start (target: under 100 ms to the first frame): not met, and not reachable as written.**
+- Aether's first frame is done 589 to 644 ms after the process starts initialising. These were warm launches; a true cold one, after a reboot, wasn't possible here.
+- An empty SwiftUI app (one `WindowGroup`, one `Text`) built and traced the same way takes 350 to 450 ms. That's the floor on this Mac for SwiftUI's app lifecycle under the trace. AppKit's `applicationWillFinishLaunching` alone is 105 to 155 ms of it, including 30 ms loading Writing Tools for the Edit menu.
+- So Aether adds about 200 ms over the floor. Most is scene creation (293 ms against 168 ms) and the first frame (65 ms against 15 ms): SwiftUI building and drawing the open workspace, the Diffuse graph.
+- Aether's own code is about a dozen of the profile's samples: `LocalModels.installed`, a canvas list read, the rail. The rest is SwiftUI and AppKit working on the size of the view tree.
+- **Proposed:** the target becomes "no more than 150 ms over an empty SwiftUI app's launch, measured the same way". Today that's about 200 ms. The ways to it are §7's: restore a small snapshot and build the rest after the first frame, and keep panels that aren't on screen out of the first build.
+
+**M0 · 120 Hz with panels animating: not met. Improved, and the cause of what's left is known.**
+- Before: 49 hitches in the 22 s, 1,125 ms of hitch time, and the worst 200 ms. 8 hitches were over 33 ms.
+  - The worst came from inserting the inspector. Each open built and laid out its whole tree (the material's layer cards, their sliders and fields): 50 to 200 ms on the main thread.
+- **The fix, made now:** side panels in Model, Canvas and Diffuse stay mounted and slide by offset (`sliding(open:from:by:)` in AetherDesign), so opening one only moves it.
+- After: 60 hitches, 683 ms of hitch time, the worst 92 ms, and 2 over 33 ms. Total hitch time fell by 39% and the long ones by three quarters.
+- What's left is mostly single dropped frames (8.3 ms) while a panel moves. The main thread is busy most of each frame, on AppKit and SwiftUI work set off by the motion:
+  - `NSWindow _resetDragMargins`, working out which parts of a full-size-content window drag it: about 15% of busy time. It walks the hosting view's opaque regions, and through `acceptsFirstResponder` it walks SwiftUI's focus order (about 7%).
+  - Per-frame layout from the paddings that follow the panels (the status bar and the dock's row), and hover updates.
+  - A CALayer redrawing a gradient on the CPU each frame (`ripc_DrawShading`, about 9%). The likely source is the glass's gradient top edge, or a shadow, drawn through Core Graphics and not RenderBox. This wasn't confirmed.
+- **Next, proposed:** a frame-budget pass.
+  - Move the following elements by offset, not padding.
+  - Find and flatten the CPU-drawn gradient.
+  - Check whether a hosting view that answers `mouseDownCanMoveWindow` cheaply stops the drag-margin walk.
+  - Re-measure with the same script.
+
+**M1 · an asset updates in another workspace with no copy (verified with Metal capture): not met as written. The criterion needs restating, because the asset path isn't on the GPU.**
+- The Metal trace shows each render is three render encoders (shadows, the scene, depth): about 2 ms of GPU time at 2048² with MSAA 4. There are no blit or compute encoders. The resolve lands in a shared texture, so the GPU makes no copy.
+- The copies are on the CPU. Per 1024² render, from the signposts (`dev.razeen.aether` / `render` and `assets`, added for this):
+
+  | Step | Where | Time |
+  |---|---|---|
+  | `render`: encode, wait for the GPU, read back | main thread | 66 to 105 ms |
+  | └ `readback`: `getBytes` of 2048², copied into `Data`, scaled to 1024² by Core Graphics, × 2 pictures | main thread | 20 to 31 ms each |
+  | `png`: encode the render and the depth | main thread | 55 to 59 ms |
+  | `store`: SHA-256 and write the blob | asset pool actor | 0.3 to 2 ms |
+  | `read`: the canvas reads the blob | asset pool actor | 0.1 ms |
+  | `take`: decode the PNG into a canvas layer, one core op | main thread | 32 to 43 ms |
+
+- That's 165 to 210 ms of main-thread work from ⌘↩ to the canvas showing the new version, about 20 to 25 frames at 120 Hz.
+- The picture is copied at every step: GPU memory to an array, into `Data`, scaled, PNG-encoded, written twice (`renders/` and `blobs/`), read, decoded, and put into the raster core's tiles.
+- The tiles are Proton's determinism (§10a), and a PNG is what a flow or a file wants. So "no copy" was never going to hold for a CPU consumer.
+- **Proposed restatement:**
+  - "A published version is encoded once and each consumer decodes it once and shares it (`AssetPool.image`), off the main thread."
+  - "Where both ends are GPU (Video's clips, Design's image layers), the version is an IOSurface-backed texture and neither end copies it."
+  - The first half is a fix to make now. The second waits for a GPU consumer.
+- **Next, proposed:**
+  - Move readback, PNG encoding and the canvas's decode off the main thread.
+  - Scale on the GPU, not with Core Graphics.
+  - Write the render once and clone it into `blobs/` (`store(contentsOf:)` already clones on APFS).
+
 ---
 
 ## 8. Milestones
@@ -1264,6 +1324,37 @@ Not yet:
   - 322 Rust and 156 Swift tests pass.
 - **Not done:** denoising (128 samples still shows a little grain on large flat areas); textures; glass and other transmission; emissive materials; instancing a mesh rather than copying its triangles.
 
+**2026-10-30 · Model: a denoiser for the path tracer.** The user asked to "do the denoiser and then the performance measurements before moving on to the next workspace".
+
+- **What it is:** SVGF's spatial filter (Schied et al. 2017) on one frame. It's written in Metal beside the tracer, not taken from MetalFX: MetalFX's denoiser is a temporal upscaler, built for motion vectors and history, and a still render has neither.
+- **What the tracer keeps for it:** alongside the light, `trace` sums what each sample's camera ray first hit.
+  - The surface's colour, 1 where nothing was hit, and how many samples hit something.
+  - The surface's normal and distance.
+  - The light's luminance squared, so each pixel knows how unsure it is.
+  - These are 3 more textures while tracing, 144 MB at 2048². The filter adds 3 more, 192 MB, for the moment it runs. Unified memory has room for it, but a 4096² render would want half floats.
+- **The passes:**
+  - `prepare` divides each pixel's light by its surface colour, so the filter blurs light and not texture. It writes that with the variance of the pixel's mean, and a guide: the normal, and the distance (−1 where nothing was hit).
+  - `smooth` runs 5 times, an à-trous 5 × 5 B-spline with holes 1 to 16 pixels apart. That reaches 62 pixels each way for 125 reads a pixel.
+  - Each neighbour is weighed by three things. How alike it faces (n·n′ to the 128th). How near its depth is to where the surface's slope would put it. How near its light is, against 4σ of this pixel's variance after a 3 × 3 blur.
+  - Variance is carried through each pass, so each pass smooths less where the last one settled.
+  - `finishSmoothed` multiplies the colour back and tones as `finish` does.
+  - The more samples a render has, the lower its variance and the less the filter does, so a 2048-sample render is barely touched.
+- **The workspace:** a Denoise checkbox in the render drawer's second row (in place of Shadows, which is the quick render's). It's on by default. Scene ▸ Denoise Path-Traced Renders does the same.
+- **A tracer bug, found by the check:** a checker on the cube's faces flickered in grainy triangles in the traced render and not in the view.
+  - The cube's faces lie exactly on the checker's cell edges (y = 0.5 at 4 cells a metre), and `w0·a + u·b + v·c` lands a hair either side.
+  - Positions are now interpolated from the first corner along the two edges. A coordinate that's the same at all three corners then comes out exact, as the raster's does.
+- **Measured** (test scene, a red cube, 1024²):
+  - At 16 samples, denoised, the floor's pixel-to-pixel grain was 0.81 levels against 4.64 undenoised. 512 samples undenoised gave 1.23.
+  - The floor's and the cube's average colours were within 1 level of the 512-sample render's.
+  - The cube's edge was as sharp: its sharpest step was 27.0 against 27.0.
+- **Checked in the app,** on a throwaway scene, deleted after:
+  - A checker cube at 128 samples, with and without Denoise. With it, the grain on the shadowed faces and the floor is gone, and the checker's edges and the contact shadow stay sharp.
+  - The same render showed the flicker above, which is fixed, and re-rendered clean.
+- **Tests:** 2 more in Swift, and the compile test now checks the new kernels.
+  - The denoiser: under 0.4 times the raw grain and under 1.5 times the 512-sample render's, colours within 8 levels, the edge at least 0.7 times as sharp.
+  - A checker on the cube's faces doesn't flicker: the traced render is no grainier than the quick render's checker. Before the fix it measured 1.97 against 1.08.
+- **Not done:** albedo for a metal is taken as its base colour, so a mirror's reflections are smoothed as light. That holds up where samples agree, and blurs where they don't. There's no temporal filtering, since a render is a single frame.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1296,4 +1387,15 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~A path tracer for Render~~: done, see §10a.
 
-**Next, proposed:** with Model's pieces in the design all built, the measurements the plan has been putting off: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. After those, a denoiser for the path tracer, or the next workspace (Design, Game or Video), as the user chooses. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion.
+~~A denoiser for the path tracer~~: done, see §10a.
+
+~~The measurements: M0's launch and frame times under Instruments, M1's Metal capture~~: done, see §7b. None of the three criteria is met as written.
+- Launch is about 0.6 s against a 100 ms target. An empty SwiftUI app takes 0.35 to 0.45 s here, so the target needs restating.
+- Panels sliding over the viewport drop frames. Total hitch time was cut by 39% by keeping panels mounted.
+- Assets cross workspaces on the CPU, as PNG, with 165 to 210 ms of main-thread work per render.
+
+**Next, proposed, before the next workspace:** two short passes from §7b's findings.
+- A frame-budget pass: the drag-margin walk, the CPU-drawn gradient, and padding animations.
+- The asset path off the main thread: readback, PNG and decode, with scaling on the GPU.
+
+Then the next workspace (Design, Game or Video), as the user chooses.

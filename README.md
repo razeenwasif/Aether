@@ -114,7 +114,9 @@ Keys: `f` frame the chosen object, or everything · `⇧A` frame everything · `
 
 **Path traced.** Render with Path traced (the drawer's engine, or Scene ▸ Render With) follows light through the scene on Metal's ray tracing: 32 to 2048 samples a pixel, a few at a time, with the samples so far shown and Stop keeping what's there. It shades with the same materials, lights and tone curve as the view, and adds what a raster can't: light that bounces (and comes in from a dim, even room round everything), soft shadows from lights with a size (a point a ball a tenth of a metre across, a sun three degrees wide), and reflections. The depth pass is the quick render's. It needs a Mac whose GPU traces rays (every Apple silicon Mac).
 
-Not yet: a bevel of more than one segment, editing a graph as a graph, a point light's shadow from inside what it lights in the quick render, and the path tracer's denoising, textures and glass.
+**Denoise.** A path-traced render is denoised unless you turn it off (the drawer's Denoise, or Scene ▸ Denoise Path-Traced Renders). The tracer notes what each pixel first saw: the surface's colour, which way it faced and how far off it was. An edge-aware filter then smooths the light where those agree and the samples are unsure. Texture and edges stay sharp, and 16 to 32 samples come out about as smooth as 512 undenoised. The more samples a render has, the less the filter does.
+
+Not yet: a bevel of more than one segment, editing a graph as a graph, a point light's shadow from inside what it lights in the quick render, and the path tracer's textures and glass.
 
 ## Canvas
 

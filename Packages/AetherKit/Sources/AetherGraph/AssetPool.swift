@@ -2,6 +2,7 @@ import CoreGraphics
 import CryptoKit
 import Foundation
 import ImageIO
+import os
 
 /// Where assets' bytes are kept: once each, in the project's `blobs/` under
 /// their SHA-256, so a version used in three places is one file. Pictures
@@ -13,12 +14,18 @@ public actor AssetPool {
     private var memory: [String: Data] = [:]
     private var images: [String: SharedImage] = [:]
 
+    /// Where an asset's bytes go between workspaces, timed for Instruments:
+    /// kept, read and taken in, under `dev.razeen.aether` / `assets` (§7a).
+    public static let signposter = OSSignposter(subsystem: "dev.razeen.aether", category: "assets")
+
     public init(blobs folder: URL?) {
         self.folder = folder
     }
 
     /// Keep `data`; answers its blob: the SHA-256 in hex.
     public func store(_ data: Data) throws -> String {
+        let state = Self.signposter.beginInterval("store", "\(data.count) bytes")
+        defer { Self.signposter.endInterval("store", state) }
         let blob = Self.hash(data)
         guard let folder else {
             memory[blob] = data
@@ -50,6 +57,8 @@ public actor AssetPool {
     }
 
     public func data(_ blob: String) throws -> Data {
+        let state = Self.signposter.beginInterval("read")
+        defer { Self.signposter.endInterval("read", state) }
         if let data = memory[blob] { return data }
         guard let folder else { throw CocoaError(.fileNoSuchFile) }
         return try Data(contentsOf: folder.appending(path: "\(blob).png"))

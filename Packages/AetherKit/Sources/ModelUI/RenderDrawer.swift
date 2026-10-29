@@ -77,6 +77,11 @@ struct RenderDrawer: View {
                     Toggle("Shadows", isOn: $model.renderShadows)
                         .toggleStyle(.checkbox)
                         .font(.aeSmall)
+                } else {
+                    Toggle("Denoise", isOn: $model.renderDenoise)
+                        .toggleStyle(.checkbox)
+                        .font(.aeSmall)
+                        .help("Smooth the grain where surfaces agree, keeping their edges, so fewer samples do")
                 }
                 Toggle("Clear background", isOn: $model.renderTransparent)
                     .toggleStyle(.checkbox)

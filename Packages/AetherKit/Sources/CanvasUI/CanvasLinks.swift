@@ -70,7 +70,10 @@ extension CanvasWorkspaceModel {
             let ops = (attached?.ops ?? []) + [.set(link.id, property: "shown", value: .int(version.number))]
             let with = Transaction(ops, origin: .canvas, label: attached?.label ?? "Take v\(version.number)", document: link.document)
             self.attaching = { (_: CanvasDocument.Applied) in with }
-            if document.putPicture(bytes, into: cel, named: "\(asset.name).png", label: "Update \(asset.name) to v\(version.number)") == nil {
+            let taking = AssetPool.signposter.beginInterval("take", "\(bytes.count) bytes into a canvas layer")
+            let put = document.putPicture(bytes, into: cel, named: "\(asset.name).png", label: "Update \(asset.name) to v\(version.number)")
+            AssetPool.signposter.endInterval("take", taking)
+            if put == nil {
                 self.notice = document.refusal
             }
             // The picture was the same: no step to go with, so on its own,

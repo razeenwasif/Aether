@@ -3,6 +3,10 @@ import Foundation
 /// Metal source for Render's path tracer: a compute kernel that follows rays
 /// through the scene on Metal's ray tracing, one sample a pixel at a time,
 /// adding up in a texture, and a second that tones the sum into a picture.
+/// Between them, if asked, a denoiser: what each pixel first saw (its
+/// surface's colour, which way it faced, how far off) is summed alongside
+/// the light, and an edge-aware filter smooths the light where those agree
+/// and the samples are unsure, so a few dozen samples look like hundreds.
 ///
 /// It shades as the view does, so a path-traced render and a quick one agree
 /// where they can: the same materials (each material's program becomes a
@@ -77,6 +81,8 @@ extension SceneShaderSource {
     // The light round everything, for rays that leave the scene: a dim, even
     // room, as the view's ambient term stands for.
     constant float ROOM_LIGHT = 0.22;
+
+    constant float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
     struct TraceFrame {
         float4x4 eye;        // the camera's place and turn in the world
@@ -174,10 +180,21 @@ extension SceneShaderSource {
                       constant uint *start [[buffer(7)]],
                       constant TraceLight *lights [[buffer(8)]],
                       device const float4 *places [[buffer(9)]],
-                      texture2d<float, access::read_write> sum [[texture(0)]]) {
+                      texture2d<float, access::read_write> sum [[texture(0)]],
+                      texture2d<float, access::read_write> albedoSum [[texture(1)]],
+                      texture2d<float, access::read_write> guideSum [[texture(2)]],
+                      texture2d<float, access::read_write> momentSum [[texture(3)]]) {
         if (gid.x >= f.width || gid.y >= f.height) return;
-        // The first pass starts the sum; the rest add to it.
-        float4 total = f.sample == 0 ? float4(0.0) : sum.read(gid);
+        // The first pass starts the sums; the rest add to them.
+        bool fresh = f.sample == 0;
+        float4 total = fresh ? float4(0.0) : sum.read(gid);
+        // What the denoiser keeps edges by: the first surface's colour (1
+        // where nothing was hit) and how many samples hit one, its normal
+        // and its distance, and the light's luminance squared, for how
+        // unsure the pixel is.
+        float4 albedos = fresh ? float4(0.0) : albedoSum.read(gid);
+        float4 guides = fresh ? float4(0.0) : guideSum.read(gid);
+        float moments = fresh ? 0.0 : momentSum.read(gid).x;
         intersector<triangle_data> intersect;
         for (uint s = 0; s < f.samples; s++) {
             Random rng{hashed(gid.x * 1973u + gid.y * 9277u + (f.sample + s) * 26699u)};
@@ -193,6 +210,8 @@ extension SceneShaderSource {
             float3 light = float3(0.0);
             float3 through = float3(1.0);
             float covered = 1.0;
+            float4 albedo = float4(1.0, 1.0, 1.0, 0.0);
+            float4 guide = float4(0.0);
             for (uint bounce = 0; bounce <= f.bounces; bounce++) {
                 intersection_result<triangle_data> hit = intersect.intersect(r, accel);
                 if (hit.type == intersection_type::none) {
@@ -209,7 +228,11 @@ extension SceneShaderSource {
                 float2 bc = hit.triangle_barycentric_coord;
                 float w0 = 1.0 - bc.x - bc.y;
                 float3 p = r.origin + r.direction * hit.distance;
-                float3 obj = objects[i0].xyz * w0 + objects[i1].xyz * bc.x + objects[i2].xyz * bc.y;
+                // From the first corner along the two edges, so a face flat in
+                // an axis keeps that coordinate exactly, as the raster does: a
+                // checker's cell edge on a face mustn't flicker.
+                float3 o0 = objects[i0].xyz;
+                float3 obj = o0 + (objects[i1].xyz - o0) * bc.x + (objects[i2].xyz - o0) * bc.y;
                 float3 geometric = normalize(cross(places[i1].xyz - places[i0].xyz, places[i2].xyz - places[i0].xyz));
                 float3 n = normals[i0].xyz * w0 + normals[i1].xyz * bc.x + normals[i2].xyz * bc.y;
                 n = dot(n, n) > 0.25 ? normalize(n) : geometric;
@@ -220,6 +243,10 @@ extension SceneShaderSource {
                 float rough = clamp(surface.rough, 0.03, 1.0);
                 float a2 = pow(rough, 4.0);
                 float3 lift = p + geometric * 1e-3;
+                if (bounce == 0) {
+                    albedo = float4(surface.base, 1.0);
+                    guide = float4(n, hit.distance);
+                }
 
                 // The lights, each looked at directly, through what's between.
                 for (uint i = 0; i < f.lights; i++) {
@@ -284,21 +311,142 @@ extension SceneShaderSource {
             // A path that runs away is clipped, so one sample can't speckle.
             light = min(light, float3(20.0));
             total += float4(light * covered, covered);
+            albedos += albedo;
+            guides += guide;
+            float l = dot(light * covered, LUMA);
+            moments += l * l;
         }
         sum.write(total, gid);
+        albedoSum.write(albedos, gid);
+        guideSum.write(guides, gid);
+        momentSum.write(float4(moments), gid);
     }
 
-    // The sum toned into a picture, with the view's own curve.
+    // Light (with its coverage multiplied in) toned with the view's own
+    // curve.
+    float4 toned(float3 premultiplied, float alpha) {
+        float3 light = alpha > 1e-4 ? premultiplied / alpha : float3(0.0);
+        return float4(sqrt(light / (1.0 + light)) * alpha, alpha);
+    }
+
+    // The sum toned into a picture.
     kernel void finish(uint2 gid [[thread_position_in_grid]],
                        constant uint &count [[buffer(0)]],
                        texture2d<float, access::read> sum [[texture(0)]],
                        texture2d<float, access::write> out [[texture(1)]]) {
         if (gid.x >= out.get_width() || gid.y >= out.get_height()) return;
         float4 t = sum.read(gid) / float(max(count, 1u));
-        float alpha = clamp(t.a, 0.0, 1.0);
-        float3 light = alpha > 1e-4 ? t.rgb / alpha : float3(0.0);
-        float3 toned = sqrt(light / (1.0 + light));
-        out.write(float4(toned * alpha, alpha), gid);
+        out.write(toned(t.rgb, clamp(t.a, 0.0, 1.0)), gid);
+    }
+
+    // The denoiser, after SVGF's spatial filter (Schied et al. 2017) on one
+    // frame. First the sums become what it smooths: the light each surface
+    // takes in, its own colour divided out so the filter blurs light and not
+    // texture, with how unsure that is (the variance of the pixel's mean);
+    // and its guide, the normal and distance (-1: nothing was hit).
+    kernel void prepare(uint2 gid [[thread_position_in_grid]],
+                        constant uint &count [[buffer(0)]],
+                        texture2d<float, access::read> sum [[texture(0)]],
+                        texture2d<float, access::read> albedoSum [[texture(1)]],
+                        texture2d<float, access::read> guideSum [[texture(2)]],
+                        texture2d<float, access::read> momentSum [[texture(3)]],
+                        texture2d<float, access::write> taken [[texture(4)]],
+                        texture2d<float, access::write> guide [[texture(5)]]) {
+        if (gid.x >= sum.get_width() || gid.y >= sum.get_height()) return;
+        float n = float(max(count, 1u));
+        float3 mean = sum.read(gid).rgb / n;
+        float4 a = albedoSum.read(gid);
+        float3 albedo = max(a.rgb / n, float3(1e-3));
+        float lum = dot(mean, LUMA);
+        float variance = max(0.0, momentSum.read(gid).x / n - lum * lum) / n;
+        float al = max(dot(albedo, LUMA), 1e-3);
+        taken.write(float4(mean / albedo, variance / (al * al)), gid);
+        float4 g = guideSum.read(gid);
+        float facing = length(g.xyz);
+        if (a.w < 0.5 || facing < 1e-6) {
+            guide.write(float4(0.0, 0.0, 0.0, -1.0), gid);
+        } else {
+            guide.write(float4(g.xyz / facing, g.w / a.w), gid);
+        }
+    }
+
+    // One pass of the à-trous filter: a 5 × 5 B-spline kernel with holes
+    // `step` pixels apart, each neighbour weighed by how alike it faces, how
+    // near its depth is to where the surface's slope would put it, and how
+    // near its light is, against how unsure this pixel's light is. Five
+    // passes, 1 to 16 apart, reach 62 pixels each way for 125 reads.
+    kernel void smooth(uint2 gid [[thread_position_in_grid]],
+                       constant int &step [[buffer(0)]],
+                       texture2d<float, access::read> taken [[texture(0)]],
+                       texture2d<float, access::read> guide [[texture(1)]],
+                       texture2d<float, access::write> out [[texture(2)]]) {
+        int w = int(taken.get_width()), h = int(taken.get_height());
+        int2 p = int2(gid);
+        if (p.x >= w || p.y >= h) return;
+        float4 c = taken.read(gid);
+        float4 g = guide.read(gid);
+        if (g.w < 0.0) {
+            out.write(c, gid);
+            return;
+        }
+        // How much depth changes a pixel across, here.
+        float slope = 0.0;
+        int2 sides[4] = {int2(1, 0), int2(-1, 0), int2(0, 1), int2(0, -1)};
+        for (int i = 0; i < 4; i++) {
+            int2 q = clamp(p + sides[i], int2(0), int2(w - 1, h - 1));
+            float d = guide.read(uint2(q)).w;
+            if (d >= 0.0) slope = max(slope, abs(d - g.w));
+        }
+        // The variance blurred a little, so the test it sets isn't as noisy
+        // as what it tests.
+        const float k3[3] = {0.25, 0.5, 0.25};
+        float variance = 0.0;
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                int2 q = clamp(p + int2(dx, dy), int2(0), int2(w - 1, h - 1));
+                variance += k3[dx + 1] * k3[dy + 1] * taken.read(uint2(q)).a;
+            }
+        }
+        float tolerance = 4.0 * sqrt(max(variance, 0.0)) + 1e-5;
+        float lum = dot(c.rgb, LUMA);
+        const float k5[5] = {1.0 / 16.0, 1.0 / 4.0, 3.0 / 8.0, 1.0 / 4.0, 1.0 / 16.0};
+        float centre = k5[2] * k5[2];
+        float3 light = c.rgb * centre;
+        float spread = c.a * centre * centre;
+        float weight = centre;
+        for (int dy = -2; dy <= 2; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                int2 q = p + int2(dx, dy) * step;
+                if (q.x < 0 || q.y < 0 || q.x >= w || q.y >= h) continue;
+                float4 gq = guide.read(uint2(q));
+                if (gq.w < 0.0) continue;
+                float4 cq = taken.read(uint2(q));
+                float wn = pow(max(dot(g.xyz, gq.xyz), 0.0), 128.0);
+                float reach = slope * length(float2(dx, dy)) * float(step) + 1e-3 * g.w + 1e-5;
+                float wz = exp(-abs(g.w - gq.w) / reach);
+                float wl = exp(-abs(lum - dot(cq.rgb, LUMA)) / tolerance);
+                float k = k5[dx + 2] * k5[dy + 2] * wn * wz * wl;
+                light += cq.rgb * k;
+                spread += cq.a * k * k;
+                weight += k;
+            }
+        }
+        out.write(float4(light / weight, spread / (weight * weight)), gid);
+    }
+
+    // The smoothed light, each surface's colour multiplied back, toned.
+    kernel void finishSmoothed(uint2 gid [[thread_position_in_grid]],
+                               constant uint &count [[buffer(0)]],
+                               texture2d<float, access::read> sum [[texture(0)]],
+                               texture2d<float, access::read> albedoSum [[texture(1)]],
+                               texture2d<float, access::read> smoothed [[texture(2)]],
+                               texture2d<float, access::write> out [[texture(3)]]) {
+        if (gid.x >= out.get_width() || gid.y >= out.get_height()) return;
+        float n = float(max(count, 1u));
+        float alpha = clamp(sum.read(gid).a / n, 0.0, 1.0);
+        float3 albedo = max(albedoSum.read(gid).rgb / n, float3(1e-3));
+        out.write(toned(smoothed.read(gid).rgb * albedo, alpha), gid);
     }
 
     """

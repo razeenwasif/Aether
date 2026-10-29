@@ -9,7 +9,19 @@ import simd
 final class PathTracer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
-    private var pipelines: [String: (trace: MTLComputePipelineState, finish: MTLComputePipelineState)] = [:]
+    private var pipelines: [String: Pipelines] = [:]
+
+    /// One scene's tracer, and the kernels after it.
+    private struct Pipelines {
+        var trace: MTLComputePipelineState
+        var finish: MTLComputePipelineState
+        var prepare: MTLComputePipelineState
+        var smooth: MTLComputePipelineState
+        var finishSmoothed: MTLComputePipelineState
+    }
+
+    /// The denoiser's passes, their holes 1 to 16 pixels apart.
+    static let smoothingSteps: [Int32] = [1, 2, 4, 8, 16]
 
     struct Failure: LocalizedError {
         var reason: String
@@ -76,17 +88,21 @@ final class PathTracer {
     }
 
     /// `scene` through `eye` (the camera's place in the world), `width` by
-    /// `height`, `samples` a pixel, `progress` told after each pass with the
-    /// samples so far; it answers whether to go on.
-    func trace(_ scene: Scene, eye: simd_float4x4, fov: Float, width: Int, height: Int, samples: Int, transparent: Bool,
+    /// `height`, `samples` a pixel, denoised if asked, `progress` told after
+    /// each pass with the samples so far; it answers whether to go on.
+    func trace(_ scene: Scene, eye: simd_float4x4, fov: Float, width: Int, height: Int, samples: Int, transparent: Bool, denoise: Bool,
                progress: @MainActor (Int) -> Bool) async throws -> MTLTexture {
         guard !scene.indices.isEmpty else { throw Failure(reason: "there's nothing to trace") }
         let key = SceneShaderSource.tracerKey(scene.shaders)
         if pipelines[key] == nil {
             do {
                 let library = try await device.makeLibrary(source: SceneShaderSource.tracer(scene.shaders), options: nil)
-                guard let trace = library.makeFunction(name: "trace"), let finish = library.makeFunction(name: "finish") else { throw Failure(reason: "the tracer didn’t compile") }
-                pipelines[key] = (try await device.makeComputePipelineState(function: trace), try await device.makeComputePipelineState(function: finish))
+                func kernel(_ name: String) async throws -> MTLComputePipelineState {
+                    guard let function = library.makeFunction(name: name) else { throw Failure(reason: "the tracer didn’t compile") }
+                    return try await device.makeComputePipelineState(function: function)
+                }
+                pipelines[key] = Pipelines(trace: try await kernel("trace"), finish: try await kernel("finish"), prepare: try await kernel("prepare"),
+                                           smooth: try await kernel("smooth"), finishSmoothed: try await kernel("finishSmoothed"))
             } catch let failure as Failure {
                 throw failure
             } catch {
@@ -133,13 +149,22 @@ final class PathTracer {
         let start = try buffer(starts)
         let lights = try buffer(scene.lights.isEmpty ? [Scene.Light(at: .zero, color: .zero)] : scene.lights)
 
-        let sumDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: width, height: height, mipmapped: false)
-        sumDescriptor.usage = [.shaderRead, .shaderWrite]
-        sumDescriptor.storageMode = .private
+        // The sums: light, and what the denoiser keeps edges by.
+        func working(_ format: MTLPixelFormat = .rgba32Float) throws -> MTLTexture {
+            let described = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: width, height: height, mipmapped: false)
+            described.usage = [.shaderRead, .shaderWrite]
+            described.storageMode = .private
+            guard let made = device.makeTexture(descriptor: described) else { throw Failure(reason: "the GPU couldn’t make a \(width) × \(height) picture") }
+            return made
+        }
+        let sum = try working()
+        let albedoSum = try working()
+        let guideSum = try working()
+        let momentSum = try working(.r32Float)
         let outDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
         outDescriptor.usage = [.shaderWrite, .shaderRead]
         outDescriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
-        guard let sum = device.makeTexture(descriptor: sumDescriptor), let out = device.makeTexture(descriptor: outDescriptor) else {
+        guard let out = device.makeTexture(descriptor: outDescriptor) else {
             throw Failure(reason: "the GPU couldn’t make a \(width) × \(height) picture")
         }
         // The ground behind, as light the tone curve turns back into it.
@@ -170,7 +195,7 @@ final class PathTracer {
             encoder.setBuffer(start, offset: 0, index: 7)
             encoder.setBuffer(lights, offset: 0, index: 8)
             encoder.setBuffer(places, offset: 0, index: 9)
-            encoder.setTexture(sum, index: 0)
+            encoder.setTextures([sum, albedoSum, guideSum, momentSum], range: 0..<4)
             encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: group)
             encoder.endEncoding()
             try await run(commands)
@@ -179,10 +204,32 @@ final class PathTracer {
         }
         guard let commands = queue.makeCommandBuffer(), let encoder = commands.makeComputeCommandEncoder() else { throw Failure(reason: "the GPU is busy") }
         var count = UInt32(max(done, 1))
-        encoder.setComputePipelineState(pipeline.finish)
-        encoder.setBytes(&count, length: 4, index: 0)
-        encoder.setTexture(sum, index: 0)
-        encoder.setTexture(out, index: 1)
+        if denoise {
+            // The light each surface takes in and its guide, smoothed in
+            // passes back and forth, then its colour multiplied back.
+            let guide = try working()
+            var smoothed = try working()
+            var spare = try working()
+            encoder.setComputePipelineState(pipeline.prepare)
+            encoder.setBytes(&count, length: 4, index: 0)
+            encoder.setTextures([sum, albedoSum, guideSum, momentSum, smoothed, guide], range: 0..<6)
+            encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: group)
+            encoder.setComputePipelineState(pipeline.smooth)
+            for var step in Self.smoothingSteps {
+                encoder.setBytes(&step, length: 4, index: 0)
+                encoder.setTextures([smoothed, guide, spare], range: 0..<3)
+                encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: group)
+                swap(&smoothed, &spare)
+            }
+            encoder.setComputePipelineState(pipeline.finishSmoothed)
+            encoder.setBytes(&count, length: 4, index: 0)
+            encoder.setTextures([sum, albedoSum, smoothed, out], range: 0..<4)
+        } else {
+            encoder.setComputePipelineState(pipeline.finish)
+            encoder.setBytes(&count, length: 4, index: 0)
+            encoder.setTexture(sum, index: 0)
+            encoder.setTexture(out, index: 1)
+        }
         encoder.dispatchThreadgroups(groups, threadsPerThreadgroup: group)
         encoder.endEncoding()
         if out.storageMode == .managed, let blit = commands.makeBlitCommandEncoder() {

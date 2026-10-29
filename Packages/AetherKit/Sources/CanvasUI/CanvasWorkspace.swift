@@ -28,19 +28,15 @@ public struct CanvasWorkspace: View {
 
             if let document = model.document {
                 HStack(alignment: .top, spacing: 0) {
-                    if model.navigatorOpen {
-                        CanvasList(model: model)
-                            .frame(width: 248)
-                            .padding(8)
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-                    }
+                    CanvasList(model: model)
+                        .frame(width: 248)
+                        .padding(8)
+                        .sliding(open: model.navigatorOpen, from: .leading, by: 264)
                     Spacer(minLength: 0)
-                    if model.inspectorOpen {
-                        CanvasInspector(model: model, document: document)
-                            .frame(width: 284)
-                            .padding(8)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
+                    CanvasInspector(model: model, document: document)
+                        .frame(width: 284)
+                        .padding(8)
+                        .sliding(open: model.inspectorOpen, from: .trailing, by: 300)
                 }
 
                 CanvasStatusBar(model: model, document: document)

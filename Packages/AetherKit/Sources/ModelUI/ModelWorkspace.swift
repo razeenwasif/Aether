@@ -22,19 +22,15 @@ public struct ModelWorkspace: View {
                 ModelViewport(model: model, camera: model.camera, selected: model.selected, revision: document.revision, editRevision: model.editing?.revision ?? -1)
                     .id(ObjectIdentifier(document))
                 HStack(alignment: .top, spacing: 0) {
-                    if model.navigatorOpen {
-                        Outliner(model: model, document: document)
-                            .frame(width: 248)
-                            .padding(8)
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-                    }
+                    Outliner(model: model, document: document)
+                        .frame(width: 248)
+                        .padding(8)
+                        .sliding(open: model.navigatorOpen, from: .leading, by: 264)
                     Spacer(minLength: 0)
-                    if model.inspectorOpen {
-                        ModelInspector(model: model, document: document)
-                            .frame(width: 284)
-                            .padding(8)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
+                    ModelInspector(model: model, document: document)
+                        .frame(width: 284)
+                        .padding(8)
+                        .sliding(open: model.inspectorOpen, from: .trailing, by: 300)
                 }
                 ModelStatusBar(model: model, document: document)
                     .padding(.leading, leftInset + 12)
