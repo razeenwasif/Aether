@@ -26,6 +26,23 @@ public enum RenderSize: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// How a render is made.
+public enum RenderEngine: String, CaseIterable, Identifiable, Sendable {
+    /// As the view draws: a moment.
+    case quick
+    /// Rays followed through the scene: bounced light, soft shadows,
+    /// reflections; seconds.
+    case traced
+
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .quick: "Quick"
+        case .traced: "Path traced"
+        }
+    }
+}
+
 /// A render made: its pictures, where they were written, and the assets
 /// they were published as.
 public struct Rendered {
@@ -62,9 +79,53 @@ extension ModelWorkspaceModel {
         guard let renderer else { return notice = "This Mac’s GPU can’t render." }
         let (width, height) = renderSize.pixels
         if let id = renderCamera, document.node(id)?.kind != "camera" { renderCamera = nil }
+        let settings = ModelRenderer.RenderSettings(width: width, height: height, transparent: renderTransparent, camera: renderCamera, floor: renderFloor, shadows: renderShadows)
+        if renderEngine == .traced {
+            guard renderTask == nil else { return }
+            guard renderer.canTrace else { return notice = "This Mac’s GPU can’t trace rays: the quick render is the one there is." }
+            let samples = renderSamples
+            stopRendering = false
+            renderProgress = 0
+            renderOpen = true
+            renderTask = Task { [weak self] in
+                defer {
+                    self?.renderTask = nil
+                    self?.renderProgress = nil
+                }
+                do {
+                    let pictures = try await renderer.pathTrace(settings, samples: samples) { done in
+                        guard let self else { return false }
+                        self.renderProgress = done
+                        return !self.stopRendering
+                    }
+                    guard let self, self.document === document else { return }
+                    self.keep(pictures, width: width, height: height, scene: document)
+                } catch {
+                    self?.notice = "Couldn’t render \(document.name): \(error.localizedDescription)"
+                }
+            }
+            return
+        }
         do {
-            let settings = ModelRenderer.RenderSettings(width: width, height: height, transparent: renderTransparent, camera: renderCamera, floor: renderFloor, shadows: renderShadows)
-            let pictures = try renderer.render(settings)
+            keep(try renderer.render(settings), width: width, height: height, scene: document)
+        } catch {
+            notice = "Couldn’t render \(document.name): \(error.localizedDescription)"
+        }
+    }
+
+    /// A path-traced render stopped where it is: what it has so far is kept.
+    public func stopRender() {
+        stopRendering = true
+    }
+
+    /// Wait for a path-traced render under way to finish.
+    public func renderFinished() async {
+        await renderTask?.value
+    }
+
+    /// A render's pictures written beside the scene, shown, and published.
+    private func keep(_ pictures: ModelRenderer.Pictures, width: Int, height: Int, scene document: SceneDocument) {
+        do {
             let folder = document.folder.appending(path: "renders", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let files = (folder.appending(path: "\(document.name) render.png"), folder.appending(path: "\(document.name) depth.png"))

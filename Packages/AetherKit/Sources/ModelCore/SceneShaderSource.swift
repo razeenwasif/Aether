@@ -256,12 +256,10 @@ public enum SceneShaderSource {
 
     """
 
-    /// The source of one surface program, from a material's compiled
-    /// instructions — or the plain grey with none, or one the core couldn't
-    /// compile. Its fragment function is `surfaceFragment`. The constants
-    /// aren't in it: they're read from buffer 4 (`constants(of:)`), so a
-    /// colour changed, or dragged, draws with the program already compiled.
-    public static func surface(_ shader: SceneShader?) -> String {
+    /// A material's program as lines of Metal that leave `base`, `metal` and
+    /// `rough` set, reading the point from `obj` and the constants from `k`:
+    /// the plain grey with none, or one the core couldn't compile.
+    static func body(_ shader: SceneShader?, at obj: String) -> [String] {
         var lines: [String] = []
         if let shader, shader.problem.isEmpty, !shader.ops.isEmpty {
             var k = 0
@@ -272,7 +270,7 @@ public enum SceneShaderSource {
                     lines.append("    float3 \(r) = k[\(k)].xyz;")
                     k += 1
                 case .position:
-                    lines.append("    float3 \(r) = in.obj;")
+                    lines.append("    float3 \(r) = \(obj);")
                 case let .noise(from, scale, detail):
                     lines.append("    float3 \(r) = float3(fbm(r\(from) * \(num(scale)), \(max(1, min(8, Int(detail.rounded()))))));")
                 case let .checker(from, scale):
@@ -291,6 +289,16 @@ public enum SceneShaderSource {
             lines.append("    float metal = 0.0;")
             lines.append("    float rough = 0.55;")
         }
+        return lines
+    }
+
+    /// The source of one surface program, from a material's compiled
+    /// instructions — or the plain grey with none, or one the core couldn't
+    /// compile. Its fragment function is `surfaceFragment`. The constants
+    /// aren't in it: they're read from buffer 4 (`constants(of:)`), so a
+    /// colour changed, or dragged, draws with the program already compiled.
+    public static func surface(_ shader: SceneShader?) -> String {
+        let lines = body(shader, at: "in.obj")
         return prelude + """
         fragment float4 surfaceFragment(Out in [[stage_in]], bool front [[front_facing]], constant Frame &frame [[buffer(1)]], constant Object &object [[buffer(2)]], constant float4 *k [[buffer(4)]],
                                       constant LightsHead &head [[buffer(5)]], constant SceneLight *lights [[buffer(6)]], depth2d_array<float> maps [[texture(0)]]) {

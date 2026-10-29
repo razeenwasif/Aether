@@ -130,6 +130,10 @@ public struct AetherCommands: Commands {
                 .disabled(!onModel || modeling.document == nil)
             Button(modeling.renderOpen ? "Hide the Render" : "Show the Render") { modeling.toggleRenderDrawer() }
                 .disabled(!onModel || modeling.document == nil)
+            Picker("Render With", selection: Binding(get: { modeling.renderEngine }, set: { modeling.renderEngine = $0 })) {
+                ForEach(RenderEngine.allCases) { Text($0.title).tag($0) }
+            }
+            .disabled(!onModel || modeling.document == nil)
             Divider()
             Menu("Add") {
                 ForEach(SceneAddition.allCases) { addition in

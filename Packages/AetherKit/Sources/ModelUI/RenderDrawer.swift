@@ -13,6 +13,22 @@ struct RenderDrawer: View {
             HStack(spacing: 10) {
                 Image(systemName: "camera.aperture").font(.system(size: 11)).foregroundStyle(Color.ink2)
                 Text("Render").font(.aeBodyStrong).foregroundStyle(Color.inkHi)
+                Picker("Engine", selection: $model.renderEngine) {
+                    ForEach(RenderEngine.allCases) { Text($0.title).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+                .help("Quick draws as the view does, in a moment; path traced follows light as it bounces, for soft shadows and reflections, in seconds")
+                if model.renderEngine == .traced {
+                    Picker("Samples", selection: $model.renderSamples) {
+                        ForEach([32, 128, 512, 2048], id: \.self) { Text("\($0) samples").tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .controlSize(.small)
+                    .help("Rays a pixel: more is smoother and slower")
+                }
                 Picker("Size", selection: $model.renderSize) {
                     ForEach(RenderSize.allCases) { Text($0.title).tag($0) }
                 }
@@ -28,23 +44,19 @@ struct RenderDrawer: View {
                 .fixedSize()
                 .controlSize(.small)
                 .help("What the render looks through: the view's camera, or one of the scene's")
-                Toggle("Floor", isOn: $model.renderFloor)
-                    .toggleStyle(.checkbox)
-                    .font(.aeSmall)
-                    .help("A floor under everything, for shadows to fall on")
-                Toggle("Shadows", isOn: $model.renderShadows)
-                    .toggleStyle(.checkbox)
-                    .font(.aeSmall)
-                Toggle("Clear background", isOn: $model.renderTransparent)
-                    .toggleStyle(.checkbox)
-                    .font(.aeSmall)
-                    .help("Leave the background clear, for the picture to sit on another")
                 Spacer()
-                if model.lastRender != nil {
-                    Button("Show in Finder", action: model.revealRender).controlSize(.small)
+                if let done = model.renderProgress {
+                    ProgressView(value: Double(done), total: Double(max(model.renderSamples, 1)))
+                        .frame(width: 90)
+                        .controlSize(.small)
+                    Text(verbatim: "\(done)/\(model.renderSamples)").font(.aeMono).foregroundStyle(Color.ink2)
+                    Button("Stop", action: model.stopRender)
+                        .controlSize(.small)
+                        .help("Stop where it is and keep what it has")
+                } else {
+                    Button("Render  ⌘↩", action: model.render)
+                        .controlSize(.small)
                 }
-                Button("Render  ⌘↩", action: model.render)
-                    .controlSize(.small)
                 Button { model.toggleRenderDrawer() } label: {
                     Image(systemName: "xmark").font(.system(size: 10, weight: .medium)).frame(width: 18, height: 18).contentShape(Rectangle())
                 }
@@ -54,7 +66,29 @@ struct RenderDrawer: View {
                 .accessibilityLabel("Hide the render")
             }
             .padding(.horizontal, 12)
-            .frame(height: 34)
+            .frame(height: 32)
+            // The second row: what's in the picture, and where it went.
+            HStack(spacing: 12) {
+                Toggle("Floor", isOn: $model.renderFloor)
+                    .toggleStyle(.checkbox)
+                    .font(.aeSmall)
+                    .help("A floor under everything, for shadows to fall on")
+                if model.renderEngine == .quick {
+                    Toggle("Shadows", isOn: $model.renderShadows)
+                        .toggleStyle(.checkbox)
+                        .font(.aeSmall)
+                }
+                Toggle("Clear background", isOn: $model.renderTransparent)
+                    .toggleStyle(.checkbox)
+                    .font(.aeSmall)
+                    .help("Leave the background clear, for the picture to sit on another")
+                Spacer()
+                if model.lastRender != nil {
+                    Button("Show in Finder", action: model.revealRender).controlSize(.small)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
             if let last = model.lastRender {
                 HStack(spacing: 10) {
                     picture(last.beauty, title: "\(document.name) Render", version: last.versions?.beauty, clear: model.renderTransparent)

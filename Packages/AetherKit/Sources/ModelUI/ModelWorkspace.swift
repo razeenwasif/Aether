@@ -47,7 +47,7 @@ public struct ModelWorkspace: View {
                 Spacer()
                 if model.renderOpen, let document = model.document {
                     RenderDrawer(model: model, document: document)
-                        .frame(height: 250)
+                        .frame(height: 270)
                         .padding(.horizontal, 12)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

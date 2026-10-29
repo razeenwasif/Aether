@@ -1233,6 +1233,37 @@ Not yet:
   - 322 Rust and 153 Swift tests pass.
 - **Not done:** a point light's shadow from inside what it lights (it needs a map every way); soft shadows, reflections and bounced light (the path tracer); looking through a scene camera in the view.
 
+**2026-10-29 · Model: Render, path traced.** The user said "start the path tracer for Render".
+
+- **The decision:** a progressive GPU path tracer on Metal's ray tracing, not a CPU one. It shades as the view does, so the two engines agree where they can, and the quick render stays the default. A path-traced render publishes to the same assets: a flow following "<Scene> Render" takes either.
+- **`TracerSource`** (ModelCore): the tracer's Metal, built per scene.
+  - Each material's program becomes a function (`SceneShaderSource.body` now makes the lines for the view's fragment and the tracer alike), chosen by the triangle's slot. Slot 0 is the plain grey, for no material and the floor.
+  - Its constants are read from a buffer with each slot's start, so a colour changed recompiles nothing, as in the view.
+  - `trace` follows one path a sample: a jittered camera ray, up to five bounces, Russian roulette after three.
+  - At each hit, every light is looked at directly through a shadow ray (any-hit). A point has a radius of 0.05 m and a sun a 1.5° half-angle, so shadows soften. Brightness is the view's: a point's colour × strength / d², a sun's colour × strength.
+  - The next bounce is diffuse (cosine) or specular (GGX), chosen by how much each matters, with the one-sample mixed pdf so neither way's misses blow up. The BRDF is the view's `reflected`.
+  - A ray leaving the scene meets a dim, even room (0.22, the view's ambient), which gives the soft darkening where things meet. A camera ray that misses meets the ground colour, or nothing for a clear background.
+  - Each sample is clipped at 20 against fireflies.
+  - `finish` divides the sum and applies the view's tone curve, premultiplied.
+- **`PathTracer`** (ModelUI):
+  - Puts every mesh's triangles into the world (positions for the acceleration structure; object-space positions for patterns; world normals), with the floor, in one primitive acceleration structure.
+  - Runs passes of up to 8 samples, each command buffer awaited without holding the main thread; a pass's progress can stop it.
+  - The model's renderer runs the quick render first for the depth pass, and as a check the scene draws.
+- **The workspace:**
+  - The render drawer gains the engine (Quick, Path traced) and samples (32, 128 to start, 512, 2048). While tracing it shows a bar, the samples so far, and Stop, which keeps what there is. The drawer is two rows now, as one row overflowed.
+  - Scene ▸ Render With picks the engine.
+  - Closing the scene stops a render, and one that finishes for a scene no longer open is dropped.
+  - A Mac whose GPU can't trace rays is told so.
+- **Checked in the app,** on a throwaway scene, deleted after (with the `project.json` and `blobs/` it made):
+  - Scene ▸ Render With ▸ Path traced, then Render. The drawer counted samples with Stop, and in about four seconds made a 128-sample 1024² render: the noise-layered cube with a soft shadow sharpening towards its base, darkening where it meets the floor, and its material.
+  - The drawer's one row was found overflowing ("Floor" wrapped, "Clear background" cut off) and is now two.
+- **Tests:** 3 in Swift.
+  - The tracer compiles with every kind of material and with none, and each slot's constants start where they should.
+  - A traced render of a red cube is red on a dark ground with the quick depth pass, and the floor beside the cube is redder than in the quick render: bounced light.
+  - A 2048-sample render stopped at once keeps what it has and publishes as any render does.
+  - 322 Rust and 156 Swift tests pass.
+- **Not done:** denoising (128 samples still shows a little grain on large flat areas); textures; glass and other transmission; emissive materials; instancing a mesh rather than copying its triangles.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1263,4 +1294,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Render's second slice: the scene's cameras and lights, and shadows~~: done, see §10a.
 
-**Next, proposed:** a path tracer for Render (soft shadows, reflections, bounced light), on Metal's ray tracing. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion.
+~~A path tracer for Render~~: done, see §10a.
+
+**Next, proposed:** with Model's pieces in the design all built, the measurements the plan has been putting off: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion. After those, a denoiser for the path tracer, or the next workspace (Design, Game or Video), as the user chooses. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion.

@@ -89,6 +89,15 @@ public final class ModelWorkspaceModel {
     /// A floor under everything in a render, for shadows to fall on.
     public var renderFloor = true
     public var renderShadows = true
+    /// Quick (as the view draws, in a moment) or path traced (light that
+    /// bounces, soft shadows, reflections, in seconds).
+    public var renderEngine: RenderEngine = .quick
+    /// A path-traced render's samples a pixel.
+    public var renderSamples = 128
+    /// A path-traced render under way: the samples so far.
+    public internal(set) var renderProgress: Int?
+    @ObservationIgnored var renderTask: Task<Void, Never>?
+    @ObservationIgnored var stopRendering = false
     public internal(set) var lastRender: Rendered?
     /// The GPU drawing renders: its own, so a render needn't wait on the view.
     @ObservationIgnored var renderer: ModelRenderer?
@@ -175,6 +184,7 @@ public final class ModelWorkspaceModel {
         if let path = documentPath { project?.forget(document: path) }
         document = nil
         selected = nil
+        stopRendering = true
         lastRender = nil
         renderOpen = false
         refreshList()

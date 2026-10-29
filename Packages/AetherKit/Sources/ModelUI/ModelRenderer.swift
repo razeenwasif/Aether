@@ -489,6 +489,76 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
                         depth: try Self.image(deep, width: width, height: height, opaque: true))
     }
 
+    // MARK: Path traced
+
+    private var tracer: PathTracer?
+
+    /// Whether this Mac's GPU can trace rays.
+    var canTrace: Bool { device.supportsRaytracing }
+
+    /// The render path traced: the scene's triangles, its materials and its
+    /// lights (each with a size, so shadows soften), light bouncing off
+    /// everything and in from a dim room round it, `samples` a pixel. The
+    /// depth pass is the quick render's. `progress` hears the samples so
+    /// far after each pass and answers whether to go on.
+    func pathTrace(_ settings: RenderSettings, samples: Int, progress: @MainActor (Int) -> Bool) async throws -> Pictures {
+        guard let model, let document = model.document else { throw RenderFailure(reason: "open a scene to render") }
+        if tracer == nil { tracer = PathTracer(device: device) }
+        guard let tracer else { throw RenderFailure(reason: "this Mac’s GPU can’t trace rays: use the quick render") }
+        // The depth pass, and a check the scene can be drawn, from the quick
+        // render at the same settings.
+        let quick = try render(settings)
+        let nodes = document.state.objects
+        let worlds = SceneMath.worlds(nodes)
+        let lens = settings.camera.flatMap { id in nodes.first { $0.id == id && $0.kind == "camera" } }
+        let view = lens.map { SceneMath.view(through: worlds[$0.id] ?? matrix_identity_float4x4) } ?? model.camera.view
+        let fov = lens.map { Float($0.fov) * .pi / 180 } ?? SceneMath.fov
+
+        var scene = PathTracer.Scene()
+        let materials = document.state.materials.map(\.id)
+        let shaders = Dictionary(document.state.shaders.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        scene.shaders = materials.map { shaders[$0] }
+        var corners: [SIMD3<Float>] = []
+        for node in nodes where node.kind == "mesh" && !node.mesh.isEmpty {
+            let mesh = document.mesh(for: node)
+            guard !mesh.triangles.isEmpty else { continue }
+            let world = worlds[node.id] ?? matrix_identity_float4x4
+            let slot = materials.firstIndex(of: node.material).map { UInt32($0 + 1) } ?? 0
+            scene.add(mesh, world: world, slot: slot)
+            corners += SceneMath.corners(bounds: mesh.bounds, world: world)
+        }
+        guard !corners.isEmpty else { throw RenderFailure(reason: "there's no mesh to render") }
+        var lo = corners[0], hi = corners[0]
+        for c in corners {
+            lo = simd_min(lo, c)
+            hi = simd_max(hi, c)
+        }
+        let centre = (lo + hi) / 2
+        let radius = max(0.25, simd_length(hi - lo) / 2)
+        if settings.floor {
+            scene.add(floorMesh(at: lo.y, around: centre, reach: radius * 8), world: matrix_identity_float4x4, slot: 0)
+        }
+        // Lights in the world, each with a size: a point a ball a tenth of a
+        // metre across, a sun three degrees wide.
+        for node in nodes where node.kind == "light" {
+            guard let light = node.light, let world = worlds[node.id] else { continue }
+            let c = light.color.count == 3 ? light.color : [1, 1, 1]
+            let rgb = SIMD3(Float(c[0]), Float(c[1]), Float(c[2])) * Float(light.strength)
+            if light.kind == "sun" {
+                scene.lights.append(.init(at: SIMD4(simd_normalize(SIMD3(world.columns.2.x, world.columns.2.y, world.columns.2.z)), 0), color: SIMD4(rgb, tan(1.5 * .pi / 180))))
+            } else {
+                scene.lights.append(.init(at: SIMD4(world.columns.3.x, world.columns.3.y, world.columns.3.z, 1), color: SIMD4(rgb, 0.05)))
+            }
+        }
+        if scene.lights.isEmpty {
+            scene.lights = [.init(at: SIMD4(Self.key, 0), color: SIMD4(3.2, 3.2, 3.2, tan(1.5 * .pi / 180)))]
+        }
+        scene.lights = Array(scene.lights.prefix(16))
+        let picture = try await tracer.trace(scene, eye: view.inverse, fov: fov, width: settings.width, height: settings.height,
+                                             samples: samples, transparent: settings.transparent, progress: progress)
+        return Pictures(beauty: try Self.image(picture, width: settings.width, height: settings.height, opaque: !settings.transparent), depth: quick.depth)
+    }
+
     /// A shadow map's side, in texels.
     static let shadowSize = 2048
 
