@@ -19,6 +19,10 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     private let solid: MTLDepthStencilState
     private let over: MTLDepthStencilState
     private var surfaces: [String: MTLRenderPipelineState] = [:]
+    /// Bound where nothing casts a shadow: the view, and a render's lights
+    /// that can't.
+    private let noShadows: MTLTexture
+    private var shadowPipeline: MTLRenderPipelineState?
     private var buffers: [String: Held] = [:]
     private let inFlight = DispatchSemaphore(value: 3)
     weak var model: ModelWorkspaceModel?
@@ -47,6 +51,20 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     private struct LineVertex {
         var position: SIMD3<Float>
         var color: SIMD4<Float>
+    }
+
+    /// A scene light, as the shader reads it (`SceneLight`).
+    private struct LightUniform {
+        var at: SIMD4<Float>
+        var color: SIMD4<Float>
+        var shadow: simd_float4x4
+    }
+
+    private struct LightsHead {
+        var count: Int32
+        var bias: Float
+        var offset: Float = 0
+        var pad: Float = 0
     }
 
     private struct OverlayUniforms {
@@ -103,6 +121,13 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         depth.isDepthWriteEnabled = false
         guard let over = device.makeDepthStencilState(descriptor: depth) else { return nil }
         self.over = over
+        let empty = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: 1, height: 1, mipmapped: false)
+        empty.textureType = .type2DArray
+        empty.arrayLength = 1
+        empty.usage = .shaderRead
+        empty.storageMode = .private
+        guard let noShadows = device.makeTexture(descriptor: empty) else { return nil }
+        self.noShadows = noShadows
         super.init()
     }
 
@@ -176,6 +201,18 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         let light = viewMatrix * SIMD4(Self.key, 0)
         var frame = FrameUniforms(proj: proj, light: SIMD3(light.x, light.y, light.z), tint: Self.ice)
         let shaders = Dictionary((model.document?.state.shaders ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // The scene's lights shade the view too, without shadows; none, the
+        // key light.
+        var lights = Self.sceneLights(nodes, worlds: worlds, view: viewMatrix).map { light in
+            var one = light
+            one.color.w = -1
+            return one
+        }
+        var head = LightsHead(count: Int32(lights.count), bias: 0)
+        if lights.isEmpty { lights = [LightUniform(at: .zero, color: SIMD4(0, 0, 0, -1), shadow: matrix_identity_float4x4)] }
+        encoder.setFragmentBytes(&head, length: MemoryLayout<LightsHead>.stride, index: 5)
+        encoder.setFragmentBytes(&lights, length: lights.count * MemoryLayout<LightUniform>.stride, index: 6)
+        encoder.setFragmentTexture(noShadows, index: 0)
 
         encoder.setDepthStencilState(solid)
         var triangles = 0
@@ -260,49 +297,142 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
 
     private var depthPipeline: MTLRenderPipelineState?
 
-    /// The scene from the camera, `width` by `height`: drawn at twice that
-    /// with 4× multisampling and scaled down, without the grid, the stand-ins,
-    /// Edit mode's cage or the chosen object's tint. Then again for depth,
-    /// near white and far black across what the scene spans in front of the
-    /// camera.
-    func render(width: Int, height: Int, transparent: Bool) throws -> Pictures {
+    /// How a render is made, beyond its size.
+    struct RenderSettings {
+        var width: Int
+        var height: Int
+        var transparent = false
+        /// A camera object to look through, or the view's camera.
+        var camera: String?
+        /// A floor under everything, for shadows to fall on.
+        var floor = true
+        var shadows = true
+    }
+
+    /// The scene `width` by `height`, through the view's camera or one of the
+    /// scene's: drawn at twice that with 4× multisampling and scaled down,
+    /// without the grid, the stand-ins, Edit mode's cage or the chosen
+    /// object's tint. Lit by the scene's lights (the key light when it has
+    /// none), each casting a shadow from a map of its own, onto a floor
+    /// under everything if asked for. Then again for depth, near white and
+    /// far black across what the scene spans in front of the camera.
+    func render(_ settings: RenderSettings) throws -> Pictures {
         guard let model, let document = model.document else { throw RenderFailure(reason: "open a scene to render") }
-        let scale = min(2, 8192 / max(width, height))
-        let (w, h) = (width * max(scale, 1), height * max(scale, 1))
+        let (width, height) = (settings.width, settings.height)
+        let scale = max(1, min(2, 8192 / max(width, height)))
+        let (w, h) = (width * scale, height * scale)
         let nodes = document.state.objects
         let worlds = SceneMath.worlds(nodes)
-        let view = model.camera.view
+        let lens = settings.camera.flatMap { id in nodes.first { $0.id == id && $0.kind == "camera" } }
+        let view = lens.map { SceneMath.view(through: worlds[$0.id] ?? matrix_identity_float4x4) } ?? model.camera.view
+        let fov = lens.map { Float($0.fov) * .pi / 180 } ?? SceneMath.fov
+
+        // What casts: every mesh drawn, with its box in the world.
+        let meshes = nodes.filter { $0.kind == "mesh" && !$0.mesh.isEmpty }.compactMap { node -> (SceneNode, SceneMeshData, simd_float4x4)? in
+            let mesh = document.mesh(for: node)
+            return mesh.triangles.isEmpty ? nil : (node, mesh, worlds[node.id] ?? matrix_identity_float4x4)
+        }
+        let corners = meshes.flatMap { SceneMath.corners(bounds: $0.1.bounds, world: $0.2) }
+        var lo = corners.first ?? .zero, hi = corners.first ?? .zero
+        for c in corners {
+            lo = simd_min(lo, c)
+            hi = simd_max(hi, c)
+        }
+        let centre = (lo + hi) / 2
+        let radius = max(0.25, simd_length(hi - lo) / 2)
+        let floor = settings.floor && !corners.isEmpty ? floorMesh(at: lo.y, around: centre, reach: radius * 8) : nil
+        let seen = corners + (floor.map { _ in [-1, 1].flatMap { x in [-1, 1].map { z in SIMD3(centre.x + x * radius * 8, lo.y, centre.z + z * radius * 8) } } } ?? [])
+
         // What's in front of the camera, for the depth pass and the planes.
-        let depths = model.boxes().flatMap(\.corners).map { -(view * SIMD4($0, 1)).z }.filter { $0 > 0 }
+        let depths = seen.map { -(view * SIMD4($0, 1)).z }.filter { $0 > 0 }
         let nearest = max(0.01, (depths.min() ?? 0.1) * 0.98)
         let farthest = max(nearest * 1.01, (depths.max() ?? 10) * 1.02)
-        let proj = SceneMath.perspective(aspect: Float(width) / Float(max(height, 1)), near: max(0.005, nearest * 0.5), far: farthest * 1.5)
-        let light = view * SIMD4(Self.key, 0)
-        var frame = FrameUniforms(proj: proj, light: SIMD3(light.x, light.y, light.z), tint: Self.ice)
+        let proj = SceneMath.perspective(aspect: Float(width) / Float(max(height, 1)), near: max(0.005, nearest * 0.5), far: farthest * 1.5, fov: fov)
+        let key = view * SIMD4(Self.key, 0)
+        var frame = FrameUniforms(proj: proj, light: SIMD3(key.x, key.y, key.z), tint: Self.ice)
         let shaders = Dictionary(document.state.shaders.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+
+        // The lights: the scene's, or the key light as a sun. Each that can,
+        // up to four, casts a shadow from a map: a sun's square on to what
+        // casts, a point's looking at it from outside it.
+        var lights = Self.sceneLights(nodes, worlds: worlds, view: view)
+        var world: [simd_float4x4] = Self.sceneLightWorlds(nodes, worlds: worlds)
+        if lights.isEmpty {
+            let toward = Self.key
+            lights = [LightUniform(at: SIMD4(key.x, key.y, key.z, 0), color: SIMD4(3.2, 3.2, 3.2, -1), shadow: matrix_identity_float4x4)]
+            world = [Self.sunWorld(toward: toward)]
+        }
+        var casts: [(layer: Int, clip: simd_float4x4)] = []
+        if settings.shadows, !meshes.isEmpty {
+            for i in lights.indices where casts.count < 4 {
+                guard let clip = Self.shadowClip(lights[i], world: world[i], centre: centre, radius: radius) else { continue }
+                lights[i].color.w = Float(casts.count)
+                lights[i].shadow = clip * view.inverse
+                casts.append((casts.count, clip))
+            }
+        }
+        // Two and a half texels of a sun's map, along the surface's normal.
+        var head = LightsHead(count: Int32(lights.count), bias: 0.0003, offset: 2.5 * 2 * radius * 1.05 / Float(Self.shadowSize))
 
         if depthPipeline == nil {
             let library = try device.makeLibrary(source: SceneShaderSource.surface(nil), options: nil)
             depthPipeline = try device.makeRenderPipelineState(descriptor: Self.surfaceDescriptor(library, fragment: "depthFragment"))
+            let d = Self.surfaceDescriptor(library, fragment: "depthFragment")
+            d.vertexFunction = library.makeFunction(name: "shadowVertex")
+            d.fragmentFunction = nil
+            d.colorAttachments[0].pixelFormat = .invalid
+            d.rasterSampleCount = 1
+            shadowPipeline = try device.makeRenderPipelineState(descriptor: d)
         }
-        func texture(_ format: MTLPixelFormat, samples: Int, usage: MTLTextureUsage, storage: MTLStorageMode) throws -> MTLTexture {
-            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: w, height: h, mipmapped: false)
+        func texture(_ format: MTLPixelFormat, width: Int, height: Int, samples: Int = 1, layers: Int = 0, usage: MTLTextureUsage, storage: MTLStorageMode) throws -> MTLTexture {
+            let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: width, height: height, mipmapped: false)
             if samples > 1 {
                 d.textureType = .type2DMultisample
                 d.sampleCount = samples
             }
+            if layers > 0 {
+                d.textureType = .type2DArray
+                d.arrayLength = layers
+            }
             d.usage = usage
             d.storageMode = storage
-            guard let made = device.makeTexture(descriptor: d) else { throw RenderFailure(reason: "the GPU couldn’t make a \(w) × \(h) picture") }
+            guard let made = device.makeTexture(descriptor: d) else { throw RenderFailure(reason: "the GPU couldn’t make a \(width) × \(height) picture") }
             return made
         }
-        let color = try texture(.bgra8Unorm, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
-        let depthTarget = try texture(.depth32Float, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
+        let color = try texture(.bgra8Unorm, width: w, height: h, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
+        let depthTarget = try texture(.depth32Float, width: w, height: h, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
         let readable: MTLStorageMode = device.hasUnifiedMemory ? .shared : .managed
-        let beauty = try texture(.bgra8Unorm, samples: 1, usage: .renderTarget, storage: readable)
-        let deep = try texture(.bgra8Unorm, samples: 1, usage: .renderTarget, storage: readable)
+        let beauty = try texture(.bgra8Unorm, width: w, height: h, usage: .renderTarget, storage: readable)
+        let deep = try texture(.bgra8Unorm, width: w, height: h, usage: .renderTarget, storage: readable)
+        let maps = casts.isEmpty ? noShadows : try texture(.depth32Float, width: Self.shadowSize, height: Self.shadowSize, layers: casts.count, usage: [.renderTarget, .shaderRead], storage: .private)
 
         guard let commands = queue.makeCommandBuffer() else { throw RenderFailure(reason: "the GPU is busy") }
+        // The shadow maps: each light's view of what casts, depth only, both
+        // sides of every face, so where a thing meets the floor its shadow
+        // meets it too.
+        for cast in casts {
+            let pass = MTLRenderPassDescriptor()
+            pass.depthAttachment.texture = maps
+            pass.depthAttachment.slice = cast.layer
+            pass.depthAttachment.loadAction = .clear
+            pass.depthAttachment.storeAction = .store
+            pass.depthAttachment.clearDepth = 1
+            guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass), let shadowPipeline else { throw RenderFailure(reason: "the GPU is busy") }
+            encoder.setRenderPipelineState(shadowPipeline)
+            encoder.setDepthStencilState(solid)
+            encoder.setFrontFacing(.counterClockwise)
+            for (node, mesh, placed) in meshes {
+                guard let held = held(node.id, node.shape, mesh) else { continue }
+                var clip = cast.clip * placed
+                encoder.setCullMode(.none)
+                encoder.setVertexBuffer(held.positions, offset: 0, index: 0)
+                encoder.setVertexBuffer(held.normals, offset: 0, index: 3)
+                encoder.setVertexBytes(&clip, length: MemoryLayout<simd_float4x4>.stride, index: 1)
+                encoder.drawIndexedPrimitives(type: .triangle, indexCount: held.count, indexType: .uint32, indexBuffer: held.indices, indexBufferOffset: 0)
+            }
+            encoder.endEncoding()
+        }
+        if lights.isEmpty { lights = [LightUniform(at: .zero, color: SIMD4(0, 0, 0, -1), shadow: matrix_identity_float4x4)] }
         for (resolve, isDepth) in [(beauty, false), (deep, true)] {
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = color
@@ -310,7 +440,7 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             pass.colorAttachments[0].loadAction = .clear
             pass.colorAttachments[0].storeAction = .multisampleResolve
             pass.colorAttachments[0].clearColor = isDepth ? MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
-                : transparent ? MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0) : MTLClearColor(red: 0.028, green: 0.031, blue: 0.04, alpha: 1)
+                : settings.transparent ? MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0) : MTLClearColor(red: 0.028, green: 0.031, blue: 0.04, alpha: 1)
             pass.depthAttachment.texture = depthTarget
             pass.depthAttachment.loadAction = .clear
             pass.depthAttachment.storeAction = .dontCare
@@ -318,12 +448,15 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             guard let encoder = commands.makeRenderCommandEncoder(descriptor: pass) else { throw RenderFailure(reason: "the GPU is busy") }
             encoder.setDepthStencilState(solid)
             encoder.setFrontFacing(.counterClockwise)
+            encoder.setFragmentBytes(&head, length: MemoryLayout<LightsHead>.stride, index: 5)
+            encoder.setFragmentBytes(&lights, length: lights.count * MemoryLayout<LightUniform>.stride, index: 6)
+            encoder.setFragmentTexture(maps, index: 0)
             var range = SIMD2<Float>(nearest, farthest)
-            for node in nodes where node.kind == "mesh" && !node.mesh.isEmpty {
-                let shader = node.material.isEmpty ? nil : shaders[node.material]
-                let mesh = document.mesh(for: node)
-                guard let held = held(node.id, node.shape, mesh), let pipeline = isDepth ? depthPipeline : surface(shader) else { continue }
-                let modelView = view * (worlds[node.id] ?? matrix_identity_float4x4)
+            let drawn: [(String, String, SceneMeshData, simd_float4x4, SceneShader?)] = meshes.map { ($0.0.id, $0.0.shape, $0.1, $0.2, $0.0.material.isEmpty ? nil : shaders[$0.0.material]) }
+                + (floor.map { [("floor", "floor:\(lo.y):\(centre):\(radius)", $0, matrix_identity_float4x4, nil)] } ?? [])
+            for (id, shape, mesh, placed, shader) in drawn {
+                guard let held = held(id, shape, mesh), let pipeline = isDepth ? depthPipeline : surface(shader) else { continue }
+                let modelView = view * placed
                 let upper = simd_float3x3(SIMD3(modelView.columns.0.x, modelView.columns.0.y, modelView.columns.0.z),
                                           SIMD3(modelView.columns.1.x, modelView.columns.1.y, modelView.columns.1.z),
                                           SIMD3(modelView.columns.2.x, modelView.columns.2.y, modelView.columns.2.z))
@@ -350,9 +483,80 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         }
         commands.commit()
         commands.waitUntilCompleted()
+        buffers["floor"] = nil
         if let error = commands.error { throw RenderFailure(reason: error.localizedDescription) }
-        return Pictures(beauty: try Self.image(beauty, width: width, height: height, opaque: !transparent),
+        return Pictures(beauty: try Self.image(beauty, width: width, height: height, opaque: !settings.transparent),
                         depth: try Self.image(deep, width: width, height: height, opaque: true))
+    }
+
+    /// A shadow map's side, in texels.
+    static let shadowSize = 2048
+
+    /// A square floor at height `y`, `reach` out from `centre` each way.
+    private func floorMesh(at y: Float, around centre: SIMD3<Float>, reach: Float) -> SceneMeshData {
+        let (x0, x1, z0, z1) = (centre.x - reach, centre.x + reach, centre.z - reach, centre.z + reach)
+        return SceneMeshData(positions: [x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1], normals: [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0],
+                             triangles: [0, 2, 1, 0, 3, 2], bounds: [x0, y, z0, x1, y, z1], closed: false, problem: nil)
+    }
+
+    /// The scene's lights as the shader reads them, in the eye space of
+    /// `view`, unshadowed: a point where it is, a sun the way towards it (its
+    /// own +Z, as it shines down −Z).
+    private static func sceneLights(_ nodes: [SceneNode], worlds: [String: simd_float4x4], view: simd_float4x4) -> [LightUniform] {
+        nodes.compactMap { node -> LightUniform? in
+            guard node.kind == "light", let light = node.light, let world = worlds[node.id] else { return nil }
+            let c = light.color.count == 3 ? light.color : [1, 1, 1]
+            let color = SIMD4(Float(c[0]), Float(c[1]), Float(c[2]), 0) * Float(light.strength)
+            if light.kind == "sun" {
+                let toward = view * SIMD4(simd_normalize(SIMD3(world.columns.2.x, world.columns.2.y, world.columns.2.z)), 0)
+                return LightUniform(at: SIMD4(simd_normalize(SIMD3(toward.x, toward.y, toward.z)), 0), color: SIMD4(color.x, color.y, color.z, -1), shadow: matrix_identity_float4x4)
+            }
+            let at = view * world.columns.3
+            return LightUniform(at: SIMD4(at.x, at.y, at.z, 1), color: SIMD4(color.x, color.y, color.z, -1), shadow: matrix_identity_float4x4)
+        }.prefix(8).map { $0 }
+    }
+
+    /// The scene lights' places in the world, in the same order.
+    private static func sceneLightWorlds(_ nodes: [SceneNode], worlds: [String: simd_float4x4]) -> [simd_float4x4] {
+        nodes.filter { $0.kind == "light" && $0.light != nil && worlds[$0.id] != nil }.prefix(8).map { worlds[$0.id]! }
+    }
+
+    /// A sun's place for the key light: its +Z towards `toward`.
+    private static func sunWorld(toward: SIMD3<Float>) -> simd_float4x4 {
+        let z = simd_normalize(toward)
+        let up: SIMD3<Float> = abs(z.y) > 0.99 ? SIMD3(0, 0, 1) : SIMD3(0, 1, 0)
+        let x = simd_normalize(simd_cross(up, z))
+        let y = simd_cross(z, x)
+        return simd_float4x4(columns: (SIMD4(x, 0), SIMD4(y, 0), SIMD4(z, 0), SIMD4(0, 0, 0, 1)))
+    }
+
+    /// The view from `eye` towards `target`, with an up that isn't along it.
+    private static func look(from eye: SIMD3<Float>, at target: SIMD3<Float>) -> simd_float4x4 {
+        let z = simd_normalize(eye - target)
+        let up: SIMD3<Float> = abs(z.y) > 0.99 ? SIMD3(0, 0, 1) : SIMD3(0, 1, 0)
+        let x = simd_normalize(simd_cross(up, z))
+        let y = simd_cross(z, x)
+        return simd_float4x4(columns: (
+            SIMD4(x.x, y.x, z.x, 0), SIMD4(x.y, y.y, z.y, 0), SIMD4(x.z, y.z, z.z, 0),
+            SIMD4(-simd_dot(x, eye), -simd_dot(y, eye), -simd_dot(z, eye), 1)
+        ))
+    }
+
+    /// From the world into a light's shadow map, or `nil` for a point light
+    /// inside what casts (it would need a map every way).
+    private static func shadowClip(_ light: LightUniform, world: simd_float4x4, centre: SIMD3<Float>, radius: Float) -> simd_float4x4? {
+        if light.at.w < 0.5 {
+            let toward = simd_normalize(SIMD3(world.columns.2.x, world.columns.2.y, world.columns.2.z))
+            let view = look(from: centre + toward * radius * 3, at: centre)
+            let r = radius * 1.05
+            return SceneMath.orthographic(left: -r, right: r, bottom: -r, top: r, near: radius * 0.5, far: radius * 12) * view
+        }
+        let at = SIMD3(world.columns.3.x, world.columns.3.y, world.columns.3.z)
+        let distance = simd_length(centre - at)
+        guard distance > radius * 1.05 else { return nil }
+        let fov = min(150 * Float.pi / 180, max(10 * Float.pi / 180, 2 * asin(min(radius / distance, 0.999)) * 1.15))
+        let near = max(0.02, distance - radius * 1.2)
+        return SceneMath.perspective(aspect: 1, near: near, far: distance + radius * 10, fov: fov) * look(from: at, at: centre)
     }
 
     /// A rendered texture as a picture, scaled down to `width` by `height`.

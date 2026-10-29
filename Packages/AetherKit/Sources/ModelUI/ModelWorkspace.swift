@@ -336,6 +336,12 @@ private struct ModelInspector: View {
                 } else if let node = model.selectedNode {
                     header(node)
                     TransformSection(model: model, node: node)
+                    if node.kind == "camera" {
+                        CameraSection(model: model, node: node)
+                    }
+                    if node.kind == "light", let light = node.light {
+                        LightSection(model: model, node: node, light: light)
+                    }
                     if node.kind == "mesh" {
                         MeshSection(model: model, document: document, node: node)
                         ModifiersSection(model: model, node: node)

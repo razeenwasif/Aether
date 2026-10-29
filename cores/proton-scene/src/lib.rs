@@ -37,6 +37,7 @@
 //! - **The second save changes nothing the first did not.** Idempotent, so a
 //!   file only ever appears in a diff because somebody changed it.
 
+mod lens;
 mod material;
 mod shader;
 mod write;
@@ -118,6 +119,11 @@ pub struct Node {
     /// How many objects name it as a parent. Derived the same way, and for the
     /// same reason.
     pub children: usize,
+    /// Added in Aether: a camera's field of view in degrees, top to bottom
+    /// (50 when the file doesn't say; read on every object, used on cameras).
+    pub fov: f64,
+    /// Added in Aether: a light's settings, on a light; none on anything else.
+    pub light: Option<Light>,
 }
 
 impl Scene {
@@ -257,6 +263,8 @@ impl Scene {
                 scale: triple(one, "scale", [1.0; 3]),
                 children: kids.len(),
                 depth,
+                fov: lens::fov_of(one),
+                light: (string_of(one, "kind", "empty") == "light").then(|| Light::read(one)),
                 id,
             });
             stack.extend(kids.into_iter().rev().map(|k| (k, depth + 1)));
@@ -624,6 +632,7 @@ impl Default for Scene {
     }
 }
 
+pub use lens::{Light, FOV};
 pub use material::{GraphNode, Link, Material, Param, ParamValue};
 pub use shader::{Op, Shader, NODES};
 

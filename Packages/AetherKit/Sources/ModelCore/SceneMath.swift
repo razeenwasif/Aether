@@ -47,8 +47,9 @@ public enum SceneMath {
         ))
     }
 
-    /// A perspective projection for Metal, whose depth runs 0 to 1.
-    public static func perspective(aspect: Float, near: Float, far: Float) -> simd_float4x4 {
+    /// A perspective projection for Metal, whose depth runs 0 to 1; `fov`
+    /// top to bottom, in radians.
+    public static func perspective(aspect: Float, near: Float, far: Float, fov: Float = SceneMath.fov) -> simd_float4x4 {
         let f = 1 / tan(fov / 2)
         return simd_float4x4(columns: (
             SIMD4(f / max(aspect, 1e-4), 0, 0, 0),
@@ -56,6 +57,47 @@ public enum SceneMath {
             SIMD4(0, 0, far / (near - far), -1),
             SIMD4(0, 0, near * far / (near - far), 0)
         ))
+    }
+
+    /// An orthographic projection for Metal, depth 0 to 1: a sun's shadow.
+    public static func orthographic(left: Float, right: Float, bottom: Float, top: Float, near: Float, far: Float) -> simd_float4x4 {
+        simd_float4x4(columns: (
+            SIMD4(2 / (right - left), 0, 0, 0),
+            SIMD4(0, 2 / (top - bottom), 0, 0),
+            SIMD4(0, 0, 1 / (near - far), 0),
+            SIMD4((left + right) / (left - right), (top + bottom) / (bottom - top), near / (near - far), 1)
+        ))
+    }
+
+    /// The view through something placed in the world, looking down its own
+    /// −Z with its +Y up, as a camera's stand-in draws it: its world with the
+    /// scale taken out, inverted.
+    public static func view(through world: simd_float4x4) -> simd_float4x4 {
+        func axis(_ c: SIMD4<Float>) -> SIMD4<Float> {
+            let v = SIMD3(c.x, c.y, c.z)
+            let l = simd_length(v)
+            return l > 1e-8 ? SIMD4(v / l, 0) : SIMD4(0, 0, 0, 0)
+        }
+        let unscaled = simd_float4x4(columns: (axis(world.columns.0), axis(world.columns.1), axis(world.columns.2), world.columns.3))
+        return unscaled.inverse
+    }
+
+    /// A rotation's angles, in degrees, as a transform's `rotation` holds
+    /// them (R = Rz·Ry·Rx): the inverse of `compose`'s turn.
+    public static func degrees(of r: simd_float3x3) -> [Double] {
+        let (c0, c1, c2) = (r.columns.0, r.columns.1, r.columns.2)
+        let sy = max(-1, min(1, -c0.z))
+        let y = asin(sy)
+        let x: Float, z: Float
+        if abs(cos(y)) > 1e-5 {
+            x = atan2(c1.z, c2.z)
+            z = atan2(c0.y, c0.x)
+        } else {
+            // Straight up or down: the x and z turns are the same turn.
+            x = atan2(-c2.y, c1.y)
+            z = 0
+        }
+        return [x, y, z].map { (Double($0) * 180 / .pi * 1e4).rounded() / 1e4 }
     }
 
     /// The eight corners of an object's box, in the world: its mesh's, or a

@@ -84,6 +84,11 @@ public final class ModelWorkspaceModel {
     public var renderSize: RenderSize = .square
     /// A render's background left clear, for a picture to sit on another.
     public var renderTransparent = false
+    /// A camera object a render looks through; `nil`, the view's camera.
+    public var renderCamera: String?
+    /// A floor under everything in a render, for shadows to fall on.
+    public var renderFloor = true
+    public var renderShadows = true
     public internal(set) var lastRender: Rendered?
     /// The GPU drawing renders: its own, so a render needn't wait on the view.
     @ObservationIgnored var renderer: ModelRenderer?
@@ -256,8 +261,19 @@ public final class ModelWorkspaceModel {
         let parent = selectedNode.flatMap { $0.kind == "empty" ? $0.id : nil } ?? ""
         let kind = addition.isMesh ? "mesh" : addition.rawValue
         let name = uniqueName(addition.title)
-        if let id = change(.add(kind: kind, name: name, parent: parent, mesh: mesh), label: "Add \(name)") {
+        // A light above what's there, rather than inside the cube at the
+        // origin; a camera where the view is, so it sees what you see.
+        var position: [Double]?
+        if addition == .light {
+            let corners = boxes().filter { box in document.node(box.id)?.kind == "mesh" }.flatMap(\.corners)
+            let top = corners.map(\.y).max() ?? 0
+            let middle = corners.isEmpty ? SIMD3<Float>(0, 0, 0) : corners.reduce(SIMD3<Float>(0, 0, 0), +) / Float(corners.count)
+            position = [Double(middle.x) + 2, Double(top) + 3, Double(middle.z) + 2].map { ($0 * 1000).rounded() / 1000 }
+        }
+        let label = "Add \(name)"
+        if let id = change(.add(kind: kind, name: name, parent: parent, mesh: mesh, position: position), label: label) {
             selected = id
+            if addition == .camera { placeCamera(label: label, joining: true, adopt: false) }
         }
     }
 

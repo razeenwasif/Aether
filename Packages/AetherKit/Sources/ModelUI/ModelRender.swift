@@ -4,6 +4,7 @@ import Foundation
 import ImageIO
 import Metal
 import ModelCore
+import simd
 import UniformTypeIdentifiers
 
 /// How big a render is.
@@ -60,8 +61,10 @@ extension ModelWorkspaceModel {
         }
         guard let renderer else { return notice = "This Mac’s GPU can’t render." }
         let (width, height) = renderSize.pixels
+        if let id = renderCamera, document.node(id)?.kind != "camera" { renderCamera = nil }
         do {
-            let pictures = try renderer.render(width: width, height: height, transparent: renderTransparent)
+            let settings = ModelRenderer.RenderSettings(width: width, height: height, transparent: renderTransparent, camera: renderCamera, floor: renderFloor, shadows: renderShadows)
+            let pictures = try renderer.render(settings)
             let folder = document.folder.appending(path: "renders", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let files = (folder.appending(path: "\(document.name) render.png"), folder.appending(path: "\(document.name) depth.png"))
@@ -98,6 +101,75 @@ extension ModelWorkspaceModel {
             } catch {
                 self?.notice = "Rendered, but couldn’t publish it: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// The scene's cameras, for a render to look through.
+    public var cameras: [SceneNode] {
+        document?.state.objects.filter { $0.kind == "camera" } ?? []
+    }
+
+    /// The chosen camera moved to where the view's camera is, looking where
+    /// it looks, with the view's field of view: one step. Placing a camera by
+    /// typing its turn is hopeless; framing the view and taking it is not.
+    public func cameraFromView() {
+        guard let node = selectedNode, node.kind == "camera" else { return }
+        placeCamera(label: "\(node.name) from the View", joining: false, adopt: true)
+    }
+
+    /// The chosen camera put where the view is, as a step named `label`,
+    /// joining the one before it when `joining` (a camera just added); with
+    /// `adopt`, renders look through it from now on.
+    func placeCamera(label: String, joining: Bool, adopt: Bool) {
+        guard let document, let node = selectedNode, node.kind == "camera" else { return }
+        let eye = camera.view.inverse
+        // In the parent's space, so a camera under an empty lands right.
+        let parent = SceneMath.worlds(document.state.objects)[node.parent] ?? matrix_identity_float4x4
+        let local = parent.inverse * eye
+        let turn = simd_float3x3(SIMD3(local.columns.0.x, local.columns.0.y, local.columns.0.z),
+                                 SIMD3(local.columns.1.x, local.columns.1.y, local.columns.1.z),
+                                 SIMD3(local.columns.2.x, local.columns.2.y, local.columns.2.z))
+        let at = [local.columns.3.x, local.columns.3.y, local.columns.3.z].map { (Double($0) * 1e4).rounded() / 1e4 }
+        // Three edits as one step, joined by their shared name.
+        guard document.apply(.setTransform(node.id, part: .position, to: at), label: label, joining: joining) != nil,
+              document.apply(.setTransform(node.id, part: .rotation, to: SceneMath.degrees(of: turn)), label: label, joining: true) != nil,
+              document.apply(.setFov(node.id, degrees: (Double(SceneMath.fov) * 180 / .pi * 1e4).rounded() / 1e4), label: label, joining: true) != nil else {
+            notice = document.refusal
+            return
+        }
+        if adopt { renderCamera = node.id }
+        scheduleSave()
+    }
+
+    public func setFov(_ degrees: Double) {
+        guard let node = selectedNode else { return }
+        change(.setFov(node.id, degrees: degrees), label: "Field of View")
+    }
+
+    /// Change the chosen light; the same change within a second joins its
+    /// step, as a colour dragged does.
+    public func editLight(_ label: String, _ edit: (inout SceneLight) -> Void) {
+        guard let document, let node = selectedNode, var light = node.light else { return }
+        let before = light
+        edit(&light)
+        guard light != before else { return }
+        let key = "\(node.id)|\(label)"
+        let now = Date()
+        let joining = lastLayerEdit.map { $0.key == key && now.timeIntervalSince($0.at) < 1 } ?? false
+        lastLayerEdit = (key, now)
+        guard document.apply(.setLight(node.id, light: light), label: label, joining: joining) != nil else {
+            notice = document.refusal
+            return
+        }
+        scheduleSave()
+    }
+
+    /// The chosen light made a point or a sun, taking that kind's own
+    /// strength (20 for a point, 3 for a sun) unless its had been changed.
+    public func setLightKind(_ kind: String) {
+        editLight("Light Kind") { one in
+            if one.strength == (kind == "sun" ? 20 : 3) { one.strength = kind == "sun" ? 3 : 20 }
+            one.kind = kind
         }
     }
 

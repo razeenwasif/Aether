@@ -1202,6 +1202,37 @@ Not yet:
   - Framing for a render (it's the view's camera).
   - A render's assets outlive a scene that's deleted.
 
+**2026-10-29 · Model: Render, second slice: cameras, lights, shadows.** The user said "start render's second slice".
+
+- **The format:** Proton's scenes placed cameras and lights as transforms and nothing more, so each gets a few settings as keys on its object. Proton carries keys it doesn't know (its "nothing is lost" promise), so both apps keep reading the file. A scene without them reads as before.
+  - A camera's `fov`: degrees top to bottom, 50 when missing, 5 to 150.
+  - A light's `light` block: `kind` (`point` or `sun`), `color` (linear, clamped), `strength`. With no block, a light is a white point of 20.
+  - In `proton-scene`'s new `lens.rs`, marked as Aether's: `Node` gains `fov` and `light`, and there are `set_fov` and `set_light` (refusing the wrong object, an unknown kind, a non-number). The bridge has the matching edits.
+- **Conventions:** a camera looks down its own −Z with +Y up, as its stand-in already drew it; a sun shines down its own −Z. `SceneMath` gains `view(through:)` (the world with its scale taken out, inverted), `degrees(of:)` (a turn back to the `rotation` R = Rz·Ry·Rx holds, gimbal case included), `orthographic`, and a `fov` for `perspective`.
+- **Shading:** the surface shader's light became a loop over the scene's lights, up to 8, in eye space. A point's place, or the way towards a sun; its colour × strength; a shadow layer and matrix. With none, the key light stands in, as before. The view uses the scene's lights too, without shadows, so what's lit in the view is what's lit in the render.
+- **Shadows (renders only):**
+  - Each light, up to four, renders a 2048² shadow map: a sun's orthographic, squared on to what casts; a point's perspective, looking at what casts from outside it. A point inside what it lights casts none, for now. With no scene lights, the key light casts one as a sun.
+  - Looked up with 3×3 PCF, a small depth bias, and an offset of two and a half texels along the surface's normal.
+  - The first try culled front faces in the shadow pass, which left a lit line where the cube met the floor (its far side lay at the floor's own depth). Both sides are drawn now, with the normal offset in place of the culling.
+- **The floor:** a render can have a floor under everything (on to start), 8 times what casts across, at its lowest point, for shadows to fall on. It's in the depth pass too, which gives a diffusion model's depth control the ground.
+- **The workspace:**
+  - A camera's inspector has its field of view, Camera from the View (position, turn and field of view from the view as one step, in the parent's space; renders then look through it) and Render through it.
+  - A light's inspector has Point or Sun (switching takes that kind's strength, 20 or 3, unless it had been changed), its colour (a drag is one step) and its strength.
+  - The render drawer gains the camera, Floor and Shadows.
+  - Adding a light puts it above what's there, not at the origin inside the default cube; adding a camera puts it where the view is, in the same step.
+- **Checked in the app,** on a throwaway scene, deleted after (with the `project.json` and `blobs/` its renders made):
+  - With no lights, a render had the key light's shadow on the floor, and the floor in the depth pass.
+  - Adding a light showed its section. It was made a sun and turned −50° and 220°, and the render's shadow fell towards the camera. At the point light's strength of 20 the sun washed the floor out, which is why switching kind now takes the kind's own strength.
+  - The depth stayed v1, as its picture hadn't changed.
+  - Adding a camera and pressing Camera from the View put it at (6.78, 5.75, 8.06), turned (−28.6°, 40.1°), the orbit's pitch and yaw. Render through it was ticked, and the drawer showed the camera.
+  - The added light sat at the origin inside the cube, which is why lights are now placed above.
+  - The two fixes (placing, the kind's strength) came after the check, and are covered by tests.
+- **Tests:**
+  - 2 in `proton-scene` (Proton's scenes read with a plain camera and white lights; settings written, clamped, refused, and read back the same).
+  - 4 more in Swift: turns read back as their degrees; a camera added at the view, Camera from the View as one step, a render through the camera seeing the cube while the view looks away, the field of view; a sun's and a point's shadows darkening the render, a hand-set strength kept across a kind switch, and the floor in the depth pass and the picture; a light's colour drag as one step.
+  - 322 Rust and 153 Swift tests pass.
+- **Not done:** a point light's shadow from inside what it lights (it needs a map every way); soft shadows, reflections and bounced light (the path tracer); looking through a scene camera in the view.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1230,4 +1261,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Render, first slice: the scene and its depth pass, rendered and published as assets~~: done, see §10a. With it, M2's exit criterion's second half, a Model depth pass available as an asset, is met.
 
-**Next, proposed:** Render's second slice: render through the scene's own camera, the scene's lights, and shadows; then a path tracer. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion.
+~~Render's second slice: the scene's cameras and lights, and shadows~~: done, see §10a.
+
+**Next, proposed:** a path tracer for Render (soft shadows, reflections, bounced light), on Metal's ray tracing. Alongside, the measurements the viewport makes possible: M0's frame times under Instruments with panels sliding, and M1's Metal capture for its exit criterion.

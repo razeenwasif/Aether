@@ -20,6 +20,21 @@ struct RenderDrawer: View {
                 .fixedSize()
                 .controlSize(.small)
                 .help("How big a render is, in pixels; the view's camera, at this shape")
+                Picker("Camera", selection: $model.renderCamera) {
+                    Text("The view").tag(String?.none)
+                    ForEach(model.cameras) { Text($0.name).tag(String?.some($0.id)) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+                .help("What the render looks through: the view's camera, or one of the scene's")
+                Toggle("Floor", isOn: $model.renderFloor)
+                    .toggleStyle(.checkbox)
+                    .font(.aeSmall)
+                    .help("A floor under everything, for shadows to fall on")
+                Toggle("Shadows", isOn: $model.renderShadows)
+                    .toggleStyle(.checkbox)
+                    .font(.aeSmall)
                 Toggle("Clear background", isOn: $model.renderTransparent)
                     .toggleStyle(.checkbox)
                     .font(.aeSmall)

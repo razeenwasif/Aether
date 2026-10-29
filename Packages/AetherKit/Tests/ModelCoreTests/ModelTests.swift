@@ -25,7 +25,7 @@ struct SceneMathTests {
 
     @Test func childrenFollowTheirParents() {
         func node(_ id: String, parent: String = "", position: [Double], depth: Int = 0) -> SceneNode {
-            SceneNode(id: id, name: id, kind: "empty", parent: parent, material: "", modifiers: [], geometry: "", mesh: "", position: position, rotation: [0, 0, 0], scale: [1, 1, 1], depth: depth, children: 0)
+            SceneNode(id: id, name: id, kind: "empty", parent: parent, material: "", modifiers: [], geometry: "", mesh: "", position: position, rotation: [0, 0, 0], scale: [1, 1, 1], depth: depth, children: 0, fov: 50, light: nil)
         }
         let worlds = SceneMath.worlds([node("a", position: [0, 5, 0]), node("b", parent: "a", position: [1, 0, 0], depth: 1)])
         #expect(close(apply(worlds["b"]!, .zero), [1, 5, 0]))

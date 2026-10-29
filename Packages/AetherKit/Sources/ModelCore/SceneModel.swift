@@ -48,6 +48,10 @@ public struct SceneNode: Codable, Sendable, Equatable, Identifiable {
     /// How deep it sits, and how many name it as their parent.
     public var depth: Int
     public var children: Int
+    /// A camera's field of view, degrees top to bottom.
+    public var fov: Double
+    /// A light's settings; `nil` on anything that isn't a light.
+    public var light: SceneLight?
 
     public var kindTitle: String {
         switch kind {
@@ -64,6 +68,24 @@ public struct SceneNode: Codable, Sendable, Equatable, Identifiable {
     public var shape: String {
         mesh + "|" + modifiers.map { "\($0.kind),\($0.off),\($0.axis),\($0.weld),\($0.count),\($0.offset),\($0.levels)" }.joined(separator: ";")
     }
+}
+
+/// A light's settings (`proton_scene::Light`, Aether's addition).
+public struct SceneLight: Codable, Sendable, Equatable {
+    /// `point` or `sun`.
+    public var kind: String
+    /// Linear RGB, 0 to 1.
+    public var color: [Double]
+    /// A sun's brightness, or a point's at a metre.
+    public var strength: Double
+
+    public init(kind: String, color: [Double], strength: Double) {
+        self.kind = kind
+        self.color = color
+        self.strength = strength
+    }
+
+    public static let kinds = ["point", "sun"]
 }
 
 /// A material: its name, and its graph, which the core compiles into a
@@ -198,8 +220,11 @@ public enum SceneEdit: Encodable, Sendable, Equatable {
     case renameMaterial(String, name: String)
     /// A material nothing wears, taken out.
     case removeMaterial(String)
+    /// A camera's field of view, degrees top to bottom.
+    case setFov(String, degrees: Double)
+    case setLight(String, light: SceneLight)
 
-    private enum Keys: String, CodingKey { case edit, kind, name, parent, mesh, position, id, part, to, path, index, field, value, material, stack }
+    private enum Keys: String, CodingKey { case edit, kind, name, parent, mesh, position, id, part, to, path, index, field, value, material, stack, degrees, light }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: Keys.self)
@@ -269,6 +294,14 @@ public enum SceneEdit: Encodable, Sendable, Equatable {
         case .removeMaterial(let material):
             try c.encode("removeMaterial", forKey: .edit)
             try c.encode(material, forKey: .material)
+        case let .setFov(id, degrees):
+            try c.encode("setFov", forKey: .edit)
+            try c.encode(id, forKey: .id)
+            try c.encode(degrees, forKey: .degrees)
+        case let .setLight(id, light):
+            try c.encode("setLight", forKey: .edit)
+            try c.encode(id, forKey: .id)
+            try c.encode(light, forKey: .light)
         }
     }
 }

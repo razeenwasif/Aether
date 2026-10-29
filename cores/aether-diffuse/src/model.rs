@@ -17,7 +17,7 @@ use std::time::SystemTime;
 
 use aether_layers::Stack;
 use proton_mesh::{Mesh, Step};
-use proton_scene::{mesh_path, Material, Modifier, Part, Scene};
+use proton_scene::{mesh_path, Light, Material, Modifier, Part, Scene};
 use serde::Deserialize;
 
 use crate::{failed, json, lock, DiffuseError};
@@ -111,6 +111,10 @@ enum Edit {
     RenameMaterial { material: String, name: String },
     /// A material nothing wears, taken out.
     RemoveMaterial { material: String },
+    /// A camera's field of view, in degrees top to bottom.
+    SetFov { id: String, degrees: f64 },
+    /// A light's kind, colour and strength.
+    SetLight { id: String, light: Light },
 }
 
 #[uniffi::export]
@@ -275,6 +279,8 @@ impl SceneEditor {
             Edit::Wear { id, material } => h.scene.wear(&id, &material).map_err(failed)?,
             Edit::RenameMaterial { material, name } => h.scene.rename_material(&material, &name).map_err(failed)?,
             Edit::RemoveMaterial { material } => h.scene.remove_material(&material).map_err(failed)?,
+            Edit::SetFov { id, degrees } => h.scene.set_fov(&id, degrees).map_err(failed)?,
+            Edit::SetLight { id, light } => h.scene.set_light(&id, &light).map_err(failed)?,
         };
         if changed && join && h.undo.last().is_some_and(|s| s.1 == label) {
             h.redo.clear();

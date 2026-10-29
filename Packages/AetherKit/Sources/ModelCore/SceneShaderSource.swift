@@ -84,7 +84,8 @@ public enum SceneShaderSource {
     constant float AMBIENT = 0.22;
     constant float ROOM = 0.5;
 
-    float3 lit(float3 base, float metal, float rough, float3 n, float3 v, float3 l) {
+    // What one light at `l` (towards it) reflects, before its brightness.
+    float3 reflected(float3 base, float metal, float rough, float3 n, float3 v, float3 l) {
         float ndl = max(dot(n, l), 0.0);
         float ndv = max(dot(n, v), 0.0);
         float3 h = normalize(l + v);
@@ -100,10 +101,82 @@ public enum SceneShaderSource {
         float3 f0 = mix(float3(0.04), base, metal);
         float3 f = f0 + (1.0 - f0) * pow(1.0 - vdh, 5.0);
         float3 diffuse = base * (1.0 - metal) * (1.0 - f) / 3.14159265;
-        float3 direct = (diffuse + spec * f) * ndl * LIGHT;
+        return (diffuse + spec * f) * ndl;
+    }
+
+    // The scene's lights (Aether's addition), in eye space: a point's place
+    // or the way towards a sun; its colour times its strength; and, when it
+    // casts a shadow, its layer in the shadow maps and the matrix from eye
+    // space into it. With none, the key light stands in, unshadowed.
+    struct SceneLight {
+        float4 at;       // w: 1 a point, 0 a sun
+        float4 color;    // w: the shadow layer, or -1
+        float4x4 shadow;
+    };
+
+    struct LightsHead {
+        int count;
+        float bias;
+        float offset;   // how far along its normal a point is looked up, in metres
+        float pad;
+    };
+
+    constexpr sampler shadowSampler(coord::normalized, filter::linear, address::clamp_to_edge, compare_func::less_equal);
+
+    // How lit a point is, 0 to 1: the shadow map compared at nine texels.
+    float unshadowed(depth2d_array<float> maps, int layer, float4 clip, float bias) {
+        float3 ndc = clip.xyz / clip.w;
+        float2 uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+        if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0 || ndc.z > 1.0 || ndc.z < 0.0) return 1.0;
+        float texel = 1.0 / float(maps.get_width());
+        float sum = 0.0;
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+                sum += maps.sample_compare(shadowSampler, uv + float2(x, y) * texel, layer, ndc.z - bias);
+            }
+        }
+        return sum / 9.0;
+    }
+
+    float3 lit(float3 base, float metal, float rough, float3 n, float3 v, float3 key, float3 eye,
+               constant LightsHead &head, constant SceneLight *lights, depth2d_array<float> maps) {
+        float3 direct = float3(0.0);
+        if (head.count == 0) {
+            direct = reflected(base, metal, rough, n, v, key) * LIGHT;
+        }
+        for (int i = 0; i < head.count; i++) {
+            SceneLight one = lights[i];
+            float3 l;
+            float3 bright;
+            if (one.at.w > 0.5) {
+                float3 to = one.at.xyz - eye;
+                float d2 = max(dot(to, to), 1e-4);
+                l = to * rsqrt(d2);
+                bright = one.color.rgb / d2;
+            } else {
+                l = normalize(one.at.xyz);
+                bright = one.color.rgb;
+            }
+            // Looked up a little off the surface, along its normal, so it
+            // doesn't shadow itself.
+            float lit = one.color.w >= 0.0 ? unshadowed(maps, int(one.color.w), one.shadow * float4(eye + n * head.offset, 1.0), head.bias) : 1.0;
+            direct += reflected(base, metal, rough, n, v, l) * bright * lit;
+        }
+        float3 f0 = mix(float3(0.04), base, metal);
         float3 ambient = base * (1.0 - metal) * AMBIENT + f0 * ROOM;
         float3 total = direct + ambient;
         return sqrt(total / (1.0 + total));
+    }
+
+    // A shadow map's depth: what the light sees, nothing drawn.
+    struct ShadowOut {
+        float4 position [[position]];
+    };
+
+    vertex ShadowOut shadowVertex(In in [[stage_in]], constant float4x4 &lightClip [[buffer(1)]]) {
+        ShadowOut out;
+        out.position = lightClip * float4(in.position, 1.0);
+        return out;
     }
 
     // A render's depth pass: near white, far black, across the scene's own
@@ -219,7 +292,8 @@ public enum SceneShaderSource {
             lines.append("    float rough = 0.55;")
         }
         return prelude + """
-        fragment float4 surfaceFragment(Out in [[stage_in]], bool front [[front_facing]], constant Frame &frame [[buffer(1)]], constant Object &object [[buffer(2)]], constant float4 *k [[buffer(4)]]) {
+        fragment float4 surfaceFragment(Out in [[stage_in]], bool front [[front_facing]], constant Frame &frame [[buffer(1)]], constant Object &object [[buffer(2)]], constant float4 *k [[buffer(4)]],
+                                      constant LightsHead &head [[buffer(5)]], constant SceneLight *lights [[buffer(6)]], depth2d_array<float> maps [[texture(0)]]) {
         \(lines.joined(separator: "\n"))
             float3 v = normalize(-in.eye);
             float3 n;
@@ -230,7 +304,7 @@ public enum SceneShaderSource {
                 n = normalize(cross(dfdx(in.eye), dfdy(in.eye)));
                 if (dot(n, v) < 0.0) n = -n;
             }
-            float3 colour = lit(mix(base, frame.tint, object.picked * 0.3), metal, rough, n, v, frame.light);
+            float3 colour = lit(mix(base, frame.tint, object.picked * 0.3), metal, rough, n, v, frame.light, in.eye, head, lights, maps);
             // The object chosen: tinted, and lit round its edge in ice, so it
             // reads at a glance against a grey of the same brightness.
             float rim = pow(1.0 - max(dot(n, v), 0.0), 2.0);
