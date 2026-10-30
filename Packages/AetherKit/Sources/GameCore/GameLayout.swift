@@ -151,9 +151,13 @@ extension GameScene {
     /// and hazed, what stands on the play plane in front of its art, a lit
     /// plane's sprites marked lit, and the halos of its lights after it.
     /// `time` (seconds of the run) wavers lights; nil holds them still.
-    /// `snap` keeps pixel art on whole pixels.
+    /// `air` is the moment the room's particles are shown at (none when
+    /// nil), and `sparks` are bursts begun by what happened, flying on the
+    /// play plane in front of what stands there. `snap` keeps pixel art on
+    /// whole pixels.
     public static func layout(_ room: GameRoom, focal: Double, view: CGSize, center: CGPoint, art: GameArt,
-                              standing: [GameStanding] = [], time: Double? = nil, snap: Bool = false) -> [GameSprite] {
+                              standing: [GameStanding] = [], time: Double? = nil, air: Double? = nil, sparks: [GameSpark] = [],
+                              snap: Bool = false) -> [GameSprite] {
         let corner = corner(room, view: view, center: center)
         var out: [GameSprite] = []
         for plane in room.planes {
@@ -180,6 +184,19 @@ extension GameScene {
                     if s.flash { sprite.tint = SIMD4(1, 1, 1, 0.85) }
                     if s.blink { sprite.opacity = 0.35 }
                     out.append(sprite)
+                }
+                for spark in sparks { out += GameFX.burst(spark, time: time ?? 0) }
+            }
+            // The room's air on this plane, over what the camera sees of it.
+            if let air {
+                let f = factor(plane, focal: focal)
+                let seen = CGRect(x: corner.x * f, y: corner.y * f, width: view.width, height: view.height)
+                for (i, emitter) in room.particles.enumerated() where emitter.plane == plane.id {
+                    for var mote in GameFX.air(emitter.preset, over: seen, time: air, seed: GameFX.seed("\(room.id):\(i)")) {
+                        mote.rect.origin.x += shift.x
+                        mote.rect.origin.y += shift.y
+                        out.append(mote)
+                    }
                 }
             }
             if plane.lit { for i in first..<out.count where out[i].key != GameSprite.glow || out[i].blend != "add" { out[i].lit = true } }

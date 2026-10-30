@@ -1,6 +1,8 @@
 import AetherDesign
+import AppKit
 import GameCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Game workspace: with a game open, its room on the stage edge to
 /// edge, its rooms and what's in them floating on the left, what's selected
@@ -133,6 +135,9 @@ private struct GameNavigator: View {
             HStack {
                 Text("Rooms").font(.aeLabel).foregroundStyle(Color.ink2)
                 Spacer()
+                Button("Import Art…", action: chooseArt)
+                    .buttonStyle(.borderless).font(.aeSmall)
+                    .help("Bring in a painter's .psd or a .png as planes of this room, or an Aseprite file or a sprite sheet as an animation. Dropping files on the room does the same.")
             }
             .padding(.horizontal, 14)
             .padding(.top, 12)
@@ -188,6 +193,16 @@ private struct GameNavigator: View {
 
     private static func size(_ size: [Int]) -> String {
         "\(size.first ?? 0) × \(size.count > 1 ? size[1] : 0)"
+    }
+
+    /// Files chosen to bring in.
+    private func chooseArt() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = GameWorkspaceModel.importable.compactMap { UTType(filenameExtension: $0) }
+        panel.message = "A .psd's groups become planes at the depth their names give in brackets, as in Far hills [800], [play] or [still]."
+        guard panel.runModal() == .OK else { return }
+        model.importFiles(panel.urls)
     }
 
     private func row(_ title: String, detail: String, dirty: Bool, chosen: Bool, action: @escaping () -> Void) -> some View {
@@ -258,13 +273,66 @@ private struct GameInspector: View {
                     Text("Click anything to choose it, drag it to move it. p draws collision a click a point (double-click or ↩ ends it); on a chosen line drag its points, ⌥-click adds one, double-click takes one out. l places a light. Drag nothing or use two fingers to move over the room; pinch or ⌘-scroll to zoom; f shows it all.")
                         .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 }
-                PanelSection("Planes") {
-                    ForEach(room.planes) { plane in
-                        HStack {
-                            Text(plane.name.isEmpty ? plane.id : plane.name).font(.aeBody).foregroundStyle(plane.gameplay ? Color.inkHi : Color.ink)
-                            Spacer()
-                            Text(verbatim: plane.gameplay ? "play" : String(format: "×%.2f", GameScene.factor(plane, focal: document.view.game.view.focal)))
-                                .font(.aeMono).foregroundStyle(Color.ink3)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        PanelSection("Planes") {
+                            Text("Depth behind the play plane, in pixels: further moves slower, below 0 rushes past in front. Lit planes take the room's lights.")
+                                .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                            ForEach(room.planes) { plane in planeRow(plane) }
+                        }
+                        PanelSection("Air") {
+                            Text("Particles that hang in the room, on a plane: they drift in Play, held still here.")
+                                .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                            ForEach(Array(room.particles.enumerated()), id: \.offset) { i, emitter in
+                                HStack {
+                                    Text(emitter.preset.capitalized).font(.aeSmall).foregroundStyle(Color.ink)
+                                    Text(verbatim: "on \(room.planes.first { $0.id == emitter.plane }?.name ?? emitter.plane)").font(.aeSmall).foregroundStyle(Color.ink3)
+                                    Spacer()
+                                    Button("Take Out") { model.setAir(room.particles.enumerated().filter { $0.offset != i }.map(\.element)) }
+                                        .buttonStyle(.borderless).font(.aeSmall)
+                                }
+                            }
+                            Menu("Add Air") {
+                                ForEach(GameFX.presets, id: \.self) { preset in
+                                    Menu(preset.capitalized) {
+                                        ForEach(room.planes) { plane in
+                                            Button(plane.name.isEmpty ? plane.id : plane.name) {
+                                                model.setAir(room.particles + [GameEmitter(preset: preset, plane: plane.id)])
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            .controlSize(.small).fixedSize()
+                        }
+                        PanelSection("Bringing art in") {
+                            Text("Import Art… or drop files on the room. A .psd's groups become planes at the depth in their names' brackets, as in Far hills [800]; [play] joins the play plane, [still] doesn't move. An Aseprite file or a sprite sheet becomes an animation.")
+                                .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                            HStack {
+                                Text("Scale").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 64, alignment: .leading)
+                                Picker("Scale", selection: $model.importScale) {
+                                    ForEach([0.5, 1, 2, 3, 4], id: \.self) { Text(verbatim: "×\($0.formatted())").tag($0) }
+                                }
+                                .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+                                Spacer(minLength: 0)
+                            }
+                            Toggle("Normal maps for lights", isOn: $model.importNormals).toggleStyle(.checkbox).font(.aeSmall)
+                        }
+                        PanelSection("Looks") {
+                            Text("What each prefab is drawn as: a picture or an animation in the game's art.")
+                                .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                            let looks = model.looks
+                            ForEach(document.view.prefabs) { prefab in
+                                HStack {
+                                    Text(prefab.name.isEmpty ? prefab.id : prefab.name).font(.aeSmall).foregroundStyle(Color.ink).frame(width: 64, alignment: .leading)
+                                    Picker(prefab.id, selection: Binding(get: { prefab.sprite }, set: { model.setLook(prefab.id, $0) })) {
+                                        ForEach(Array(Set(looks + [prefab.sprite])).filter { !$0.isEmpty }.sorted(), id: \.self) { look in
+                                            Text(verbatim: look.replacingOccurrences(of: "art/", with: "")).tag(look)
+                                        }
+                                    }
+                                    .labelsHidden().pickerStyle(.menu).controlSize(.small)
+                                }
+                            }
                         }
                     }
                 }
@@ -278,6 +346,24 @@ private struct GameInspector: View {
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .aeGlass(.panel)
+    }
+
+    /// A plane: its name, its depth to type, whether it's lit.
+    private func planeRow(_ plane: GamePlane) -> some View {
+        HStack(spacing: 6) {
+            Text(plane.name.isEmpty ? plane.id : plane.name).font(.aeSmall).foregroundStyle(plane.gameplay ? Color.inkHi : Color.ink)
+                .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            if plane.gameplay {
+                Text("play").font(.aeMono).foregroundStyle(Color.ink3)
+            } else if plane.parallax != nil {
+                Text(verbatim: String(format: "×%.2f", plane.parallax ?? 0)).font(.aeMono).foregroundStyle(Color.ink3).help("Its own speed, whatever its depth")
+            } else {
+                NumberField(value: Int(plane.depth.rounded())) { model.setPlaneDepth(plane.id, Double($0)) }
+                    .help(String(format: "Moves ×%.2f as fast as the play plane", GameScene.factor(plane, focal: document.view.game.view.focal)))
+            }
+            Toggle("Lit", isOn: Binding(get: { plane.lit }, set: { model.setPlaneLit(plane.id, $0) }))
+                .toggleStyle(.checkbox).font(.aeSmall).help("Whether the room's lights fall on it")
+        }
     }
 
     private func placeRow(_ entity: GameEntity) -> some View {

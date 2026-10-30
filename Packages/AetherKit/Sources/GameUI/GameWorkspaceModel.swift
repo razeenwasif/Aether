@@ -283,6 +283,122 @@ public final class GameWorkspaceModel {
         if apply([.insert(["entities"], value)], to: target, label: "Place \(id)") { selection = .entity(id) }
     }
 
+    // MARK: Art brought in
+
+    /// The kinds of file a game takes in.
+    public static let importable = ["psd", "png", "aseprite", "ase", "json"]
+    /// Room pixels a source pixel, for a painter's file brought in.
+    public var importScale = 1.0
+    /// Whether a painter's file brings normal maps for lights to shade.
+    public var importNormals = true
+
+    /// Files brought into the game: a painter's `.psd` or a `.png` into the
+    /// room on screen as planes, an Aseprite file or a sprite sheet's JSON as
+    /// an animation. A file from outside the game's folder is copied into
+    /// its `art/source/` first, with what a sheet's JSON names beside it,
+    /// so the game keeps what it was made from.
+    public func importFiles(_ urls: [URL]) {
+        guard let document else { return notice = "Open a game first, then bring art into it." }
+        var said: [String] = []
+        var notes: [String] = []
+        var failed = false
+        for url in urls {
+            do {
+                let rel = try Self.intoGame(url, root: document.url)
+                let done = try document.importArt(rel, room: roomID ?? "", scale: importScale, normals: importNormals)
+                said.append(done.said)
+                notes += done.notes
+                if done.kind == "room", let room = done.room, room != roomID { roomID = room }
+            } catch {
+                failed = true
+                said.append("Couldn’t bring in \(url.lastPathComponent): \(GameDocument.describe(error))")
+            }
+        }
+        images.forget()
+        let words = said.joined(separator: " ") + (notes.isEmpty ? "" : " Notes: " + notes.joined(separator: "; ") + ".")
+        notice = words
+        noticeIsGood = !failed
+    }
+
+    /// A file's place in the game's folder: where it is, if it's inside;
+    /// else copied in. A painter's file goes into `art/source/` (its layers
+    /// are written to a folder of their own); an animation's source into a
+    /// folder of its own under `art/`, with what a sheet's JSON names beside
+    /// it and an armature's atlas, as the animation is made beside it.
+    static func intoGame(_ url: URL, root: URL) throws -> String {
+        let root = root.standardizedFileURL.resolvingSymlinksInPath()
+        let file = url.standardizedFileURL.resolvingSymlinksInPath()
+        if file.path.hasPrefix(root.path + "/") { return String(file.path.dropFirst(root.path.count + 1)) }
+        let stem = file.deletingPathExtension().lastPathComponent
+        let base = ["_ske", "-sheet", ".sheet"].reduce(stem) { $0.hasSuffix($1) ? String($0.dropLast($1.count)) : $0 }
+        let painted = ["psd", "png"].contains(file.pathExtension.lowercased())
+        let folder = painted ? "art/source" : "art/\(base.lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "_" }.joined())"
+        let into = root.appending(path: folder, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: into, withIntermediateDirectories: true)
+        var companions: [URL] = []
+        if file.pathExtension.lowercased() == "json" {
+            let siblings = (try? FileManager.default.contentsOfDirectory(at: file.deletingLastPathComponent(), includingPropertiesForKeys: nil)) ?? []
+            companions = siblings.filter { $0 != file && $0.lastPathComponent.hasPrefix(base) && ["png", "json"].contains($0.pathExtension.lowercased()) }
+        }
+        for source in [file] + companions {
+            let to = into.appending(path: source.lastPathComponent)
+            if FileManager.default.fileExists(atPath: to.path) { try FileManager.default.removeItem(at: to) }
+            try FileManager.default.copyItem(at: source, to: to)
+        }
+        return "\(folder)/\(file.lastPathComponent)"
+    }
+
+    /// The game's art a prefab can look like: its animations and pictures,
+    /// not the sources art was brought in from.
+    public var looks: [String] {
+        guard let root = document?.url.standardizedFileURL.resolvingSymlinksInPath(),
+              let walk = FileManager.default.enumerator(at: root.appending(path: "art", directoryHint: .isDirectory), includingPropertiesForKeys: nil) else { return [] }
+        var found: [String] = []
+        for case let url as URL in walk {
+            let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+            guard path.hasPrefix(root.path + "/") else { continue }
+            let rel = String(path.dropFirst(root.path.count + 1))
+            if rel.hasPrefix("art/source/") || rel.hasSuffix(".normal.png") { continue }
+            if rel.hasSuffix(".anim.json") || url.pathExtension.lowercased() == "png" { found.append(rel) }
+        }
+        // A sheet an animation is cut from isn't a look of its own.
+        let sheets = Set(found.filter { $0.hasSuffix(".anim.json") }.flatMap { images.anim($0)?.sheets ?? [] })
+        return found.filter { !sheets.contains($0) }.sorted()
+    }
+
+    /// A prefab made to look like `look`, standing on the middle of its
+    /// bottom edge, as one step.
+    public func setLook(_ prefab: String, _ look: String) {
+        let size: [Int]? = look.hasSuffix(".anim.json") ? images.anim(look)?.size : images.image(look).map { [$0.width, $0.height] }
+        var ops: [GameOp] = [.set(["sprite"], look)]
+        if let size, size.count == 2, size[0] > 0 { ops.append(.set(["pivot"], [size[0] / 2, size[1]])) }
+        apply(ops, to: "prefab:\(prefab)", label: "Set \(prefab)’s look")
+    }
+
+    /// A plane's depth behind the play plane, set from the inspector.
+    public func setPlaneDepth(_ plane: String, _ depth: Double) {
+        guard let target = roomTarget else { return }
+        apply([.set(["planes", "#\(plane)", "depth"], depth)], to: target, label: "Set \(plane)’s depth")
+    }
+
+    /// What hangs in the room's air: `preset` on `plane`, added or taken out.
+    public func setAir(_ emitters: [GameEmitter]) {
+        guard let target = roomTarget, let room else { return }
+        let list = emitters.map { ["preset": $0.preset, "plane": $0.plane] }
+        let label = emitters.count > room.particles.count ? "Add \(emitters.last?.preset ?? "air")" : "Take out air"
+        // The room's ambience may not say anything yet.
+        if !apply([.set(["ambience", "particles"], list)], to: target, label: label) {
+            notice = nil
+            apply([.set(["ambience"], ["particles": list])], to: target, label: label)
+        }
+    }
+
+    /// Whether lights fall on a plane.
+    public func setPlaneLit(_ plane: String, _ lit: Bool) {
+        guard let target = roomTarget else { return }
+        apply([.set(["planes", "#\(plane)", "lit"], lit)], to: target, label: lit ? "Light \(plane)" : "Unlight \(plane)")
+    }
+
     @discardableResult
     private func apply(_ ops: [GameOp], to target: String, label: String) -> Bool {
         guard let document else { return false }
@@ -370,6 +486,15 @@ public final class GameImages {
     private var anims: [String: GameAnim] = [:]
     private var crops: [String: CGImage] = [:]
     private var cut: [String: GameImageParts] = [:]
+
+    /// Everything read forgotten, so files written since are read fresh.
+    public func forget() {
+        cache = [:]
+        missing = []
+        anims = [:]
+        crops = [:]
+        cut = [:]
+    }
 
     /// How an image is cut up (`.img.json`), read once.
     public func parts(_ rel: String) -> GameImageParts? {

@@ -76,6 +76,8 @@ public struct AetherCommands: Commands {
                 Button("Export…") { canvas.exportPNG() }
                     .keyboardShortcut("e")
                     .disabled(canvas.document == nil)
+                Button("Send to Game") { canvas.sendToGame() }
+                    .disabled(canvas.document == nil || model.game.document == nil)
                 Button("Close the Canvas") { canvas.close() }
                     .keyboardShortcut("w", modifiers: [.command, .shift])
                     .disabled(canvas.document == nil)

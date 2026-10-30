@@ -640,6 +640,20 @@ public final class DiffuseWorkspaceModel {
         }
     }
 
+    /// Where Send to Game hands a picture: files to bring into the open game.
+    @ObservationIgnored public var gameReceiver: (([URL]) -> Void)?
+
+    /// Send a Gallery picture to the open game, as a plane of the room on
+    /// screen. A sealed one isn't: a game's art is kept plain.
+    public func sendToGame(_ picture: GalleryPicture) {
+        guard let receive = gameReceiver else { return }
+        guard !picture.isSealed else {
+            notice = "\(picture.name) is sealed, and a game's art is kept plain: send it to the Canvas and save it there first."
+            return
+        }
+        receive([picture.url])
+    }
+
     /// Pictures dropped on the graph: on a Load Image, its picture; a PNG
     /// with a graph in it, elsewhere, that graph as a new flow, as Proton
     /// does; any other picture, a Load Image of it where it was dropped.

@@ -80,7 +80,7 @@ pub fn game_create(dir: String, name: String) -> Result<(), DiffuseError> {
 /// One game open for editing.
 #[derive(uniffi::Object)]
 pub struct GameEditor {
-    held: Mutex<Project>,
+    pub(crate) held: Mutex<Project>,
 }
 
 fn target(text: &str) -> Result<Target, DiffuseError> {

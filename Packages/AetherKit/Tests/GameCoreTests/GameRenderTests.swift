@@ -213,7 +213,7 @@ struct GameRenderTests {
         let renderer = try #require(GameRenderer())
         let room = try #require(doc.room("crossroads_01"))
         let view = CGSize(width: 1920, height: 1080), center = CGPoint(x: 1200, y: 1500)
-        var j = GameRenderer.Job(sprites: GameScene.layout(room, focal: 1000, view: view, center: center, art: images.art),
+        var j = GameRenderer.Job(sprites: GameScene.layout(room, focal: 1000, view: view, center: center, art: images.art, air: 2),
                                  camera: GameCamera(center: center, zoom: 0.5), post: doc.view.game.post)
         j.lighting = GameScene.lighting(room, focal: 1000, view: view, center: center)
         let picture = try #require(renderer.picture(j, images: images, width: 960, height: 540))

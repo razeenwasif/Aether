@@ -21,6 +21,18 @@ public enum GameOp {
     }
 }
 
+/// What bringing art in did: a room's planes changed, or an animation (or a
+/// skeleton) made, in words, with what was left out or changed.
+public struct GameImported: Decodable, Sendable {
+    /// `room`, `anim` or `skel`.
+    public var kind: String
+    public var room: String?
+    /// The animation or skeleton made.
+    public var path: String?
+    public var said: String
+    public var notes: [String]
+}
+
 /// A game open for editing: its folder's documents, changed by ops the core
 /// applies whole or not at all, each document with its own undo, and held
 /// until saved. ⌘Z undoes the newest edit wherever it was made, as Proton's
@@ -99,6 +111,27 @@ public final class GameDocument {
 
     /// The files changed and not saved.
     public var unsaved: [String] { view.unsaved }
+
+    /// Art brought in from `source`, a file in the game's folder: a `.psd` or
+    /// `.png` made into planes of `room` (or the room it went into last
+    /// time) at `scale` room pixels a source pixel (0: as last time), with
+    /// normal maps if `normals`; an Aseprite file or a sheet's JSON made into
+    /// an animation. The images are written at once; a room's planes change
+    /// as one step, held until saved.
+    public func importArt(_ source: String, room: String, scale: Double = 0, normals: Bool = true) throws -> GameImported {
+        let text = try editor.importArt(source: source, room: room, scale: scale, normals: normals)
+        let done = try Self.decode(GameImported.self, text)
+        if done.kind == "room", let id = done.room,
+           let planes = (try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])?["planes"] {
+            let file = source.split(separator: "/").last.map(String.init) ?? source
+            if !apply([.set(["planes"], planes)], to: "room:\(id)", label: "Import \(file)"), let refusal {
+                throw DiffuseError.Failed(message: refusal)
+            }
+        } else {
+            reload(nil)
+        }
+        return done
+    }
 
     /// A run of the game as it is now, unsaved edits and all.
     public func run() throws -> GameRun {

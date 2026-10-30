@@ -68,7 +68,7 @@ let package = Package(
         .target(name: "AetherShell", dependencies: ["AetherDesign", "AetherGraph", "CanvasCore", "CanvasUI", "DiffuseBridge", "DiffuseCore", "DiffuseUI", "GameCore", "GameUI", "ModelCore", "ModelUI"]),
         .testTarget(name: "ModelCoreTests", dependencies: ["ModelCore", "ModelUI", "AetherGraph"]),
         .testTarget(name: "AetherGraphTests", dependencies: ["AetherGraph"]),
-        .testTarget(name: "GameCoreTests", dependencies: ["GameCore", "GameUI"]),
+        .testTarget(name: "GameCoreTests", dependencies: ["GameCore", "GameUI", "CanvasCore"]),
         .testTarget(
             name: "DiffuseLocalTests",
             dependencies: ["DiffuseLocal", .product(name: "StableDiffusion", package: "ml-stable-diffusion")]

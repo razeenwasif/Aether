@@ -1847,6 +1847,20 @@ public protocol GameEditorProtocol: AnyObject, Sendable {
      */
     func view()  -> String
     
+    /**
+     * Bring in the file at `source`, in the game's folder. A `.psd` or a
+     * `.png` goes into room `room` (or the room it went into last time) at
+     * `scale` room pixels a source pixel (0: as last time, else 1), with
+     * normal maps from its brightness if `normals`; an Aseprite file or a
+     * sheet's JSON becomes an animation, a DragonBones armature a skeleton.
+     *
+     * JSON: `{kind: "room" | "anim" | "skel", room, planes, path, said,
+     * notes}` — for a room, its planes as the import leaves them, for the
+     * caller to set as one edit; for an animation or skeleton, the file
+     * made, which a prefab plays once its sprite names it.
+     */
+    func importArt(source: String, room: String, scale: Double, normals: Bool) throws  -> String
+    
 }
 /**
  * One game open for editing.
@@ -2011,6 +2025,31 @@ open func view() -> String  {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_method_gameeditor_view(
             self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Bring in the file at `source`, in the game's folder. A `.psd` or a
+     * `.png` goes into room `room` (or the room it went into last time) at
+     * `scale` room pixels a source pixel (0: as last time, else 1), with
+     * normal maps from its brightness if `normals`; an Aseprite file or a
+     * sheet's JSON becomes an animation, a DragonBones armature a skeleton.
+     *
+     * JSON: `{kind: "room" | "anim" | "skel", room, planes, path, said,
+     * notes}` — for a room, its planes as the import leaves them, for the
+     * caller to set as one edit; for an animation or skeleton, the file
+     * made, which a prefab plays once its sprite names it.
+     */
+open func importArt(source: String, room: String, scale: Double, normals: Bool)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_import_art(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(source),
+        FfiConverterString.lower(room),
+        FfiConverterDouble.lower(scale),
+        FfiConverterBool.lower(normals),uniffiCallStatus
     )
 })
 }
@@ -5394,6 +5433,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_gameeditor_view() != 57123) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_import_art() != 29716) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_gamerun_boxes() != 8046) {

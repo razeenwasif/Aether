@@ -21,6 +21,7 @@ uniffi::setup_scaffolding!();
 
 mod canvas;
 mod game;
+mod game_import;
 pub use canvas::{CanvasEditor, Laid};
 mod model;
 pub use model::{SceneEditor, SceneMesh};

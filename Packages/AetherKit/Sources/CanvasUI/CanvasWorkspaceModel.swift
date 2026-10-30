@@ -391,6 +391,36 @@ public final class CanvasWorkspaceModel {
         }
     }
 
+    /// Where Send to Game hands a canvas: files to bring into the open game.
+    @ObservationIgnored public var gameReceiver: (([URL]) -> Void)?
+
+    /// The canvas sent to the open game: with frames, as an animation (a
+    /// sprite sheet and its JSON); else as a layered file whose layers become
+    /// planes of the room on screen, at the depths their names give.
+    public func sendToGame() {
+        guard let document, let receive = gameReceiver else { return }
+        finishTransform()
+        let stem = document.name.lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "_" }.joined()
+        let dir = FileManager.default.temporaryDirectory.appending(path: "aether-send-\(UUID().uuidString)", directoryHint: .isDirectory)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            if frameCount > 1 {
+                let sheet = try document.exportSheet(image: "\(stem)-sheet.png", columns: 0, scale: 1)
+                try sheet.png.write(to: dir.appending(path: "\(stem)-sheet.png"))
+                let json = dir.appending(path: "\(stem)-sheet.json")
+                try Data(sheet.json.utf8).write(to: json)
+                receive([json])
+            } else {
+                let psd = dir.appending(path: "\(document.name).psd")
+                try document.exportPSD(frame: frame).write(to: psd)
+                receive([psd])
+            }
+        } catch {
+            notice = "Couldn’t send \(document.name) to the game: \(error.localizedDescription)"
+        }
+        try? FileManager.default.removeItem(at: dir)
+    }
+
     /// The export form: a PNG, a sprite sheet or a Photoshop file.
     public func exportPNG() {
         guard document != nil else { return }

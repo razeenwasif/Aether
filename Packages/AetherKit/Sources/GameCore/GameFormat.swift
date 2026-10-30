@@ -97,10 +97,12 @@ public struct GameRoom: Decodable, Equatable, Sendable {
     /// The light where no light falls on a lit plane, `#rrggbb`; white, the
     /// art as painted, when not said.
     public var ambient: String?
+    /// What hangs in its air, a plane each.
+    public var particles: [GameEmitter] = []
 
     enum CodingKeys: String, CodingKey { case id, size, camera, planes, collision, entities, spawns, lights, ambience }
     enum CameraKeys: String, CodingKey { case bounds }
-    enum AmbienceKeys: String, CodingKey { case fog, ambient }
+    enum AmbienceKeys: String, CodingKey { case fog, ambient, particles }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
@@ -117,6 +119,7 @@ public struct GameRoom: Decodable, Equatable, Sendable {
             let ambience = try c.nestedContainer(keyedBy: AmbienceKeys.self, forKey: .ambience)
             fog = try ambience.decodeIfPresent(GameFog.self, forKey: .fog)
             ambient = try ambience.decodeIfPresent(String.self, forKey: .ambient)
+            particles = try ambience.decodeIfPresent([GameEmitter].self, forKey: .particles) ?? []
         }
     }
 

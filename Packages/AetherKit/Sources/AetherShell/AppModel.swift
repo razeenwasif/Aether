@@ -64,6 +64,14 @@ public final class AppModel {
             guard let self else { throw CocoaError(.userCancelled) }
             return try await canvas.asset(ofCanvasAt: url)
         }
+        // Send to Game: art brought into the game open, on screen.
+        let toGame: ([URL]) -> Void = { [weak self] urls in
+            guard let self else { return }
+            active = .game
+            game.importFiles(urls)
+        }
+        diffuse.gameReceiver = toGame
+        canvas.gameReceiver = toGame
         diffuse.showSource = { [weak self] in self?.showSource($0) }
         canvas.showSource = { [weak self] in self?.showSource($0) }
         Task { await refreshFlowFiles() }

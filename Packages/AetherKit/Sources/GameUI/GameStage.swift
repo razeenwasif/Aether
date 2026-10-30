@@ -115,6 +115,8 @@ final class GameStageView: NSView {
     private var link: CADisplayLink?
     private var lastTime: CFTimeInterval = 0
     private var playRoom = -1
+    /// Bursts begun by what happened in the run, still flying.
+    private var sparks: [GameSpark] = []
     private var drag: (start: CGPoint, hit: GameHit?, moved: Bool)?
     private var tracking: NSTrackingArea?
 
@@ -140,6 +142,25 @@ final class GameStageView: NSView {
         fade.backgroundColor = NSColor.black.cgColor
         fade.opacity = 0
         root.addSublayer(fade)
+        registerForDraggedTypes([.fileURL])
+    }
+
+    // MARK: Art dropped in
+
+    private func artDropped(_ info: NSDraggingInfo) -> [URL] {
+        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.filter { GameWorkspaceModel.importable.contains($0.pathExtension.lowercased()) }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        editing && !artDropped(sender).isEmpty ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = artDropped(sender)
+        guard editing, !urls.isEmpty, let model else { return false }
+        model.importFiles(urls)
+        return true
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -249,7 +270,8 @@ final class GameStageView: NSView {
         guard let drawable = metal.nextDrawable() else { return }
         var job = GameRenderer.Job(sprites: [], camera: GameCamera(center: center, zoom: zoom * scale), pixelArt: pixelArt)
         if let room = previewRoom ?? drawnRoom {
-            job.sprites = GameScene.layout(room, focal: focal, view: gameView, center: center, art: model.images.art, standing: resting(room))
+            // The room's air held still, as a paused run shows it.
+            job.sprites = GameScene.layout(room, focal: focal, view: gameView, center: center, art: model.images.art, standing: resting(room), air: 0)
             job.lighting = GameScene.lighting(room, focal: focal, view: gameView, center: center)
             if finish { job.post = model.document?.view.game.post }
         }
@@ -720,6 +742,7 @@ final class GameStageView: NSView {
 
     private func startPlay() {
         playRoom = -1
+        sparks = []
         lastTime = 0
         draft = []
         window?.makeFirstResponder(self)
@@ -741,8 +764,13 @@ final class GameStageView: NSView {
         let now = link.timestamp
         let elapsed = lastTime == 0 ? 0 : now - lastTime
         lastTime = now
+        let before = player.now
         let alpha = player.advance(by: elapsed)
-        _ = player.takeHappened()
+        let happened = player.takeHappened()
+        if happened != 0, player.now.room == before.room {
+            sparks += GameFX.felt(happened, now: player.now, before: player.before, tick: player.info.tick, tall: gameView.height)
+        }
+        sparks = GameFX.living(sparks, time: Double(player.now.tick) / Double(max(1, player.info.tick)))
         model.ticked()
         drawPlay(alpha: alpha)
     }
@@ -812,7 +840,8 @@ final class GameStageView: NSView {
         let picture = pixelArt ? view : box.pixels
         var eye = GameCamera(center: camera, zoom: picture.width / view.width)
         if pixelArt { eye = eye.snapped(target: picture) }
-        var job = GameRenderer.Job(sprites: GameScene.layout(room, focal: focal, view: view, center: eye.center, art: art, standing: standing, time: time, snap: pixelArt),
+        var job = GameRenderer.Job(sprites: GameScene.layout(room, focal: focal, view: view, center: eye.center, art: art, standing: standing, time: time,
+                                                             air: time, sparks: sparks, snap: pixelArt),
                                    camera: eye, post: model.document?.view.game.post, pixelArt: pixelArt, pictureSize: pixelArt ? view : nil)
         job.lighting = GameScene.lighting(room, focal: focal, view: view, center: eye.center, time: time)
         guard let drawable = metal.nextDrawable() else { return }

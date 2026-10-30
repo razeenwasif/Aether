@@ -645,6 +645,8 @@ Proton saw the same four: `proton-game`'s `Niche` names Metroidvania, Roguelite,
 3. Low-poly: Model scenes as rooms, the orthographic 3D camera, walking on the scene. Serves Tunic; Monument Valley's paths after.
 4. When wanted, between these: roguelite runs, and Model → sprite sheets.
 
+Before isometric, by the user's choice (30 Oct): side-on finished first. ~~The importers, Send to Game and particles~~: done, see §10a. Sound and drawing skeletons are left of it.
+
 **Still not goals:** a free or first-person 3D camera, streamed open worlds, networked play.
 
 ---
@@ -1535,6 +1537,24 @@ Not yet:
   - The Game suites: 18 pass.
 - **Not yet:** particles (Proton's `game-fx.js`), sound, skeletons drawn (Proton's skinning program), the importers, and quality levels (Proton's low, medium and high); frame times not measured yet.
 
+**2026-10-30 · Game: art brought in, Send to Game, and particles.** The user chose to finish side-on before isometric ("lets go with option 2"); this slice is the part of it that lets a game have its own art.
+
+- **The importers** (`proton-game`'s, which Proton's core drove from `game/import.rs`; that driver is ported into the bridge as `GameEditor.import_art`):
+  - A painter's `.psd`: a group a plane at the depth in its name's brackets (`[800]`, `[-150]`), `[play]` onto the play plane, `[still]` not moving; layers trimmed and written under `art/<file>/`, cut past 2048 px, with normal maps from brightness if asked. A `.png` is one plane. An Aseprite file or a sprite sheet's JSON becomes an `.anim.json`; a DragonBones armature a `.skel.json`.
+  - The images are written at once and remembered in `import.json`; the room's planes come back to Swift and are set as one step (`Import forest.psd`), so ⌘Z takes an import back whole. Importing again replaces what the file made before; images it no longer makes are named, not deleted.
+  - A file from outside the game is copied in first: a painted one to `art/source/`, an animation's source (with a sheet's picture or an armature's atlas) to a folder of its own under `art/`, where its animation is made.
+  - In the app: Import Art… above the rooms, or files dropped on the room. The room inspector sets the import's scale and normal maps, each plane's depth and whether it's lit, and each prefab's look (any picture or animation in `art/`, not sources or sheets; the pivot set to the middle of its bottom edge).
+- **Send to Game:**
+  - From Canvas (File ▸ Send to Game): a canvas with frames goes as a sprite sheet and its JSON (an animation); one without, as a layered PSD (planes).
+  - From Diffuse's Gallery (its button and menu): a picture as a plane. A sealed picture is refused: a game's art is plain, and the Canvas is where a sealed picture is opened and saved.
+- **Particles:** Proton's `game-fx.js` ported (`GameFX`): a room's air (motes, rain, snow, leaves, embers, dust) on a plane, tiled from the room's origin over what the camera sees, and bursts from what a tick says happened (jump, land, dash, hurt, rest, a blow's sparks on what began to flash, a burst where a thing was beaten). Every particle is a function of time and a seed, in Proton's 32-bit arithmetic: the tests check `noise`, `seed`, a mote, a raindrop and a dust particle against values from Proton's JavaScript run in node. The editor shows the air held still at 0; Play moves it on the run's clock. The room inspector's Air section adds and takes out emitters.
+- **Checked:**
+  - Offscreen only: the request to take over the screen timed out. The template room rendered with its motes.
+  - The bridge's tests: a PSD made into planes by depth, with normal maps, then imported again replacing them; a sprite sheet made into an animation; a file of another kind refused plainly.
+  - The Swift tests: a PSD from a canvas, outside the game, made into a plane in one undo step and drawn from its pieces with their normal map; a canvas's sheet made into an animation and set as the player's look; a plane's depth, lighting and the room's air set and undone; particles to the bit; air and bursts in the layout.
+  - 181 Swift and 34 bridge tests pass.
+- **Not yet:** sound, drawing skeletons, squash, stretch and shake on landing and blows, Proton's import status (a source changed since it was imported) and its Assets tab.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1584,4 +1604,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Game's third slice, the lit renderer on Metal with the camera as a setting, and the pixel mode~~: done, see §10a.
 
-**Next, proposed:** Game's isometric slice (§9b, 2): top-down movement in the simulation, the angled camera, depth sorting, and editing ground rooms. Particles and sound can come before it if wanted. Launch time (§7b) stays open.
+~~Game's art brought in (the importers and Send to Game) and particles~~: done, see §10a.
+
+**Next, proposed:** sound and drawing skeletons, to finish side-on; then Game's isometric slice (§9b, 2). Launch time (§7b) stays open.
