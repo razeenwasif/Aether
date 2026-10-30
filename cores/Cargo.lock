@@ -50,6 +50,7 @@ dependencies = [
  "aether-layers",
  "aether-poly",
  "proton-diffuse",
+ "proton-game",
  "proton-mesh",
  "proton-raster",
  "proton-scene",
@@ -889,6 +890,17 @@ dependencies = [
  "serde",
  "serde_json",
  "ureq",
+]
+
+[[package]]
+name = "proton-game"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "png",
+ "proton-raster",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -1401,6 +1401,43 @@ Not yet:
   - A checker on the cube's faces doesn't flicker: the traced render is no grainier than the quick render's checker. Before the fix it measured 1.97 against 1.08.
 - **Not done:** albedo for a metal is taken as its base colour, so a mirror's reflections are smoothed as light. That holds up where samples agree, and blurs where they don't. There's no temporal filtering, since a render is a single frame.
 
+**2026-10-30 · Game, first slice: Proton's engine, the room stage and Play.** The user asked to "start on Game".
+
+- **The engine came from Proton's history.**
+  - Proton's commit `a551530` removed `proton-game` and `proton-game-runtime` when the modes left its window. `proton-game` is copied from the commit before it into `cores/proton-game`: the format, the documents and their ops, the fixed-point simulation with its fights, the importers and the template.
+  - Two changes on the way in: the TypeScript bindings are gone, as with the other crates, and the template test reads its fixture from `tests/fixtures/`.
+  - Proton's window-test fixtures came too: the template game, and the four recorded replays (`game-replay`, `-anim`, `-skel`, `-fight`).
+  - All of the crate's own tests pass in Aether's workspace.
+  - `proton-game-runtime` didn't come. It was the simulation as WebAssembly behind a C ABI, for a web window. Aether runs it natively.
+- **The bridge** (`aether-diffuse/src/game.rs`):
+  - `game_found` and `game_create` (Proton's metroidvania template).
+  - `GameEditor`: open, view, room, apply ops to `game`, `world`, `room:<id>` or `prefab:<id>` (whole or nothing), undo and redo per document, save, unsaved, and run.
+  - `GameRun`: a cooked world, started, stepped a tick at a time. Its frame is the runtime's, word for word (16 words of header, 9 a record), so what Proton's window drew from, Aether draws from. There's also the run's hash.
+- **M4's exit criterion, half met: "replay check matches Proton's".** Aether's native runs of Proton's recorded worlds and inputs end in the hashes Proton's WebAssembly recorded. The animated and skeletal runs show the same frames and cues, and the fight ends in the same last frame and boxes, word for word. Four bridge tests check this.
+- **The other half, "Play starts with no load step",** holds as built. ▶ cooks the world natively and starts on the next frame, with no WebAssembly to fetch or compile.
+- **Swift:**
+  - `GameCore`: the format's drawn parts as `Decodable` types that default field by field, as Proton's writer leaves out what's empty. Also `GameDocument`, where ⌘Z walks the newest edit wherever it was made, as Proton's did, and edits are held until ⌘S.
+  - `GamePlayer`: steps the run on a fixed clock off the display link (a quarter second at most after a stall), keeps the input as runs, and replays it on a fresh run of the same world on Stop. `GameScene` has Proton's parallax arithmetic (factor, corner, shift, haze).
+  - `GameUI`:
+    - The home page of the project's `Games/`, with a new game from the template.
+    - The stage: a CALayer an image, so a camera move only moves layers. Planes are placed by their parallax for the game camera at the stage's middle, as Proton's editor did, hazed by the room's fog through each image's own shape. Collision is drawn by kind, with the things in the room and the spawns over it.
+    - Click a thing to choose it and drag it to move it, each one step. Pan by dragging on nothing or with two fingers; zoom by pinch or ⌘-scroll; f shows it all; ⌫ removes.
+    - The navigator lists rooms (with unsaved dots) and things. The inspector edits where a thing stands and lists the room's planes with their factors.
+    - Play: the rail's Play (⌘↩) runs the game from its start in the same stage. The camera follows the run's frame, what the run draws stands on the play plane eased between ticks, doors fade, and the HUD shows health. Esc stops and replays the run to check it ends in the same state.
+  - The shell: the Game rail button, Save, undo, the panels, project switching and the unsaved prompt. `Games/` marks a project folder too.
+- **Checked:**
+  - In the app, the workspace opens from View ▸ Game.
+  - The rest wasn't seen on screen: screen capture failed in the background, and the request to take over the screen timed out.
+  - Instead the stage was rendered offscreen to pictures, editing and after 90 ticks of Play. The editing picture showed the sky, the fogged hills, the ground, the fronds in front, collision by kind, the door, the gate, the bench and both spawns. The Play picture showed the camera on the player as it walked along the ground.
+- **Tests:**
+  - 4 in the bridge: the three replay checks and a new game edited, undone and played.
+  - 6 in Swift: the template read whole; an edit as one step, undone across rooms, refused whole, saved and reopened; Play's fixed clock and its replay check; the keys; the parallax arithmetic; the workspace making, editing, playing and closing a game.
+  - 400 Rust and 164 Swift tests pass.
+- **Not yet, from Proton's Game:**
+  - Drawing collision by hand, lights and the lit renderer with bloom, grade and vignette, particles, and sound.
+  - Animations (`.anim.json`) and skeletons drawn by their frames. A run with them draws the still image for now.
+  - The importers (PSD to planes) in the window, prefabs' inspector, the world map, recordings and the agent's tools.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1444,4 +1481,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 - Hitch time while panels slide is down 80% from the first trace, and the worst hitch is 21 ms, against 200.
 - A render's PNG work, its decode for a canvas and the GPU wait are off the main thread.
 
-**Next, proposed:** the next workspace (Design, Game or Video), as the user chooses. Launch time (§7b) stays open: it needs a restated target and a deferred first build.
+~~Game, first slice: Proton's engine, the room stage and Play~~: done, see §10a. M4's replay criterion is met natively against Proton's recorded hashes.
+
+**Next, proposed:** Game's second slice, the editor's hands: drawing collision, placing prefabs from a list, animations drawn by their frames, and the lit renderer (lights, bloom, grade) on Metal. Then sound and particles. Launch time (§7b) stays open.

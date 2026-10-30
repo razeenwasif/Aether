@@ -2,6 +2,7 @@ import AetherGraph
 import AppKit
 import CanvasUI
 import DiffuseUI
+import GameUI
 import ModelUI
 import Observation
 import SwiftUI
@@ -21,6 +22,7 @@ public final class AppModel {
     public let diffuse: DiffuseWorkspaceModel
     public let canvas: CanvasWorkspaceModel
     public let modeling: ModelWorkspaceModel
+    public let game: GameWorkspaceModel
     /// The omnibar (⌘K): tools, actions, assets and Go to in one list.
     public let omnibar = OmnibarModel()
     /// The flows in the flows folder, for Go to: read off the main actor,
@@ -46,6 +48,7 @@ public final class AppModel {
         diffuse = DiffuseWorkspaceModel(flowsFolder: folder.appending(path: "Flows", directoryHint: .isDirectory), defaults: defaults, connecting: connecting)
         canvas = CanvasWorkspaceModel(folder: folder.appending(path: "Canvases", directoryHint: .isDirectory), defaults: defaults)
         modeling = ModelWorkspaceModel(folder: folder.appending(path: "Models", directoryHint: .isDirectory))
+        game = GameWorkspaceModel(folder: folder.appending(path: "Games", directoryHint: .isDirectory))
         recentProjects = (defaults.stringArray(forKey: "aether.recentProjects") ?? []).map { URL(fileURLWithPath: $0, isDirectory: true) }
         diffuse.project = project
         canvas.project = project
@@ -125,6 +128,7 @@ public final class AppModel {
         switch active {
         case .canvas: canvas.undo()
         case .model: modeling.undo()
+        case .game: game.undo()
         case .diffuse: diffuse.undo()
         default: break
         }
@@ -134,6 +138,7 @@ public final class AppModel {
         switch active {
         case .canvas: canvas.redo()
         case .model: modeling.redo()
+        case .game: game.redo()
         case .diffuse: diffuse.redo()
         default: break
         }
@@ -143,6 +148,7 @@ public final class AppModel {
         switch active {
         case .canvas: canvas.undoLabel
         case .model: modeling.undoLabel
+        case .game: game.undoLabel
         case .diffuse: diffuse.undoLabel
         default: nil
         }
@@ -152,6 +158,7 @@ public final class AppModel {
         switch active {
         case .canvas: canvas.redoLabel
         case .model: modeling.redoLabel
+        case .game: game.redoLabel
         case .diffuse: diffuse.redoLabel
         default: nil
         }
@@ -163,6 +170,7 @@ public final class AppModel {
             case .diffuse: diffuse.libraryOpen.toggle()
             case .canvas: canvas.navigatorOpen.toggle()
             case .model: modeling.navigatorOpen.toggle()
+            case .game: game.navigatorOpen.toggle()
             default: break
             }
         }
@@ -174,6 +182,7 @@ public final class AppModel {
             case .diffuse: diffuse.inspectorOpen.toggle()
             case .canvas: canvas.inspectorOpen.toggle()
             case .model: modeling.inspectorOpen.toggle()
+            case .game: game.inspectorOpen.toggle()
             default: break
             }
         }
@@ -185,6 +194,7 @@ public final class AppModel {
         case .diffuse: diffuse.libraryOpen
         case .canvas: canvas.navigatorOpen && canvas.document != nil
         case .model: modeling.navigatorOpen && modeling.document != nil
+        case .game: game.navigatorOpen && game.document != nil
         default: false
         }
     }
@@ -194,6 +204,7 @@ public final class AppModel {
         case .diffuse: diffuse.inspectorOpen
         case .canvas: canvas.inspectorOpen && canvas.document != nil
         case .model: modeling.inspectorOpen && modeling.document != nil
+        case .game: game.inspectorOpen && game.document != nil
         default: false
         }
     }
@@ -204,6 +215,7 @@ public final class AppModel {
         case .diffuse: diffuse.run()
         case .canvas: canvas.exportPNG()
         case .model: modeling.render()
+        case .game: game.togglePlay()
         default: break
         }
     }

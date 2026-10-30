@@ -559,13 +559,14 @@ public final class ProjectGraph {
         let fm = FileManager.default
         var isFolder: ObjCBool = false
         guard fm.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else { return false }
-        return folder.pathExtension == "aether" || ["project.json", "Canvases", "Flows", "Models"].contains { fm.fileExists(atPath: folder.appending(path: $0).path) }
+        return folder.pathExtension == "aether" || ["project.json", "Canvases", "Flows", "Models", "Games"].contains { fm.fileExists(atPath: folder.appending(path: $0).path) }
     }
 
     /// Where the project's canvases, flows and scenes go.
     public var canvasesFolder: URL? { folder?.appending(path: "Canvases", directoryHint: .isDirectory) }
     public var flowsFolder: URL? { folder?.appending(path: "Flows", directoryHint: .isDirectory) }
     public var modelsFolder: URL? { folder?.appending(path: "Models", directoryHint: .isDirectory) }
+    public var gamesFolder: URL? { folder?.appending(path: "Games", directoryHint: .isDirectory) }
 }
 
 /// A listener held: let go, it stops.

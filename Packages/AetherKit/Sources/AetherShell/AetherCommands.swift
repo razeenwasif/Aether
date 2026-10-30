@@ -61,7 +61,7 @@ public struct AetherCommands: Commands {
             .disabled(model.otherRecentProjects.isEmpty)
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { onModel ? modeling.saveNow() : onCanvas ? canvas.save() : diffuse.save() }
+            Button("Save") { onModel ? modeling.saveNow() : onCanvas ? canvas.save() : model.active == .game ? model.game.saveNow() : diffuse.save() }
                 .keyboardShortcut("s")
             Button("Save As…") { onCanvas ? canvas.saveAs() : diffuse.saveAs() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])

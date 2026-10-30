@@ -120,6 +120,17 @@ Keys: `f` frame the chosen object, or everything · `⇧A` frame everything · `
 
 Not yet: a bevel of more than one segment, editing a graph as a graph, a point light's shadow from inside what it lights in the quick render, and the path tracer's textures and glass.
 
+## Game
+
+Proton's own 2D engine, for painted side-scrollers on parallax planes: a game is a folder of JSON (`game.json`, `world.json`, a file a room and a prefab) and its art, in Proton's format, so either app opens it. Games live in the project's `Games/`.
+
+- **New game** makes one from Proton's Metroidvania template: two rooms, a player, a crawler, a bench and a gate, their art drawn in code.
+- **The stage** shows a room as the game's camera sees it, its planes moving by their depth, far ones hazed by the room's fog. Collision is drawn by kind (solid, one-way, hazard), with the things in the room and the spawns. Click a thing to choose it and drag it to move it. Drag on nothing or use two fingers to move over the room; pinch or ⌘-scroll to zoom; `f` shows it all; `⌫` removes. The navigator lists the rooms and what's in the one on screen, and the inspector sets where a thing stands.
+- **Edits** are made by the core whole or not at all, each an undo step (⌘Z undoes the newest wherever it was made), and held until ⌘S.
+- **Play** (the rail's Play, or ⌘↩) runs the game as it is, unsaved edits and all, from its start, in the same stage, with no load step. Arrows or WASD move, Z or Space jumps, X swings, C or Shift dashes. Esc stops, and the run is replayed on a fresh copy of the world to check that it ends in the same state. The simulation is Proton's, in whole numbers: Proton's recorded replays end in the same hashes here.
+
+Not yet: drawing collision, lights and the lit renderer, animations drawn by their frames, particles, sound and the importers.
+
 ## Canvas
 
 Canvases are Proton's `.canvas` folders (`canvas.json` and a PNG per layer), edited through `proton-raster`, whose maths is whole numbers only, so the same edit always makes the same pixels. They live in `~/Documents/Aether/Canvases`. With none open, the home page shows them as cards beside the new-canvas form: a name, **Pixel** (a small grid, a palette, a pencil; 16–256 px) or **Paint** (a large canvas and soft brushes; 1024–4096 px), and a size. Dropping a PNG, a Photoshop or an Aseprite file there makes a canvas of it, its layers kept. File ▸ Make a Canvas of a Picture (`⇧⌘O`) does the same.

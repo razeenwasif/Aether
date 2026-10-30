@@ -1805,6 +1805,577 @@ public func FfiConverterTypeFlowDocument_lower(_ value: FlowDocument) -> UInt64 
 
 
 /**
+ * One game open for editing.
+ */
+public protocol GameEditorProtocol: AnyObject, Sendable {
+    
+    /**
+     * A batch of ops (JSON, Proton's `GameOp`s) on one document — `game`,
+     * `world`, `room:<id>` or `prefab:<id>` — whole or not at all. Whether
+     * it changed anything.
+     */
+    func apply(targetName: String, ops: String) throws  -> Bool
+    
+    func redo(targetName: String) throws  -> Bool
+    
+    /**
+     * Room `id`, as JSON, as it is now.
+     */
+    func room(id: String)  -> String?
+    
+    /**
+     * A run of the game as it is now, unsaved edits and all: its world
+     * cooked, not started.
+     */
+    func run() throws  -> GameRun
+    
+    /**
+     * Write every changed document; the files written.
+     */
+    func save() throws  -> [String]
+    
+    func undo(targetName: String) throws  -> Bool
+    
+    /**
+     * The files changed and not saved.
+     */
+    func unsaved()  -> [String]
+    
+    /**
+     * Everything but the rooms, as JSON: the game, the world, the prefabs,
+     * a row a room, and what is unsaved.
+     */
+    func view()  -> String
+    
+}
+/**
+ * One game open for editing.
+ */
+open class GameEditor: GameEditorProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_gameeditor(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_gameeditor(handle, $0) }
+    }
+
+    
+    /**
+     * The game in the folder at `path`.
+     */
+public static func `open`(path: String)throws  -> GameEditor  {
+    return try  FfiConverterTypeGameEditor_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_gameeditor_open(
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * A batch of ops (JSON, Proton's `GameOp`s) on one document — `game`,
+     * `world`, `room:<id>` or `prefab:<id>` — whole or not at all. Whether
+     * it changed anything.
+     */
+open func apply(targetName: String, ops: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_apply(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(targetName),
+        FfiConverterString.lower(ops),uniffiCallStatus
+    )
+})
+}
+    
+open func redo(targetName: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_redo(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(targetName),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Room `id`, as JSON, as it is now.
+     */
+open func room(id: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_room(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * A run of the game as it is now, unsaved edits and all: its world
+     * cooked, not started.
+     */
+open func run()throws  -> GameRun  {
+    return try  FfiConverterTypeGameRun_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_run(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Write every changed document; the files written.
+     */
+open func save()throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_save(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+open func undo(targetName: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_undo(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(targetName),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The files changed and not saved.
+     */
+open func unsaved() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_unsaved(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Everything but the rooms, as JSON: the game, the world, the prefabs,
+     * a row a room, and what is unsaved.
+     */
+open func view() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gameeditor_view(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameEditor: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = GameEditor
+
+    public static func lift(_ handle: UInt64) throws -> GameEditor {
+        return GameEditor(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: GameEditor) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameEditor {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: GameEditor, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameEditor_lift(_ handle: UInt64) throws -> GameEditor {
+    return try FfiConverterTypeGameEditor.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameEditor_lower(_ value: GameEditor) -> UInt64 {
+    return FfiConverterTypeGameEditor.lower(value)
+}
+
+
+
+
+
+
+/**
+ * A run: a cooked world, and the simulation stepping through it.
+ */
+public protocol GameRunProtocol: AnyObject, Sendable {
+    
+    /**
+     * The boxes the run tests now: count, then each as hit (1) or hurt (0)
+     * and its left, top, right, bottom in 1/256 px.
+     */
+    func boxes()  -> [Int32]
+    
+    /**
+     * The cues the last tick said, by their place in the world's.
+     */
+    func cues()  -> [UInt32]
+    
+    /**
+     * The frame, as the runtime's: a header, then a record a drawn thing.
+     *
+     * Header: abi, tick, room, camera x, camera y (1/256 px), how far
+     * through a door (0 none, else 1–24), deaths, abilities, count, player
+     * x, player y (1/256 px), grounded, health, the most health, things
+     * beaten, ticks held still for a blow. Record: sprite (-1 a shot with no
+     * image), x, y (pixels), pivot x, pivot y, look bits (1 flip, 2 flash,
+     * 4 blink), the animation's frame and its clip (-1 for a still image),
+     * and who it is (0 the player, a thing one more than its place in the
+     * room, a shot `SHOT` and more).
+     */
+    func frame()  -> [Int32]
+    
+    /**
+     * The run's state as one number: two runs with the same one are the
+     * same run.
+     */
+    func hash()  -> UInt64
+    
+    /**
+     * What the window needs of the world, as JSON: ticks a second, the
+     * camera's view, the rooms' ids, the images frames name, where a run
+     * starts, and the cues' names.
+     */
+    func info()  -> String
+    
+    /**
+     * Start (or start again) in room `room` at `x`, `y` (1/256 px), with
+     * `abilities` had.
+     */
+    func start(room: UInt32, x: Int32, y: Int32, abilities: UInt32) throws 
+    
+    /**
+     * Start where the game says a run starts.
+     */
+    func startAtStart() throws 
+    
+    /**
+     * One tick with `input` held (a bit an action, `sim::input`). Bits of
+     * what happened.
+     */
+    func step(input: UInt32)  -> UInt32
+    
+    /**
+     * The world as cooked, as JSON: what a replay starts from.
+     */
+    func world()  -> String
+    
+}
+/**
+ * A run: a cooked world, and the simulation stepping through it.
+ */
+open class GameRun: GameRunProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_gamerun(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_gamerun(handle, $0) }
+    }
+
+    
+    /**
+     * A run of a world already cooked, as JSON: a replay's.
+     */
+public static func fromWorld(world: String)throws  -> GameRun  {
+    return try  FfiConverterTypeGameRun_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_gamerun_from_world(
+        FfiConverterString.lower(world),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * The boxes the run tests now: count, then each as hit (1) or hurt (0)
+     * and its left, top, right, bottom in 1/256 px.
+     */
+open func boxes() -> [Int32]  {
+    return try!  FfiConverterSequenceInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_boxes(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The cues the last tick said, by their place in the world's.
+     */
+open func cues() -> [UInt32]  {
+    return try!  FfiConverterSequenceUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_cues(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The frame, as the runtime's: a header, then a record a drawn thing.
+     *
+     * Header: abi, tick, room, camera x, camera y (1/256 px), how far
+     * through a door (0 none, else 1–24), deaths, abilities, count, player
+     * x, player y (1/256 px), grounded, health, the most health, things
+     * beaten, ticks held still for a blow. Record: sprite (-1 a shot with no
+     * image), x, y (pixels), pivot x, pivot y, look bits (1 flip, 2 flash,
+     * 4 blink), the animation's frame and its clip (-1 for a still image),
+     * and who it is (0 the player, a thing one more than its place in the
+     * room, a shot `SHOT` and more).
+     */
+open func frame() -> [Int32]  {
+    return try!  FfiConverterSequenceInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_frame(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The run's state as one number: two runs with the same one are the
+     * same run.
+     */
+open func hash() -> UInt64  {
+    return try!  FfiConverterUInt64.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_hash(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * What the window needs of the world, as JSON: ticks a second, the
+     * camera's view, the rooms' ids, the images frames name, where a run
+     * starts, and the cues' names.
+     */
+open func info() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_info(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Start (or start again) in room `room` at `x`, `y` (1/256 px), with
+     * `abilities` had.
+     */
+open func start(room: UInt32, x: Int32, y: Int32, abilities: UInt32)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_start(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(room),
+        FfiConverterInt32.lower(x),
+        FfiConverterInt32.lower(y),
+        FfiConverterUInt32.lower(abilities),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * Start where the game says a run starts.
+     */
+open func startAtStart()throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_start_at_start(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+}
+}
+    
+    /**
+     * One tick with `input` held (a bit an action, `sim::input`). Bits of
+     * what happened.
+     */
+open func step(input: UInt32) -> UInt32  {
+    return try!  FfiConverterUInt32.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_step(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(input),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The world as cooked, as JSON: what a replay starts from.
+     */
+open func world() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_gamerun_world(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGameRun: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = GameRun
+
+    public static func lift(_ handle: UInt64) throws -> GameRun {
+        return GameRun(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: GameRun) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GameRun {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: GameRun, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameRun_lift(_ handle: UInt64) throws -> GameRun {
+    return try FfiConverterTypeGameRun.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGameRun_lower(_ value: GameRun) -> UInt64 {
+    return FfiConverterTypeGameRun.lower(value)
+}
+
+
+
+
+
+
+/**
  * The gateway on atlas, at its home and away addresses, with the key.
  */
 public protocol GatewayProtocol: AnyObject, Sendable {
@@ -4521,6 +5092,31 @@ public func canvasRamp(base: Data, steps: UInt32, shift: UInt32, spread: UInt32)
 })
 }
 /**
+ * A new game called `name` in `dir`, from Proton's metroidvania template:
+ * two rooms, a player, a crawler and their art, drawn in code. Refused if
+ * `dir` already holds a game.
+ */
+public func gameCreate(dir: String, name: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_game_create(
+        FfiConverterString.lower(dir),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+}
+}
+/**
+ * The games in `folder`: each folder in it (or it itself) holding a
+ * `game.json`. JSON: a list of `{path, name, rooms}`, by name.
+ */
+public func gameFound(folder: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_game_found(
+        FfiConverterString.lower(folder),uniffiCallStatus
+    )
+})
+}
+/**
  * A primitive as an `.obj`, for a new object to name: `cube`, `sphere`,
  * `cylinder`, `cone`, `plane` or `torus`, about the origin, a metre across.
  */
@@ -4591,6 +5187,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_canvas_ramp() != 45216) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_game_create() != 33738) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_game_found() != 53735) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_scene_primitive() != 60297) {
@@ -4770,6 +5372,57 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_apply() != 1479) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_redo() != 51561) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_room() != 5853) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_run() != 51243) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_save() != 17742) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_undo() != 21153) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_unsaved() != 56720) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gameeditor_view() != 57123) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_boxes() != 8046) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_cues() != 8904) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_frame() != 48163) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_hash() != 62741) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_info() != 54233) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_start() != 48338) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_start_at_start() != 56625) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_step() != 10066) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_gamerun_world() != 19095) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_mesheditor_bevel() != 31540) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4867,6 +5520,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_canvaseditor_open() != 57588) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_gameeditor_open() != 40389) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_gamerun_from_world() != 7803) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_mesheditor_open() != 6838) {

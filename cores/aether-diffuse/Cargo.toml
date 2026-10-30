@@ -20,6 +20,8 @@ proton-mesh = { path = "../proton-mesh" }
 aether-poly = { path = "../aether-poly" }
 # Model's material layers.
 aether-layers = { path = "../aether-layers" }
+# Game: games, edited and run.
+proton-game = { path = "../proton-game" }
 serde = "1"
 serde_json = "1"
 uniffi = "0.32"

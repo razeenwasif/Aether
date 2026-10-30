@@ -20,6 +20,7 @@ use proton_diffuse::{check, doc, layout, png, seal, templates, Catalogue, Client
 uniffi::setup_scaffolding!();
 
 mod canvas;
+mod game;
 pub use canvas::{CanvasEditor, Laid};
 mod model;
 pub use model::{SceneEditor, SceneMesh};

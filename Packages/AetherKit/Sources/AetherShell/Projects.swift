@@ -71,6 +71,7 @@ extension AppModel {
         let folder = next.folder ?? Self.defaultProjectFolder
         canvas.switchFolder(to: next.canvasesFolder ?? folder.appending(path: "Canvases", directoryHint: .isDirectory))
         modeling.switchFolder(to: next.modelsFolder ?? folder.appending(path: "Models", directoryHint: .isDirectory))
+        game.switchFolder(to: next.gamesFolder ?? folder.appending(path: "Games", directoryHint: .isDirectory))
         diffuse.switchFolder(to: next.flowsFolder ?? folder.appending(path: "Flows", directoryHint: .isDirectory))
         project.saveNow()
         project = next
@@ -101,13 +102,15 @@ extension AppModel {
         var unsaved: [String] = []
         if let document = canvas.document, document.state.dirty { unsaved.append(document.name) }
         if let editor = diffuse.editor, diffuse.hasUnsavedEdits { unsaved.append(editor.name) }
+        if let document = game.document, !document.unsaved.isEmpty { unsaved.append(document.name) }
         guard !unsaved.isEmpty else { return true }
         switch askAboutUnsaved(unsaved, name) {
         case .save:
             if canvas.document?.state.dirty == true { canvas.save() }
             if diffuse.hasUnsavedEdits { diffuse.save() }
+            if game.document?.unsaved.isEmpty == false { game.saveNow() }
             // A save that failed has said why; stay.
-            return canvas.document?.state.dirty != true && !diffuse.hasUnsavedEdits
+            return canvas.document?.state.dirty != true && !diffuse.hasUnsavedEdits && game.document?.unsaved.isEmpty != false
         case .stay:
             return false
         case .drop:

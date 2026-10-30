@@ -4,12 +4,15 @@
 # proton-scene and proton-mesh came from Proton at 1e1aeb7 (the first two
 # last changed there in dca833c), less the TypeScript bindings Proton's web
 # window needed; their file formats — flows, sealed files, PNG heads,
-# canvases, scenes — stay Proton's, so both apps read them.
+# canvases, scenes — stay Proton's, so both apps read them. proton-game came
+# later, from a551530~1 (the commit before Proton removed it), with its tests'
+# fixtures, less its TypeScript bindings; its WebAssembly runtime stayed
+# behind, as Aether runs the simulation natively.
 # aether-poly and aether-layers are Aether's own: Model's Edit mode and
 # material layers, which Proton never had.
 [workspace]
 resolver = "2"
-members = ["aether-diffuse", "aether-layers", "aether-poly", "proton-diffuse", "proton-mesh", "proton-raster", "proton-scene", "uniffi-bindgen"]
+members = ["aether-diffuse", "aether-layers", "aether-poly", "proton-diffuse", "proton-game", "proton-mesh", "proton-raster", "proton-scene", "uniffi-bindgen"]
 
 [workspace.package]
 version = "0.1.0"

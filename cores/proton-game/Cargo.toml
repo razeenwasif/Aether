@@ -1,0 +1,23 @@
+[package]
+name = "proton-game"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license = "MIT"
+description = "Game mode: Proton's own 2D-first engine — its project format, editable documents and simulation."
+
+[features]
+default = ["editor"]
+# What only the editor needs: writing PNGs for the template, and the importers
+# — whose PSD and PNG reading is Canvas's engine's (proton-raster's `io`).
+editor = ["dep:png", "dep:proton-raster"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+png = { version = "0.17", optional = true }
+proton-raster = { path = "../proton-raster", optional = true }
+
+[dev-dependencies]
+png = "0.17"
+flate2 = "1.1"

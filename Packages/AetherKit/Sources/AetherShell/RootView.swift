@@ -4,6 +4,7 @@ import AetherGraph
 import CanvasUI
 import DiffuseCore
 import DiffuseUI
+import GameUI
 import ModelUI
 import SwiftUI
 
@@ -24,6 +25,7 @@ public struct RootView: View {
                     case .diffuse: DiffuseWorkspace(model: model.diffuse)
                     case .canvas: CanvasWorkspace(model: model.canvas)
                     case .model: ModelWorkspace(model: model.modeling)
+                    case .game: GameWorkspace(model: model.game)
                     default: PlannedWorkspace(workspace: model.active)
                     }
                 }
@@ -121,6 +123,10 @@ struct WorkspaceRail: View {
             RailButton("Export", style: .run, help: "Export: a PNG, a sprite sheet or Photoshop  ⌘E") { model.run() }
                 .opacity(model.canvas.document == nil ? 0.35 : 1)
                 .disabled(model.canvas.document == nil)
+        } else if model.active == .game {
+            RailButton(model.game.playing ? "Stop" : "Play", style: .run, help: model.game.playing ? "Stop: Esc" : "Play: the room from the game's start, as it is now  ⌘↩") { model.run() }
+                .opacity(model.game.document == nil ? 0.35 : 1)
+                .disabled(model.game.document == nil)
         } else if model.active == .model {
             RailButton("Render", style: .run, help: "Render: the scene from the camera, and its depth, published as assets  ⌘↩") { model.run() }
                 .opacity(model.modeling.document == nil ? 0.35 : 1)
@@ -155,7 +161,7 @@ struct PlannedWorkspace: View {
     var body: some View {
         VStack(spacing: 14) {
             Text(workspace.title).font(.system(size: 28, weight: .semibold)).foregroundStyle(Color.inkHi)
-            Text("Designed, not built yet. It lands in \(workspace.milestone) of the plan; Diffuse, Canvas and Model are built.")
+            Text("Designed, not built yet. It lands in \(workspace.milestone) of the plan; Diffuse, Canvas, Model and Game are built.")
                 .font(.system(size: 13))
                 .foregroundStyle(Color.ink)
             Link("Open the design canvas", destination: URL(string: "https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv")!)
