@@ -4,8 +4,9 @@ import GameCore
 import QuartzCore
 import SwiftUI
 
-/// The stage: a room drawn as the game's camera sees it, a layer an image,
-/// so a camera move is only layers moved and the GPU composites them.
+/// The stage: a room drawn as the game's camera sees it, by the renderer on
+/// Metal (`GameRenderer`), lit by the room's lights; what's drawn over it
+/// while editing is layers.
 ///
 /// Editing, the camera is the editor's own (pan with two fingers or a drag
 /// on nothing, zoom with a pinch or ⌘-scroll), and the planes are placed as
@@ -18,9 +19,9 @@ import SwiftUI
 ///
 /// Playing, the run's frame decides it all: the camera follows the
 /// player, what the run draws stands on the play plane (an animation by the
-/// frame the run is at), and the overlays are gone. Ticks run on a fixed
-/// clock off the display link, and what is drawn between two ticks is eased
-/// between them.
+/// frame the run is at), the game's finish is laid over it, and the
+/// overlays are gone. Ticks run on a fixed clock off the display link, and
+/// what is drawn between two ticks is eased between them.
 struct GameStage: NSViewRepresentable {
     let model: GameWorkspaceModel
     /// What, changed, means the room must be laid out again.
@@ -33,6 +34,8 @@ struct GameStage: NSViewRepresentable {
     /// fitted into what's left.
     let insets: (left: CGFloat, right: CGFloat)
     let tool: GameTool
+    /// Whether the editor shows the game's finish.
+    let finish: Bool
 
     func makeNSView(context: Context) -> GameStageView {
         let view = GameStageView()
@@ -44,6 +47,7 @@ struct GameStage: NSViewRepresentable {
         view.model = model
         view.insets = insets
         view.tool = tool
+        view.finish = finish
         view.update(revision: revision, roomID: roomID, selection: selection, playing: playing, fit: fitRequest)
     }
 }
@@ -74,6 +78,10 @@ final class GameStageView: NSView {
     var tool: GameTool = .select {
         didSet { if tool != oldValue { draft = []; drawDraft(); window?.invalidateCursorRects(for: self) } }
     }
+    /// Whether the editor shows the game's finish, as Play does.
+    var finish = false {
+        didSet { if finish != oldValue { render() } }
+    }
 
     /// The editor's camera: the room point at the stage's middle, and stage
     /// points a room pixel.
@@ -84,12 +92,14 @@ final class GameStageView: NSView {
     private var fitPending = false
 
     private let root = CALayer()
-    /// Everything in room pixels: scaled and moved as the camera says.
+    /// The room as the renderer draws it: the whole stage while editing, the
+    /// game's view, letterboxed, in Play.
+    private let metal = CAMetalLayer()
+    private let renderer = GameRenderer()
+    /// What's drawn over the room while editing, in room pixels: scaled and
+    /// moved as the camera says. Its layers by what they mark, to move with
+    /// a drag.
     private let scene = CALayer()
-    /// A layer a plane, each moved by its parallax.
-    private var planes: [(plane: GamePlane, layer: CALayer)] = []
-    /// What's drawn over the play plane while editing, and its layers by
-    /// what they mark, to move with a drag.
     private let overlay = CALayer()
     private var lines: [CAShapeLayer] = []
     private var marks: [String: [CALayer]] = [:]
@@ -97,38 +107,36 @@ final class GameStageView: NSView {
     private var draft: [CGPoint] = []
     private var pointer: CGPoint?
     private let draftLayer = CAShapeLayer()
-    /// What a run draws, by who it is.
-    private let standing = CALayer()
-    private var actors: [Int: CALayer] = [:]
-    /// The halos of the room's lights.
-    private let halos = CALayer()
-    /// In Play, the stage outside the game's view covered, as Proton
-    /// letterboxes it: the room past the view isn't the game's to show.
-    private let bars = CAShapeLayer()
-    /// A door's fade, over everything.
+    /// A door's fade, over the game's view.
     private let fade = CALayer()
     private var drawnRoom: GameRoom?
+    /// The room as a drag would leave it, drawn while the drag lasts.
+    private var previewRoom: GameRoom?
     private var link: CADisplayLink?
     private var lastTime: CFTimeInterval = 0
     private var playRoom = -1
     private var drag: (start: CGPoint, hit: GameHit?, moved: Bool)?
     private var tracking: NSTrackingArea?
 
+    private static let background = NSColor(calibratedRed: 0.028, green: 0.031, blue: 0.04, alpha: 1)
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         layer = root
         wantsLayer = true
-        root.backgroundColor = NSColor(calibratedRed: 0.028, green: 0.031, blue: 0.04, alpha: 1).cgColor
+        root.backgroundColor = Self.background.cgColor
         root.isGeometryFlipped = true
         root.masksToBounds = true
+        metal.device = renderer?.device
+        metal.pixelFormat = GameRenderer.targetFormat
+        metal.framebufferOnly = true
+        metal.isOpaque = true
+        metal.actions = ["bounds": NSNull(), "position": NSNull(), "contents": NSNull()]
+        root.addSublayer(metal)
         scene.anchorPoint = .zero
         root.addSublayer(scene)
         draftLayer.fillColor = nil
         draftLayer.lineDashPattern = [12, 8]
-        bars.fillColor = root.backgroundColor
-        bars.fillRule = .evenOdd
-        bars.isHidden = true
-        root.addSublayer(bars)
         fade.backgroundColor = NSColor.black.cgColor
         fade.opacity = 0
         root.addSublayer(fade)
@@ -151,9 +159,13 @@ final class GameStageView: NSView {
         if tool != .select { addCursorRect(bounds, cursor: .crosshair) }
     }
 
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsLayout = true
+    }
+
     override func layout() {
         super.layout()
-        fade.frame = bounds
         if model?.playing == true { drawPlay(alpha: 1) } else if fitPending { fitRoom() } else { place() }
     }
 
@@ -176,43 +188,24 @@ final class GameStageView: NSView {
         let v = model?.document?.view.game.view ?? GameViewSettings()
         return CGSize(width: v.width, height: v.height)
     }
-    private var pixelArt: Bool { model?.document?.view.game.view.filter == "pixel" }
+    private var pixelArt: Bool { model?.document?.view.game.view.pixelArt == true }
     private var editing: Bool { model?.playing != true }
+    private var scale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2 }
 
-    /// The room's layers made again: its planes and their art, its lights'
-    /// halos, and, editing, what's drawn over them.
+    /// The room taken in: what's drawn over it made again, editing, and the
+    /// room drawn.
     private func build(room: GameRoom?) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         scene.sublayers?.forEach { $0.removeFromSuperlayer() }
-        bars.isHidden = editing
-        planes = []
-        actors = [:]
         lines = []
         marks = [:]
-        for layer in [overlay, standing, halos] { layer.sublayers?.forEach { $0.removeFromSuperlayer() } }
+        overlay.sublayers?.forEach { $0.removeFromSuperlayer() }
         drawnRoom = room
-        guard let room, let images = model?.images else { return }
-        for plane in room.planes {
-            let layer = CALayer()
-            layer.anchorPoint = .zero
-            let haze = GameScene.haze(room, plane)
-            for item in plane.items {
-                guard let image = images.image(item.image) else { continue }
-                layer.addSublayer(itemLayer(item, image: image, planeBlend: plane.blend, haze: haze))
-            }
-            if plane.gameplay { attachPlay(to: layer) }
-            for light in room.lights where light.plane == plane.id && light.glow > 0 {
-                halos.addSublayer(halo(light))
-            }
-            scene.addSublayer(layer)
-            planes.append((plane, layer))
-        }
-        if !planes.contains(where: { $0.plane.gameplay }) { attachPlay(to: scene) }
+        previewRoom = nil
+        guard let room else { return render() }
         if editing {
-            // Over every plane, foreground and all: the play plane doesn't
-            // shift, so its room pixels are the scene's.
             scene.addSublayer(overlay)
             scene.addSublayer(draftLayer)
             buildOverlay(room)
@@ -220,64 +213,49 @@ final class GameStageView: NSView {
         place()
     }
 
-    /// What stands on the play plane: the run's things and the halos.
-    private func attachPlay(to layer: CALayer) {
-        layer.addSublayer(standing)
-        layer.addSublayer(halos)
-    }
+    // MARK: Drawing the room
 
-    private func itemLayer(_ item: GameItem, image: CGImage, planeBlend: String, haze: (Double, Double, Double, Double)) -> CALayer {
-        let layer = CALayer()
-        let size = CGSize(width: Double(image.width) * item.scale, height: Double(image.height) * item.scale)
-        layer.bounds = CGRect(origin: .zero, size: size)
-        layer.position = CGPoint(x: Double(item.at[0]) + size.width / 2, y: Double(item.at.count > 1 ? item.at[1] : 0) + size.height / 2)
-        layer.contents = image
-        layer.contentsGravity = .resize
-        layer.opacity = Float(item.opacity)
-        if pixelArt { layer.magnificationFilter = .nearest }
-        var t = CATransform3DMakeRotation(item.rot * .pi / 180, 0, 0, 1)
-        if item.flip { t = CATransform3DScale(t, -1, 1, 1) }
-        layer.transform = t
-        Self.blend(layer, item.blend != "normal" ? item.blend : planeBlend)
-        // The haze of distance: the fog's colour over the art, through the
-        // art's own shape.
-        if haze.3 > 0 {
-            let tint = CALayer()
-            tint.frame = layer.bounds
-            tint.backgroundColor = CGColor(red: haze.0, green: haze.1, blue: haze.2, alpha: haze.3)
-            let mask = CALayer()
-            mask.frame = layer.bounds
-            mask.contents = image
-            mask.contentsGravity = .resize
-            tint.mask = mask
-            layer.addSublayer(tint)
-        }
-        return layer
-    }
-
-    private static func blend(_ layer: CALayer, _ blend: String) {
-        switch blend {
-        case "add": layer.compositingFilter = CIFilter(name: "CIAdditionCompositing")
-        case "multiply": layer.compositingFilter = CIFilter(name: "CIMultiplyBlendMode")
-        case "screen": layer.compositingFilter = CIFilter(name: "CIScreenBlendMode")
-        default: break
+    /// The things standing in the room as the editor shows them: each
+    /// prefab's image, or its animation's resting frame, on its feet.
+    private func resting(_ room: GameRoom) -> [GameStanding] {
+        guard let doc = model?.document else { return [] }
+        return room.entities.compactMap { entity in
+            guard let at = entity.at, at.count == 2, let prefab = doc.view.prefab(entity.prefab), !prefab.sprite.isEmpty else { return nil }
+            let frame = prefab.animated ? model?.images.anim(prefab.sprite)?.restingFrame(prefab.clips) : nil
+            return GameStanding(key: prefab.sprite, at: CGPoint(x: at[0], y: at[1]), pivot: Self.point(prefab.pivot), frame: frame)
         }
     }
 
-    /// A light's halo in the air round it: its colour, fading out, added.
-    private func halo(_ light: GameLight) -> CALayer {
-        let (r, g, b) = GameScene.rgb(light.color)
-        let strength = min(1, light.glow * light.intensity)
-        let glow = CAGradientLayer()
-        glow.type = .radial
-        glow.colors = [CGColor(red: r, green: g, blue: b, alpha: strength), CGColor(red: r, green: g, blue: b, alpha: 0)]
-        glow.startPoint = CGPoint(x: 0.5, y: 0.5)
-        glow.endPoint = CGPoint(x: 1, y: 1)
-        let reach = Double(light.radius) * 0.6
-        glow.frame = CGRect(x: Double(light.at[0]) - reach, y: Double(light.at.count > 1 ? light.at[1] : 0) - reach, width: reach * 2, height: reach * 2)
-        glow.compositingFilter = CIFilter(name: "CIAdditionCompositing")
-        marks["light:\(light.id)", default: []].append(glow)
-        return glow
+    /// Where a thing standing in the room is drawn, while editing.
+    private func restingFrame(_ entity: GameEntity) -> CGRect? {
+        guard let at = entity.at, at.count == 2, let prefab = model?.document?.view.prefab(entity.prefab), let images = model?.images else { return nil }
+        let frame = prefab.animated ? images.anim(prefab.sprite)?.restingFrame(prefab.clips) : nil
+        let standing = GameStanding(key: prefab.sprite, at: CGPoint(x: at[0], y: at[1]), pivot: Self.point(prefab.pivot), frame: frame)
+        return GameScene.sprite(standing, art: images.art)?.rect
+    }
+
+    /// The room drawn for the editor's camera: the planes as the game camera
+    /// would show them from the stage's middle, lit, and finished when asked.
+    private func render() {
+        guard editing, let renderer, let model else { return }
+        let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        guard size.width >= 1, size.height >= 1 else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        metal.frame = bounds
+        metal.contentsScale = scale
+        metal.drawableSize = size
+        CATransaction.commit()
+        guard let drawable = metal.nextDrawable() else { return }
+        var job = GameRenderer.Job(sprites: [], camera: GameCamera(center: center, zoom: zoom * scale), pixelArt: pixelArt)
+        if let room = previewRoom ?? drawnRoom {
+            job.sprites = GameScene.layout(room, focal: focal, view: gameView, center: center, art: model.images.art, standing: resting(room))
+            job.lighting = GameScene.lighting(room, focal: focal, view: gameView, center: center)
+            if finish { job.post = model.document?.view.game.post }
+        }
+        // With the transaction, so the room and the marks over it move as one.
+        metal.presentsWithTransaction = true
+        renderer.draw(job, images: model.images, into: drawable, presentsWithTransaction: true)
     }
 
     private static let colours: [String: NSColor] = [
@@ -334,7 +312,6 @@ final class GameStageView: NSView {
                 lines.append(box)
                 mark(key, label(entity.id, at: CGPoint(x: r[0], y: r[1] - 30), chosen: selected))
             } else if let at = entity.at, at.count == 2 {
-                if let sprite = restingSprite(entity, at: CGPoint(x: at[0], y: at[1])) { mark(key, sprite) }
                 let ring = CAShapeLayer()
                 let radius: CGFloat = 18
                 ring.path = CGPath(ellipseIn: CGRect(x: CGFloat(at[0]) - radius, y: CGFloat(at[1]) - radius, width: radius * 2, height: radius * 2), transform: nil)
@@ -387,25 +364,6 @@ final class GameStageView: NSView {
         }
     }
 
-    /// What a thing standing in the room looks like while editing: its
-    /// prefab's image, or its animation's resting frame, on its feet.
-    private func restingSprite(_ entity: GameEntity, at: CGPoint) -> CALayer? {
-        guard let prefab = model?.document?.view.prefab(entity.prefab), let images = model?.images else { return nil }
-        let pivot = CGPoint(x: prefab.pivot.first ?? 0, y: prefab.pivot.count > 1 ? prefab.pivot[1] : 0)
-        let sprite = CALayer()
-        if pixelArt { sprite.magnificationFilter = .nearest }
-        if prefab.animated, let anim = images.anim(prefab.sprite), let (image, frame) = images.frame(prefab.sprite, anim.restingFrame(prefab.clips)) {
-            sprite.contents = image
-            sprite.frame = GameScene.animFrame(frame, at: at, pivot: pivot, flip: false)
-        } else if let image = images.image(prefab.sprite) {
-            sprite.contents = image
-            sprite.frame = GameScene.stillFrame(size: CGSize(width: image.width, height: image.height), at: at, pivot: pivot, flip: false)
-        } else {
-            return nil
-        }
-        return sprite
-    }
-
     private func label(_ text: String, at: CGPoint, chosen: Bool) -> CATextLayer {
         let label = CATextLayer()
         label.string = text
@@ -439,14 +397,14 @@ final class GameStageView: NSView {
 
     // MARK: Placing
 
-    /// The editor's camera applied: the scene scaled and moved, each plane
-    /// shifted by its parallax for the game camera at the stage's middle,
-    /// and the lines and handles kept the same size on screen.
+    /// The editor's camera applied: the marks scaled and moved, kept the
+    /// same size on screen, and the room drawn for it.
     private func place() {
-        guard let room = drawnRoom else { return }
+        guard drawnRoom != nil else { return render() }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        position(center: center, zoom: zoom, room: room)
+        scene.setAffineTransform(CGAffineTransform(scaleX: zoom, y: zoom))
+        scene.position = CGPoint(x: bounds.width / 2 - center.x * zoom, y: bounds.height / 2 - center.y * zoom)
         for line in lines {
             if line.value(forKey: "aeHandle") != nil {
                 let r = 6 / zoom
@@ -457,16 +415,8 @@ final class GameStageView: NSView {
             }
         }
         draftLayer.lineWidth = 3 / zoom
+        render()
         CATransaction.commit()
-    }
-
-    private func position(center: CGPoint, zoom: CGFloat, room: GameRoom) {
-        scene.setAffineTransform(CGAffineTransform(scaleX: zoom, y: zoom))
-        scene.position = CGPoint(x: bounds.width / 2 - center.x * zoom, y: bounds.height / 2 - center.y * zoom)
-        let corner = GameScene.corner(room, view: gameView, center: center)
-        for (plane, layer) in planes {
-            layer.position = GameScene.shift(GameScene.factor(plane, focal: focal), corner: corner)
-        }
     }
 
     /// The whole room, in the stage between the panels.
@@ -503,7 +453,7 @@ final class GameStageView: NSView {
         for entity in room.entities.reversed() {
             if let at = entity.at, at.count == 2 {
                 let feet = CGPoint(x: at[0], y: at[1])
-                if let sprite = restingSprite(entity, at: feet), sprite.frame.contains(p) { return .entity(entity.id) }
+                if let frame = restingFrame(entity), frame.contains(p) { return .entity(entity.id) }
                 if hypot(p.x - feet.x, p.y - feet.y) <= max(reach * 2, 18) { return .entity(entity.id) }
             } else if let r = entity.rect, r.count == 4, CGRect(x: r[0], y: r[1], width: r[2], height: r[3]).insetBy(dx: -reach, dy: -reach).contains(p) {
                 return .entity(entity.id)
@@ -617,6 +567,36 @@ final class GameStageView: NSView {
             }
             for layer in marks[key] ?? [] { layer.setAffineTransform(CGAffineTransform(translationX: dx, y: dy)) }
         }
+        // The room drawn as the drag would leave it: a light's light moves
+        // with it, a thing's art with the thing.
+        if let room = drawnRoom {
+            previewRoom = Self.moved(room, hit, dx: Int(dx.rounded()), dy: Int(dy.rounded()), to: p)
+            render()
+        }
+    }
+
+    /// A room with what a drag holds moved.
+    private static func moved(_ room: GameRoom, _ hit: GameHit, dx: Int, dy: Int, to p: CGPoint) -> GameRoom {
+        var room = room
+        func shifted(_ xy: [Int]) -> [Int] { xy.count >= 2 ? [xy[0] + dx, xy[1] + dy] + xy.dropFirst(2) : xy }
+        switch hit {
+        case let .entity(id):
+            if let i = room.entities.firstIndex(where: { $0.id == id }) {
+                room.entities[i].at = room.entities[i].at.map(shifted)
+                room.entities[i].rect = room.entities[i].rect.map(shifted)
+            }
+        case let .light(id):
+            if let i = room.lights.firstIndex(where: { $0.id == id }) { room.lights[i].at = shifted(room.lights[i].at) }
+        case let .spawn(id):
+            if let i = room.spawns.firstIndex(where: { $0.id == id }) { room.spawns[i].at = shifted(room.spawns[i].at) }
+        case let .line(id, _):
+            if let i = room.collision.firstIndex(where: { $0.id == id }) { room.collision[i].points = room.collision[i].points.map(shifted) }
+        case let .point(id, index):
+            if let i = room.collision.firstIndex(where: { $0.id == id }), index < room.collision[i].points.count {
+                room.collision[i].points[index] = [Int(p.x.rounded()), Int(p.y.rounded())]
+            }
+        }
+        return room
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -767,9 +747,24 @@ final class GameStageView: NSView {
         drawPlay(alpha: alpha)
     }
 
-    /// The run's frame drawn, eased `alpha` of the way from the one before.
+    /// Where the game's view sits on the stage, in points, and the size it's
+    /// drawn at, in pixels: as large as fits, and for pixel art a whole
+    /// number of the game's pixels a pixel where the stage has room for it.
+    static func letterbox(view: CGSize, in bounds: CGSize, scale: CGFloat, pixelArt: Bool) -> (frame: CGRect, pixels: CGSize) {
+        let fit = min(bounds.width * scale / view.width, bounds.height * scale / view.height)
+        let k = pixelArt && fit >= 1 ? fit.rounded(.down) : fit
+        let pixels = CGSize(width: (view.width * k).rounded(), height: (view.height * k).rounded())
+        let size = CGSize(width: pixels.width / scale, height: pixels.height / scale)
+        return (CGRect(x: ((bounds.width - size.width) / 2).rounded(), y: ((bounds.height - size.height) / 2).rounded(), width: size.width, height: size.height), pixels)
+    }
+
+    /// The run's frame drawn, eased `alpha` of the way from the one before:
+    /// the camera following the player, what the run draws standing on the
+    /// play plane, the lights wavering on the run's clock, and the game's
+    /// finish. Pixel art is drawn at the game's own size, on its grid, then
+    /// scaled up.
     private func drawPlay(alpha: Double) {
-        guard let model, let player = model.player else { return }
+        guard let model, let player = model.player, let renderer else { return }
         let now = player.now
         let ids = player.info.rooms
         guard now.room < ids.count else { return }
@@ -777,79 +772,51 @@ final class GameStageView: NSView {
             playRoom = now.room
             build(room: model.document?.room(ids[now.room]))
         }
-        guard let room = drawnRoom, bounds.width > 0 else { return }
+        guard let room = drawnRoom, bounds.width > 0, bounds.height > 0 else { return }
         let before = player.before.flatMap { $0.room == now.room ? $0 : nil }
         func ease(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
             CGPoint(x: a.x + (b.x - a.x) * alpha, y: a.y + (b.y - a.y) * alpha)
         }
-        let camera = before.map { ease($0.camera, now.camera) } ?? now.camera
         let view = gameView
-        let zoom = min(bounds.width / view.width, bounds.height / view.height)
+        let box = Self.letterbox(view: view, in: bounds.size, scale: scale, pixelArt: pixelArt)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        position(center: camera, zoom: zoom, room: room)
-        let shown = CGSize(width: view.width * zoom, height: view.height * zoom)
-        let bare = CGMutablePath()
-        bare.addRect(bounds)
-        bare.addRect(CGRect(x: (bounds.width - shown.width) / 2, y: (bounds.height - shown.height) / 2, width: shown.width, height: shown.height))
-        bars.path = bare
-        var was: [Int: GameDrawn] = [:]
-        for d in before?.drawn ?? [] { was[d.who] = d }
-        var seen = Set<Int>()
-        for d in now.drawn {
-            seen.insert(d.who)
-            let at = was[d.who].map { ease($0.at, d.at) } ?? d.at
-            let layer = actors[d.who] ?? {
-                let made = CALayer()
-                if pixelArt { made.magnificationFilter = .nearest }
-                standing.addSublayer(made)
-                actors[d.who] = made
-                return made
-            }()
-            let key = d.sprite >= 0 && d.sprite < player.info.sprites.count ? player.info.sprites[d.sprite] : nil
-            var drawn = false
-            if let key, key.hasSuffix(".anim.json"), let (image, frame) = model.images.frame(key, max(0, d.frame)) {
-                // An animation: the frame the run is at, on its feet.
-                show(layer, image, in: GameScene.animFrame(frame, at: at, pivot: d.pivot, flip: d.flip))
-                drawn = true
-            } else if let key, let image = model.images.image(key) {
-                let size = CGSize(width: image.width, height: image.height)
-                // A shot is drawn about its middle.
-                let pivot = d.who >= 1 << 20 ? CGPoint(x: size.width / 2, y: size.height / 2) : d.pivot
-                show(layer, image, in: GameScene.stillFrame(size: size, at: at, pivot: pivot, flip: d.flip))
-                drawn = true
-            }
-            if !drawn {
-                // A shot with no image of its own: a glow.
-                layer.contents = nil
-                layer.backgroundColor = NSColor(calibratedRed: 1, green: 0.78, blue: 0.4, alpha: 0.9).cgColor
-                layer.bounds = CGRect(x: 0, y: 0, width: 18, height: 18)
-                layer.cornerRadius = 9
-                layer.position = at
-                layer.transform = CATransform3DIdentity
-            } else {
-                layer.transform = d.flip ? CATransform3DMakeScale(-1, 1, 1) : CATransform3DIdentity
-            }
-            layer.opacity = d.blink ? 0.35 : 1
-            layer.compositingFilter = d.flash ? CIFilter(name: "CIColorDodgeBlendMode") : nil
-        }
-        for (who, layer) in actors where !seen.contains(who) {
-            layer.removeFromSuperlayer()
-            actors[who] = nil
-        }
+        metal.frame = box.frame
+        metal.contentsScale = scale
+        metal.drawableSize = box.pixels
+        fade.frame = box.frame
         // Through a door: out to black over its first half, back over the second.
         let door = now.door
         fade.opacity = door == 0 ? 0 : Float(door <= 12 ? Double(door) / 12 : Double(24 - door) / 12)
         CATransaction.commit()
-    }
 
-    /// An image put in a frame: mirrored about its middle when flipped,
-    /// which with the frame worked out flip-aware turns it on its feet.
-    private func show(_ layer: CALayer, _ image: CGImage, in frame: CGRect) {
-        if layer.contents == nil || (layer.contents as! CGImage) !== image { layer.contents = image }
-        layer.backgroundColor = nil
-        layer.cornerRadius = 0
-        layer.bounds = CGRect(origin: .zero, size: frame.size)
-        layer.position = CGPoint(x: frame.midX, y: frame.midY)
+        var was: [Int: GameDrawn] = [:]
+        for d in before?.drawn ?? [] { was[d.who] = d }
+        let art = model.images.art
+        let standing = now.drawn.map { d -> GameStanding in
+            let at = was[d.who].map { ease($0.at, d.at) } ?? d.at
+            guard d.sprite >= 0, d.sprite < player.info.sprites.count else {
+                // A shot with no image of its own: a glow.
+                return GameStanding(key: GameSprite.glow, at: at, pivot: .zero, glow: 24)
+            }
+            let key = player.info.sprites[d.sprite]
+            var pivot = d.pivot
+            // A shot is drawn about its middle.
+            if d.who >= 1 << 20, let size = art.size(key) { pivot = CGPoint(x: size.width / 2, y: size.height / 2) }
+            return GameStanding(key: key, at: at, pivot: pivot, flip: d.flip, frame: key.hasSuffix(".anim.json") && d.frame >= 0 ? d.frame : nil,
+                                flash: d.flash, blink: d.blink)
+        }
+        let camera = before.map { ease($0.camera, now.camera) } ?? now.camera
+        let time = (Double(now.tick) + alpha) / Double(max(1, player.info.tick))
+        // Pixel art at the game's own size, the camera on its grid.
+        let picture = pixelArt ? view : box.pixels
+        var eye = GameCamera(center: camera, zoom: picture.width / view.width)
+        if pixelArt { eye = eye.snapped(target: picture) }
+        var job = GameRenderer.Job(sprites: GameScene.layout(room, focal: focal, view: view, center: eye.center, art: art, standing: standing, time: time, snap: pixelArt),
+                                   camera: eye, post: model.document?.view.game.post, pixelArt: pixelArt, pictureSize: pixelArt ? view : nil)
+        job.lighting = GameScene.lighting(room, focal: focal, view: view, center: eye.center, time: time)
+        guard let drawable = metal.nextDrawable() else { return }
+        metal.presentsWithTransaction = false
+        renderer.draw(job, images: model.images, into: drawable, presentsWithTransaction: false)
     }
 }

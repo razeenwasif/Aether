@@ -19,7 +19,7 @@ public struct GameWorkspace: View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
                 GameStage(model: model, revision: document.revision, roomID: model.roomID, selection: model.selection, playing: model.playing, fitRequest: model.fitRequest,
-                          insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0), tool: model.tool)
+                          insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0), tool: model.tool, finish: model.finishInEditor)
                 HStack(alignment: .top, spacing: 0) {
                     GameNavigator(model: model, document: document)
                         .frame(width: 248)

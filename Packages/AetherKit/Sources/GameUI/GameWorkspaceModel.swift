@@ -56,6 +56,9 @@ public final class GameWorkspaceModel {
     public var drawKind = "solid"
     public var navigatorOpen = true
     public var inspectorOpen = true
+    /// Whether the editor shows the game's finish (bloom, grade, vignette)
+    /// as Play does; ⇧P. Lights fall on lit planes either way.
+    public var finishInEditor = false
     public var notice: String? {
         didSet { noticeIsGood = false }
     }
@@ -77,6 +80,7 @@ public final class GameWorkspaceModel {
         case "v": tool = .select
         case "p": tool = .draw
         case "l": tool = .light
+        case "P": finishInEditor.toggle()
         default: return false
         }
         return true
@@ -365,6 +369,26 @@ public final class GameImages {
 
     private var anims: [String: GameAnim] = [:]
     private var crops: [String: CGImage] = [:]
+    private var cut: [String: GameImageParts] = [:]
+
+    /// How an image is cut up (`.img.json`), read once.
+    public func parts(_ rel: String) -> GameImageParts? {
+        if let hit = cut[rel] { return hit }
+        guard !missing.contains(rel), let root,
+              let data = try? Data(contentsOf: root.appending(path: rel)), let parts = try? JSONDecoder().decode(GameImageParts.self, from: data) else {
+            missing.insert(rel)
+            return nil
+        }
+        cut[rel] = parts
+        return parts
+    }
+
+    /// What the layout asks of the art: sizes, cut-up images, animations.
+    public var art: GameArt {
+        GameArt(size: { self.image($0).map { CGSize(width: $0.width, height: $0.height) } },
+                parts: { self.parts($0) },
+                anim: { self.anim($0) })
+    }
 
     /// An animation, read once.
     public func anim(_ rel: String) -> GameAnim? {

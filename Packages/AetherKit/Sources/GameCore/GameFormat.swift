@@ -20,15 +20,42 @@ public struct GameFile: Decodable, Equatable, Sendable {
     public var input: [String: [String]]
     /// The abilities a player can gain, by id.
     public var abilities: [String]
+    /// What's done to the whole picture after it's drawn.
+    public var post: GamePost
 
     private struct Ability: Decodable { var id: String }
-    enum CodingKeys: String, CodingKey { case name, view, input, abilities }
+    enum CodingKeys: String, CodingKey { case name, view, input, abilities, post }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.value(.name, "")
         view = try c.value(.view, GameViewSettings())
         input = try c.value(.input, [:])
         abilities = try c.value(.abilities, [Ability]()).map(\.id)
+        post = try c.value(.post, GamePost())
+    }
+}
+
+/// The finish on the whole picture: bright light spilling (bloom), a colour
+/// grade from a lookup table, and corners darkened. Proton's defaults.
+public struct GamePost: Decodable, Equatable, Sendable {
+    /// How much bright light spills, 0 to 1.
+    public var bloom: Double = 0.25
+    /// A lookup table's image (n² wide, n tall), when there is one.
+    public var grade: String?
+    /// How dark the corners go, 0 to 1.
+    public var vignette: Double = 0.3
+
+    public init(bloom: Double = 0.25, grade: String? = nil, vignette: Double = 0.3) {
+        self.bloom = bloom
+        self.grade = grade
+        self.vignette = vignette
+    }
+    enum CodingKeys: String, CodingKey { case bloom, grade, vignette }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bloom = try c.value(.bloom, 0.25)
+        grade = try c.decodeIfPresent(String.self, forKey: .grade)
+        vignette = try c.value(.vignette, 0.3)
     }
 }
 
@@ -37,7 +64,7 @@ public struct GameViewSettings: Decodable, Equatable, Sendable {
     public var height: Int = 1080
     /// How far the camera is from the play plane, for parallax.
     public var focal: Double = 1000
-    /// `smooth` or `pixel`: how art is scaled.
+    /// `smooth` for painted art, `nearest` for pixel art.
     public var filter: String = "smooth"
 
     public init() {}
@@ -49,6 +76,10 @@ public struct GameViewSettings: Decodable, Equatable, Sendable {
         focal = try c.value(.focal, 1000)
         filter = try c.value(.filter, "smooth")
     }
+
+    /// Pixel art: sampled nearest, and in Play drawn at the game's own
+    /// resolution, then scaled up by whole numbers.
+    public var pixelArt: Bool { filter == "nearest" }
 }
 
 /// A room: planes of art back to front, collision, the things in it.
@@ -63,10 +94,13 @@ public struct GameRoom: Decodable, Equatable, Sendable {
     public var spawns: [GameSpawn]
     public var lights: [GameLight]
     public var fog: GameFog?
+    /// The light where no light falls on a lit plane, `#rrggbb`; white, the
+    /// art as painted, when not said.
+    public var ambient: String?
 
     enum CodingKeys: String, CodingKey { case id, size, camera, planes, collision, entities, spawns, lights, ambience }
     enum CameraKeys: String, CodingKey { case bounds }
-    enum AmbienceKeys: String, CodingKey { case fog }
+    enum AmbienceKeys: String, CodingKey { case fog, ambient }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
@@ -80,7 +114,9 @@ public struct GameRoom: Decodable, Equatable, Sendable {
         spawns = try c.value(.spawns, [])
         lights = try c.value(.lights, [])
         if c.contains(.ambience) {
-            fog = try c.nestedContainer(keyedBy: AmbienceKeys.self, forKey: .ambience).decodeIfPresent(GameFog.self, forKey: .fog)
+            let ambience = try c.nestedContainer(keyedBy: AmbienceKeys.self, forKey: .ambience)
+            fog = try ambience.decodeIfPresent(GameFog.self, forKey: .fog)
+            ambient = try ambience.decodeIfPresent(String.self, forKey: .ambient)
         }
     }
 
@@ -115,9 +151,11 @@ public struct GamePlane: Decodable, Equatable, Sendable, Identifiable {
     public var fog: Double
     public var blend: String
     public var gameplay: Bool
+    /// Whether the room's lights fall on it.
+    public var lit: Bool
     public var items: [GameItem]
 
-    enum CodingKeys: String, CodingKey { case id, name, depth, parallax, tint, fog, blend, gameplay, items }
+    enum CodingKeys: String, CodingKey { case id, name, depth, parallax, tint, fog, blend, gameplay, lit, items }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
@@ -128,6 +166,7 @@ public struct GamePlane: Decodable, Equatable, Sendable, Identifiable {
         fog = try c.value(.fog, 0)
         blend = try c.value(.blend, "normal")
         gameplay = try c.value(.gameplay, false)
+        lit = try c.value(.lit, false)
         items = try c.value(.items, [])
     }
 }
@@ -228,8 +267,11 @@ public struct GameLight: Decodable, Equatable, Sendable, Identifiable {
     public var intensity: Double
     public var flicker: Double
     public var glow: Double
+    /// How far in front of the planes it hangs: low, it rakes across what a
+    /// normal map raises; high, it falls flat on it.
+    public var height: Double
 
-    enum CodingKeys: String, CodingKey { case id, plane, at, radius, color, intensity, flicker, glow }
+    enum CodingKeys: String, CodingKey { case id, plane, at, radius, color, intensity, flicker, glow, height }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
@@ -240,6 +282,7 @@ public struct GameLight: Decodable, Equatable, Sendable, Identifiable {
         intensity = try c.value(.intensity, 1)
         flicker = try c.value(.flicker, 0)
         glow = try c.value(.glow, 0)
+        height = try c.value(.height, 80)
     }
 }
 
@@ -263,6 +306,37 @@ public struct GameFog: Decodable, Equatable, Sendable {
         near = try c.value(.near, 0)
         far = try c.value(.far, 1)
         amount = try c.value(.amount, 0)
+    }
+}
+
+/// An image cut up (`.img.json`): a painted backdrop can be larger than a
+/// texture may be, so it's kept as pieces, empty ones dropped; its normal
+/// map, when it has one, is cut the same way.
+public struct GameImageParts: Decodable, Equatable, Sendable {
+    public var size: [Int]
+    public var chunks: [Chunk]
+    public var normal: [Chunk]
+
+    public struct Chunk: Decodable, Equatable, Sendable {
+        public var file: String
+        public var at: [Int]
+        public var size: [Int]
+
+        enum CodingKeys: String, CodingKey { case file, at, size }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            file = try c.value(.file, "")
+            at = try c.value(.at, [0, 0])
+            size = try c.value(.size, [0, 0])
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case size, chunks, normal }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        size = try c.value(.size, [0, 0])
+        chunks = try c.value(.chunks, [])
+        normal = try c.value(.normal, [])
     }
 }
 

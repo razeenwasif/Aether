@@ -33,7 +33,7 @@ The UI language is **Velvet Obsidian**:
 **Non-goals (v1)**
 - Codex, Chat, Data, Research, Study, LaTeX and PDF stay in Proton.
 - Collaboration, cloud sync, Windows and Linux.
-- A general-purpose game engine. Game stays Proton's niche: painted 2D, parallax planes, low-poly, Metroidvania first.
+- A general-purpose game engine. Game is made for four kinds of game the user named (§9b): hand-drawn Metroidvanias, pixel-art roguelites, isometric action, and low-poly 3D under a fixed camera.
 
 ---
 
@@ -615,6 +615,37 @@ The PI leans to a separate mode, decided after the spike.
 **First step, a spike (no mode yet):** survey runnable world models, measure one on forge, and write the result here. Build the Diffuse image-to-3D node either way.
 
 **Depends on:** M1 (live links), forge, and a mesh viewer in Model.
+
+---
+
+## 9b. Game's targets (from the user, 2026-10-30)
+
+**In the user's words:** games "like Hollow Knight, Hades, Dead Cells, Tunic", "from 2D hand-drawn style metroidvanias to isometric angled games, pixelated art styles like Dead Cells and 3D style games like Tunic or Monument Valley". They confirmed the plan's earlier guess (painted 2D, parallax planes, low-poly, Metroidvania) as true, but not the whole of it.
+
+Proton saw the same four: `proton-game`'s `Niche` names Metroidvania, Roguelite, Isometric and Lowpoly, and each game says which it is (`game.json`'s `niche`). So far only the first is real: the simulation is side-on platforming whatever `niche` says.
+
+| Kind (`niche`) | Like | Camera | Art | Moving and colliding | In Aether now |
+|---|---|---|---|---|---|
+| Metroidvania | Hollow Knight | Side-on, many parallax planes | Hand-drawn and painted, smooth sampling | Platforming: gravity, wall-cling, dash; rooms joined into a map, gated by abilities | Built (Game slices 1–2) |
+| Roguelite | Dead Cells | Side-on | Pixel art lit like a modern game (normal maps), sampled nearest, camera snapped to the pixel | Platforming as above; each run assembled from authored rooms, and death ends it | The platforming and the `nearest` filter; no runs, no pixel snapping, no lighting |
+| Isometric | Hades | Angled from above, fixed | Painted sprites over painted ground | Moving on the ground in 8 directions, with a dash; no jump; depth by ground position | Nothing |
+| Lowpoly | Tunic, Monument Valley | Real 3D under an orthographic, fixed-angle camera | Low-poly, soft light, tilt-shift blur | Tunic: walking on terrain. Monument Valley: paths that join by how they look from the camera | Nothing in Game; Model has scenes and a Metal renderer |
+
+**What follows for the engine:**
+1. **One stage, with the camera a setting.** The third slice's Metal stage is built for side-on parallax, an isometric ground with depth sorting, and an orthographic 3D view, not as a 2D compositor to be replaced later. Lit 2D (normal maps on painted and pixel art) is shared by three of the four.
+2. **Pixel art as its own mode:** the game drawn at its low resolution with sprites and camera snapped to whole pixels, then scaled up by whole numbers; light and bloom still smooth over it.
+3. **A second way of moving in the simulation:** top-down on a ground plane beside side-on, picked by `niche`. The same fixed tick, whole numbers and replay check; fights and hitboxes shared.
+4. **Low-poly rooms are Model scenes:** a room's world is a scene from the Model workspace, drawn by Model's Metal renderer under an orthographic camera with soft, toon-leaning light and tilt-shift; the player walks a ground taken from the scene. Monument Valley's joins by appearance are authored links between paths, a later piece of their own.
+5. **Roguelite runs** are assembled by seed from authored rooms, so a run replays exactly.
+6. **Art across workspaces:** Canvas already makes pixel art and its animation. Model can render a 3D model at fixed angles into a sprite sheet with normals, as Dead Cells and Hades made theirs; Model's renders already reach Canvas.
+
+**Proposed order** (each a slice, each needing the user's go-ahead):
+1. ~~The Metal stage, side-on first: lit planes with normal maps, ambience, bloom, grade, vignette, and the pixel mode. Serves Hollow Knight and Dead Cells.~~ Done, see §10a (Game, third slice).
+2. Isometric: top-down movement in the simulation, the angled camera, depth sorting, and editing ground rooms. Serves Hades.
+3. Low-poly: Model scenes as rooms, the orthographic 3D camera, walking on the scene. Serves Tunic; Monument Valley's paths after.
+4. When wanted, between these: roguelite runs, and Model → sprite sheets.
+
+**Still not goals:** a free or first-person 3D camera, streamed open worlds, networked play.
 
 ---
 
@@ -1480,6 +1511,30 @@ Not yet:
   - A click landing on the chosen line's points, then things, spawns, then lines.
   - 400 Rust and 168 Swift tests pass.
 
+**2026-10-30 · Game, third slice: the stage on Metal, lit and finished, and pixel art.** The user said "Start slice 3", the first of §9b's order.
+
+- **Two halves, so the camera is a setting:**
+  - `GameScene.layout` (GameCore) turns a room into sprites back to front, in world pixels: each plane's art shifted by its parallax and hazed; what stands on the play plane after its art; a lit plane's sprites marked lit; each light's halo after its plane. `GameScene.lighting` gives the room's ambient (white when not said) and its lights, shifted by their plane's parallax, nearest the camera first, at most 16. Both are Proton's `game-scene.js` ported, as is `flicker` (a light wavering by sines on the run's clock).
+  - `GameRenderer` (GameUI) draws such a list and knows nothing of planes: a `GameCamera` gives it a world-to-clip matrix. Side-on is the only projection so far; the isometric and orthographic 3D ones of §9b need a new layout and matrix, not a new renderer.
+- **The renderer** is Proton's `game-render.js` in Metal (`GameRenderSource`):
+  - Sprites as instanced quads of sixteen floats, drawn in runs of one texture, one blend (normal, add, multiply, screen, over premultiplied colour) and one normal map, into a half-float picture.
+  - A lit sprite is the ambient plus each light's colour falling off (squared) to nothing at its reach, shaded by the angle it meets the art's normal map at from its height, or straight on without one. The map is flipped and turned with the art.
+  - The finish: the bright part (past 0.6, eased) blurred at half size in two passes of nine taps and laid back by `post.bloom`; a grade looked up in an n²×n strip; a vignette. Proton's defaults (bloom 0.25, vignette 0.3) apply when `game.json` says nothing.
+  - Images go up premultiplied, with mipmaps for painted art and none for pixel art. A cut-up image (`.img.json`) is drawn as its pieces, with its normal map's pieces; Aether reads these now.
+- **The stage:** the room is a `CAMetalLayer`; what's drawn over it while editing stays layers, presented in the same transaction so the two move as one. A drag redraws the room as the drag would leave it, so a light's pool and halo move with it. `⇧P` shows the finish in the editor. In Play the Metal layer is the letterboxed view, so the vignette frames the game's picture; the bars layer went.
+- **Pixel art** (`view.filter` `nearest`; Aether read it as `pixel`, a bug, fixed): sampled nearest; in Play drawn at the game's own resolution with the camera and sprites snapped to whole pixels, then scaled up by the largest whole number that fits, sampled nearest.
+- **Format:** `game.json`'s `post`, a room's `ambience.ambient`, a plane's `lit`, a light's `height`, and `.img.json` parts are read.
+- **Checked:**
+  - In the app with the user present, on a throwaway game (deleted after): the editor drawn on Metal under its marks, the lantern lighting the ground over the dusk ambient, Play lit, bloomed and vignetted in its letterbox, ⇧P, and dragging the lantern with its light. A placed crawler was too small to judge at that zoom.
+  - Offscreen: the template room rendered (the lantern's ground brighter than the ground away from it).
+- **Tests:** 8 more in Swift.
+  - The layout's order, parallax, haze, lit marking, halos, and pixel snapping.
+  - The lighting's ambient, sorting and limit, and flicker.
+  - The camera matrix, snapping, and the letterbox (a whole number of pixels for pixel art).
+  - Pixel probes: unlit, ambient, a light's fall-off and colour; a normal map lit from the side it faces and not the other, and flipped; bloom spilling, an inverting grade, the vignette; pixel art sharp at ×8 where painted art is smooth.
+  - The Game suites: 18 pass.
+- **Not yet:** particles (Proton's `game-fx.js`), sound, skeletons drawn (Proton's skinning program), the importers, and quality levels (Proton's low, medium and high); frame times not measured yet.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1527,4 +1582,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Game's second slice: drawing collision, placing from a list, lights placed, animations by frame~~: done, see §10a.
 
-**Next, proposed:** Game's third slice, the lit renderer: the stage on Metal, with lights shading lit planes (and normal maps), ambience, bloom, grade and vignette, as Proton's `game-render.js` did. Then particles and sound. Launch time (§7b) stays open.
+~~Game's third slice, the lit renderer on Metal with the camera as a setting, and the pixel mode~~: done, see §10a.
+
+**Next, proposed:** Game's isometric slice (§9b, 2): top-down movement in the simulation, the angled camera, depth sorting, and editing ground rooms. Particles and sound can come before it if wanted. Launch time (§7b) stays open.
