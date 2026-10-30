@@ -1,4 +1,5 @@
 import MetalKit
+import MetalPerformanceShaders
 import ModelCore
 import os
 import simd
@@ -319,7 +320,7 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     /// none), each casting a shadow from a map of its own, onto a floor
     /// under everything if asked for. Then again for depth, near white and
     /// far black across what the scene spans in front of the camera.
-    func render(_ settings: RenderSettings) throws -> Pictures {
+    func render(_ settings: RenderSettings) async throws -> Pictures {
         let state = Self.signposter.beginInterval("render", "\(settings.width) × \(settings.height)")
         defer { Self.signposter.endInterval("render", state) }
         guard let model, let document = model.document else { throw RenderFailure(reason: "open a scene to render") }
@@ -379,16 +380,7 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         // Two and a half texels of a sun's map, along the surface's normal.
         var head = LightsHead(count: Int32(lights.count), bias: 0.0003, offset: 2.5 * 2 * radius * 1.05 / Float(Self.shadowSize))
 
-        if depthPipeline == nil {
-            let library = try device.makeLibrary(source: SceneShaderSource.surface(nil), options: nil)
-            depthPipeline = try device.makeRenderPipelineState(descriptor: Self.surfaceDescriptor(library, fragment: "depthFragment"))
-            let d = Self.surfaceDescriptor(library, fragment: "depthFragment")
-            d.vertexFunction = library.makeFunction(name: "shadowVertex")
-            d.fragmentFunction = nil
-            d.colorAttachments[0].pixelFormat = .invalid
-            d.rasterSampleCount = 1
-            shadowPipeline = try device.makeRenderPipelineState(descriptor: d)
-        }
+        if depthPipeline == nil { try makeRenderPipelines() }
         func texture(_ format: MTLPixelFormat, width: Int, height: Int, samples: Int = 1, layers: Int = 0, usage: MTLTextureUsage, storage: MTLStorageMode) throws -> MTLTexture {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: width, height: height, mipmapped: false)
             if samples > 1 {
@@ -406,9 +398,15 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         }
         let color = try texture(.bgra8Unorm, width: w, height: h, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
         let depthTarget = try texture(.depth32Float, width: w, height: h, samples: Self.sampleCount, usage: .renderTarget, storage: .private)
+        // Resolved at the size drawn, then scaled on the GPU to the size
+        // asked for, into textures the CPU reads (§7b: Core Graphics took
+        // 20–30 ms a picture to scale them on the main thread).
         let readable: MTLStorageMode = device.hasUnifiedMemory ? .shared : .managed
-        let beauty = try texture(.bgra8Unorm, width: w, height: h, usage: .renderTarget, storage: readable)
-        let deep = try texture(.bgra8Unorm, width: w, height: h, usage: .renderTarget, storage: readable)
+        let scaled = scale > 1
+        let beauty = try texture(.bgra8Unorm, width: w, height: h, usage: scaled ? [.renderTarget, .shaderRead] : .renderTarget, storage: scaled ? .private : readable)
+        let deep = try texture(.bgra8Unorm, width: w, height: h, usage: scaled ? [.renderTarget, .shaderRead] : .renderTarget, storage: scaled ? .private : readable)
+        let beautyOut = scaled ? try texture(.bgra8Unorm, width: width, height: height, usage: [.shaderWrite, .shaderRead], storage: readable) : beauty
+        let deepOut = scaled ? try texture(.bgra8Unorm, width: width, height: height, usage: [.shaderWrite, .shaderRead], storage: readable) : deep
         let maps = casts.isEmpty ? noShadows : try texture(.depth32Float, width: Self.shadowSize, height: Self.shadowSize, layers: casts.count, usage: [.renderTarget, .shaderRead], storage: .private)
 
         guard let commands = queue.makeCommandBuffer() else { throw RenderFailure(reason: "the GPU is busy") }
@@ -481,17 +479,39 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
             }
             encoder.endEncoding()
         }
+        if scaled {
+            let lanczos = MPSImageLanczosScale(device: device)
+            lanczos.encode(commandBuffer: commands, sourceTexture: beauty, destinationTexture: beautyOut)
+            lanczos.encode(commandBuffer: commands, sourceTexture: deep, destinationTexture: deepOut)
+        }
         if readable == .managed, let blit = commands.makeBlitCommandEncoder() {
-            blit.synchronize(resource: beauty)
-            blit.synchronize(resource: deep)
+            blit.synchronize(resource: beautyOut)
+            blit.synchronize(resource: deepOut)
             blit.endEncoding()
         }
-        commands.commit()
-        commands.waitUntilCompleted()
+        // Waited for without holding the main thread.
+        try await withCheckedThrowingContinuation { (done: CheckedContinuation<Void, Error>) in
+            commands.addCompletedHandler { buffer in
+                if let error = buffer.error { done.resume(throwing: RenderFailure(reason: error.localizedDescription)) } else { done.resume() }
+            }
+            commands.commit()
+        }
         buffers["floor"] = nil
-        if let error = commands.error { throw RenderFailure(reason: error.localizedDescription) }
-        return Pictures(beauty: try Self.image(beauty, width: width, height: height, opaque: !settings.transparent),
-                        depth: try Self.image(deep, width: width, height: height, opaque: true))
+        return Pictures(beauty: try Self.image(beautyOut, opaque: !settings.transparent),
+                        depth: try Self.image(deepOut, opaque: true))
+    }
+
+    /// The depth pass's and the shadow maps' pipelines, made the first time
+    /// a render needs them.
+    private func makeRenderPipelines() throws {
+        let library = try device.makeLibrary(source: SceneShaderSource.surface(nil), options: nil)
+        depthPipeline = try device.makeRenderPipelineState(descriptor: Self.surfaceDescriptor(library, fragment: "depthFragment"))
+        let d = Self.surfaceDescriptor(library, fragment: "depthFragment")
+        d.vertexFunction = library.makeFunction(name: "shadowVertex")
+        d.fragmentFunction = nil
+        d.colorAttachments[0].pixelFormat = .invalid
+        d.rasterSampleCount = 1
+        shadowPipeline = try device.makeRenderPipelineState(descriptor: d)
     }
 
     // MARK: Path traced
@@ -512,7 +532,7 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         guard let tracer else { throw RenderFailure(reason: "this Mac’s GPU can’t trace rays: use the quick render") }
         // The depth pass, and a check the scene can be drawn, from the quick
         // render at the same settings.
-        let quick = try render(settings)
+        let quick = try await render(settings)
         let nodes = document.state.objects
         let worlds = SceneMath.worlds(nodes)
         let lens = settings.camera.flatMap { id in nodes.first { $0.id == id && $0.kind == "camera" } }
@@ -561,7 +581,7 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
         scene.lights = Array(scene.lights.prefix(16))
         let picture = try await tracer.trace(scene, eye: view.inverse, fov: fov, width: settings.width, height: settings.height,
                                              samples: samples, transparent: settings.transparent, denoise: settings.denoise, progress: progress)
-        return Pictures(beauty: try Self.image(picture, width: settings.width, height: settings.height, opaque: !settings.transparent), depth: quick.depth)
+        return Pictures(beauty: try Self.image(picture, opaque: !settings.transparent), depth: quick.depth)
     }
 
     /// A shadow map's side, in texels.
@@ -638,24 +658,21 @@ final class ModelRenderer: NSObject, MTKViewDelegate {
     /// `render` (§7a).
     static let signposter = OSSignposter(subsystem: "dev.razeen.aether", category: "render")
 
-    /// A rendered texture as a picture, scaled down to `width` by `height`.
-    private static func image(_ texture: MTLTexture, width: Int, height: Int, opaque: Bool) throws -> CGImage {
+    /// A rendered texture, at the size it is, as a picture: its bytes
+    /// copied once, straight into the picture's.
+    private static func image(_ texture: MTLTexture, opaque: Bool) throws -> CGImage {
         let state = signposter.beginInterval("readback", "\(texture.width) × \(texture.height)")
         defer { signposter.endInterval("readback", state) }
         let (w, h) = (texture.width, texture.height)
-        var bytes = [UInt8](repeating: 0, count: w * h * 4)
-        texture.getBytes(&bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        var bytes = Data(count: w * h * 4)
+        bytes.withUnsafeMutableBytes { texture.getBytes($0.baseAddress!, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0) }
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let info = CGBitmapInfo.byteOrder32Little.rawValue | (opaque ? CGImageAlphaInfo.noneSkipFirst : CGImageAlphaInfo.premultipliedFirst).rawValue
-        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
-              let full = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space, bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent),
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: info) else {
+        guard let provider = CGDataProvider(data: bytes as CFData),
+              let image = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: space, bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent) else {
             throw RenderFailure(reason: "couldn’t make the picture")
         }
-        context.interpolationQuality = .high
-        context.draw(full, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let small = context.makeImage() else { throw RenderFailure(reason: "couldn’t make the picture") }
-        return small
+        return image
     }
 
     /// How far the scene reaches from the camera's target, for the far plane.

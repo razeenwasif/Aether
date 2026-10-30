@@ -94,7 +94,12 @@ struct WorkspaceRail: View {
         .padding(.bottom, 10)
         .frame(width: 32)
         .frame(maxHeight: .infinity)
-        .background(Color.rail)
+        .background {
+            ZStack {
+                Color.rail
+                WindowDragArea()
+            }
+        }
         .overlay(alignment: .trailing) { Rectangle().fill(Color.line).frame(width: 1) }
     }
 

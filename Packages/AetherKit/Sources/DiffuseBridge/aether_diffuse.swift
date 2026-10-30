@@ -735,6 +735,13 @@ public protocol CanvasEditorProtocol: AnyObject, Sendable {
      */
     func putPicture(cel: UInt32, bytes: Data, name: String, label: String) throws  -> String
     
+    /**
+     * `put_picture` with the picture already read and laid into tiles by
+     * `canvas_prepare_picture`, off the main thread: only the step is made
+     * here. Refused if the canvas changed size in the meantime.
+     */
+    func putPrepared(cel: UInt32, picture: PreparedPicture, label: String) throws  -> String
+    
     func redo()  -> String?
     
     /**
@@ -1133,6 +1140,23 @@ open func putPicture(cel: UInt32, bytes: Data, name: String, label: String)throw
         FfiConverterUInt32.lower(cel),
         FfiConverterData.lower(bytes),
         FfiConverterString.lower(name),
+        FfiConverterString.lower(label),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * `put_picture` with the picture already read and laid into tiles by
+     * `canvas_prepare_picture`, off the main thread: only the step is made
+     * here. Refused if the canvas changed size in the meantime.
+     */
+open func putPrepared(cel: UInt32, picture: PreparedPicture, label: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_canvaseditor_put_prepared(
+            self.uniffiCloneHandle(),
+        FfiConverterUInt32.lower(cel),
+        FfiConverterTypePreparedPicture_lower(picture),
         FfiConverterString.lower(label),uniffiCallStatus
     )
 })
@@ -2589,6 +2613,122 @@ public func FfiConverterTypeNodeCatalogue_lift(_ handle: UInt64) throws -> NodeC
 #endif
 public func FfiConverterTypeNodeCatalogue_lower(_ value: NodeCatalogue) -> UInt64 {
     return FfiConverterTypeNodeCatalogue.lower(value)
+}
+
+
+
+
+
+
+/**
+ * A picture read and laid into tiles for a canvas, ready to go into a
+ * layer: the slow half of `put_picture` (decoding, tiling), which needs no
+ * canvas and so can be made off the main thread (RESEARCH_PLAN.md §7b).
+ */
+public protocol PreparedPictureProtocol: AnyObject, Sendable {
+    
+}
+/**
+ * A picture read and laid into tiles for a canvas, ready to go into a
+ * layer: the slow half of `put_picture` (decoding, tiling), which needs no
+ * canvas and so can be made off the main thread (RESEARCH_PLAN.md §7b).
+ */
+open class PreparedPicture: PreparedPictureProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_preparedpicture(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_preparedpicture(handle, $0) }
+    }
+
+    
+
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePreparedPicture: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = PreparedPicture
+
+    public static func lift(_ handle: UInt64) throws -> PreparedPicture {
+        return PreparedPicture(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: PreparedPicture) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PreparedPicture {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: PreparedPicture, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreparedPicture_lift(_ handle: UInt64) throws -> PreparedPicture {
+    return try FfiConverterTypePreparedPicture.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePreparedPicture_lower(_ value: PreparedPicture) -> UInt64 {
+    return FfiConverterTypePreparedPicture.lower(value)
 }
 
 
@@ -4348,6 +4488,22 @@ public func writeFile(path: String, bytes: Data, key: SealKey?)throws  -> String
 })
 }
 /**
+ * `bytes` (a PNG, one layer, called `name`) read and laid into tiles for a
+ * canvas `width` × `height`: in its middle when smaller, cut at its right
+ * and bottom when bigger.
+ */
+public func canvasPreparePicture(bytes: Data, name: String, width: UInt32, height: UInt32)throws  -> PreparedPicture  {
+    return try  FfiConverterTypePreparedPicture_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_canvas_prepare_picture(
+        FfiConverterData.lower(bytes),
+        FfiConverterString.lower(name),
+        FfiConverterUInt32.lower(width),
+        FfiConverterUInt32.lower(height),uniffiCallStatus
+    )
+})
+}
+/**
  * A colour's ramp for a palette: `steps` colours, darkest first, from
  * `spread` below its lightness to `spread` above (1/65536), the hue turning
  * by up to `shift` degrees as a painter's shading does. Straight RGBA, four
@@ -4429,6 +4585,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_write_file() != 2637) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_canvas_prepare_picture() != 41747) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_canvas_ramp() != 45216) {
@@ -4567,6 +4726,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_put_picture() != 61487) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_canvaseditor_put_prepared() != 13497) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_redo() != 4047) {

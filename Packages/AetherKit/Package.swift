@@ -58,7 +58,7 @@ let package = Package(
         .target(name: "AetherGraph"),
         .target(name: "ModelCore", dependencies: ["DiffuseBridge"]),
         .target(name: "ModelUI", dependencies: ["ModelCore", "AetherDesign", "AetherGraph"]),
-        .target(name: "CanvasUI", dependencies: ["CanvasCore", "AetherDesign", "AetherGraph"]),
+        .target(name: "CanvasUI", dependencies: ["CanvasCore", "DiffuseBridge", "AetherDesign", "AetherGraph"]),
         .target(name: "AetherDesign"),
         .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "DiffuseLocal", "AetherDesign", "AetherGraph"]),
         .target(name: "AetherShell", dependencies: ["AetherDesign", "AetherGraph", "CanvasCore", "CanvasUI", "DiffuseBridge", "DiffuseCore", "DiffuseUI", "ModelCore", "ModelUI"]),

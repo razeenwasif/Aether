@@ -61,7 +61,8 @@ public struct DiffuseWorkspace: View {
                         .aeGlass(.floating, radius: 9)
                 }
             }
-            .padding(.leading, leftInset + 12)
+            .padding(.leading, 12)
+            .offset(x: leftInset)
             .padding(.top, 12)
 
             VStack {
@@ -76,8 +77,7 @@ public struct DiffuseWorkspace: View {
                 if onGraph && model.editor != nil { ToolDock(model: model).padding(.bottom, 16) }
             }
             .frame(maxWidth: .infinity)
-            .padding(.leading, leftInset)
-            .padding(.trailing, rightInset)
+            .centred(between: leftInset, and: rightInset)
         }
         .animation(Motion.panel, value: model.libraryOpen)
         .animation(Motion.panel, value: model.inspectorOpen)

@@ -105,6 +105,7 @@ struct TracerTests {
         // far off doesn't.
         model.renderEngine = .quick
         model.render()
+        await model.renderFinished()
         let quick = try #require(model.lastRender)
         let nearTraced = average(last.beauty, CGRect(x: 400, y: 900, width: 220, height: 60))
         let nearQuick = average(quick.beauty, CGRect(x: 400, y: 900, width: 220, height: 60))
@@ -160,6 +161,7 @@ struct TracerTests {
         model.addLayer(.checker)
         model.renderSize = .square
         model.render()
+        await model.renderFinished()
         let quick = try #require(model.lastRender).beauty
         model.renderEngine = .traced
         model.renderSamples = 64

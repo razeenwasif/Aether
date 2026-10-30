@@ -506,6 +506,52 @@ Two traps, for next time:
   - Scale on the GPU, not with Core Graphics.
   - Write the render once and clone it into `blobs/` (`store(contentsOf:)` already clones on APFS).
 
+**The two passes, made and measured (2026-10-30).** The user asked for both "here", before the next workspace. They were measured with the same scripts, scene and Release build.
+
+*The frame-budget pass.*
+- **The drag-margin walk was SwiftUI's, not AppKit's.**
+  - A temporary probe swizzled `-[NSWindow _setNeedsToResetDragMargins:]` and logged the callers. With `.windowStyle(.hiddenTitleBar)`, SwiftUI's `WindowDragPreventionContentPathObserver` marks the window's drag margins stale whenever any hit-testable view's shape moves (shapes, text, content shapes).
+  - The walk that follows asks the whole hosting view which parts block a window drag, and walks SwiftUI's focus order. It cost about 54 ms a walk in Debug.
+  - The window is now a titled one with its title bar hidden by AppKit (`.fullSizeContentView`, transparent, title hidden), and the hidden-title-bar style is gone. The same panel toggles then walked for 2 ms in all, against 268 ms.
+  - SwiftUI's style had also made the window unmovable by AppKit and moved it itself. So the rail's empty space now moves the window (`WindowDragArea`, `performDrag`). A double-click there does what the Mac's setting says.
+  - Checked in the app with real clicks: the stacked lights and the look unchanged; the top strip's buttons (Graph/Gallery) still press; the window moves by the rail and comes back; rail buttons still switch workspaces.
+- **The CPU-drawn gradient was the glass's top edge.**
+  - SwiftUI draws a shape filled with a gradient as a CALayer of its own, through Core Graphics on the CPU (`PaintShapeLayer.draw(in:)`), and redraws it as it moves.
+  - The edge is now a plain stroke, masked to the top.
+- **Paddings that followed the panels became offsets** (`centred(between:and:)`): the status bars, the docks, the notices and Diffuse's run HUD. Only things that span the gap between the panels still pad: Model's drawers, Canvas's timeline, the Gallery's grid.
+
+| Panel toggles, 16 over Model's viewport | Before | Mounted panels | Both passes |
+|---|---|---|---|
+| Hitch time during the slides | 1,083 ms | 633 ms | **221 ms** |
+| Worst hitch | 200 ms | 92 ms | **21 ms** |
+| Hitches during the slides | 46 | 54 | **25** |
+| Main thread: drag-margin walk / CPU gradient / focus walk (samples) | — | 366 / 214 / 166 | **0 / 0 / 6** |
+
+- Hitch time during the slides is down 80% from the first trace.
+- What's left are single dropped frames, about 1.5 a slide: SwiftUI's own update each frame (`NSHostingView.layout`) and hover updates as content moves under a still mouse.
+- 120 Hz is close, not held.
+
+*The asset path off the main thread.*
+- **The quick render runs as a task, as the traced one did.**
+  - The GPU is awaited, not waited on.
+  - The 2048² resolve is scaled to 1024² on the GPU (`MPSImageLanczosScale`), and the CPU reads the small texture once, straight into the picture's bytes.
+  - The PNGs are encoded and written off the main thread, and published by cloning the written files into `blobs/`.
+  - Tests now await `renderFinished()` for quick renders too.
+- **A canvas takes a new version in two halves.**
+  - New in the bridge: `canvas_prepare_picture` decodes the PNG and lays it into tiles with no canvas, so it runs detached. `CanvasEditor.put_prepared` only makes the step, and refuses a picture prepared for another size. `put_picture` is the two together, as before.
+  - The view's pixels for the step are laid together in steps of 2¹⁹ pixel-layers with a frame between (`layInSteps`), instead of the whole layer at once.
+
+| Per 1024² render, main thread | Before | After |
+|---|---|---|
+| Waiting for the GPU | inside `render`'s 66–105 ms | none (awaited) |
+| Read back and scale, × 2 pictures | 20–31 ms each | 1.7–6.7 ms each, no scaling |
+| PNG encode and write | 55–59 ms | none (detached; the main thread had 1 sample in the interval) |
+| Decode and tile for the canvas | inside `take`'s 32–43 ms | none (detached `prepare`, 5–17 ms) |
+| Make the canvas step | 32–43 ms with the decode and the whole layer laid | 1.5–1.7 ms; laying follows in steps |
+
+- From ⌘↩ to the canvas showing the new version, the main thread no longer runs one long stretch. In the after trace, no 10 ms window around a render had more than 9 ms of main-thread samples. That's still close to full while the laying runs, which is why the step was halved after the trace.
+- **Not done:** a version still crosses as a PNG, decoded once per consumer. Zero-copy GPU sharing waits for a GPU consumer, as restated above.
+
 ---
 
 ## 8. Milestones
@@ -1394,8 +1440,8 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 - Panels sliding over the viewport drop frames. Total hitch time was cut by 39% by keeping panels mounted.
 - Assets cross workspaces on the CPU, as PNG, with 165 to 210 ms of main-thread work per render.
 
-**Next, proposed, before the next workspace:** two short passes from §7b's findings.
-- A frame-budget pass: the drag-margin walk, the CPU-drawn gradient, and padding animations.
-- The asset path off the main thread: readback, PNG and decode, with scaling on the GPU.
+~~Two passes from §7b's findings: the frame budget, and the asset path off the main thread~~: done, see §7b.
+- Hitch time while panels slide is down 80% from the first trace, and the worst hitch is 21 ms, against 200.
+- A render's PNG work, its decode for a canvas and the GPU wait are off the main thread.
 
-Then the next workspace (Design, Game or Video), as the user chooses.
+**Next, proposed:** the next workspace (Design, Game or Video), as the user chooses. Launch time (§7b) stays open: it needs a restated target and a deferred first build.

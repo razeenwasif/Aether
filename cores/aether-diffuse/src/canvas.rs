@@ -833,18 +833,26 @@ impl CanvasEditor {
     /// picture smaller than the canvas goes in its middle; a bigger one is cut
     /// at its right and bottom. Locked or not, as the link owns the layer.
     pub fn put_picture(&self, cel: u32, bytes: Vec<u8>, name: String, label: String) -> Result<String, DiffuseError> {
-        let picture = port::read(&bytes, &name).map_err(failed)?;
-        let image = match picture.parts.as_slice() {
-            [part] => part.cels.first().and_then(|c| c.as_ref()).ok_or_else(|| failed(format!("{name} is empty")))?,
-            parts => return Err(failed(format!("{name} has {} layers; a linked picture has one", parts.len()))),
+        let (width, height) = {
+            let h = lock(&self.held);
+            (h.canvas.width, h.canvas.height)
         };
+        let prepared = canvas_prepare_picture(bytes, name, width, height)?;
+        self.put_prepared(cel, prepared, label)
+    }
+
+    /// `put_picture` with the picture already read and laid into tiles by
+    /// `canvas_prepare_picture`, off the main thread: only the step is made
+    /// here. Refused if the canvas changed size in the meantime.
+    pub fn put_prepared(&self, cel: u32, picture: Arc<PreparedPicture>, label: String) -> Result<String, DiffuseError> {
         let mut h = lock(&self.held);
+        if (picture.grid.width, picture.grid.height) != (h.canvas.width, h.canvas.height) {
+            return Err(failed(format!("{} was read for a {} × {} canvas, and this one is {} × {}", picture.name, picture.grid.width, picture.grid.height, h.canvas.width, h.canvas.height)));
+        }
         h.cancel();
         h.clear_preview();
         let held = &mut *h;
-        let (w, ht) = (held.canvas.width, held.canvas.height);
-        let at = if image.width <= w && image.height <= ht { [(w - image.width) as i32 / 2, (ht - image.height) as i32 / 2] } else { [0, 0] };
-        let grid = port::grid_of(image, w, ht, at);
+        let grid = picture.grid.clone();
         let applied = held
             .history
             .record(&mut held.canvas, &label, |c| {
@@ -862,6 +870,29 @@ impl CanvasEditor {
         held.changed(&applied.touched, applied.meta);
         Ok(json(&serde_json::json!({ "changed": applied.changed, "touched": applied.touched, "meta": applied.meta, "made": applied.made })))
     }
+}
+
+/// A picture read and laid into tiles for a canvas, ready to go into a
+/// layer: the slow half of `put_picture` (decoding, tiling), which needs no
+/// canvas and so can be made off the main thread (RESEARCH_PLAN.md §7b).
+#[derive(uniffi::Object)]
+pub struct PreparedPicture {
+    name: String,
+    grid: Grid,
+}
+
+/// `bytes` (a PNG, one layer, called `name`) read and laid into tiles for a
+/// canvas `width` × `height`: in its middle when smaller, cut at its right
+/// and bottom when bigger.
+#[uniffi::export]
+pub fn canvas_prepare_picture(bytes: Vec<u8>, name: String, width: u32, height: u32) -> Result<Arc<PreparedPicture>, DiffuseError> {
+    let picture = port::read(&bytes, &name).map_err(failed)?;
+    let image = match picture.parts.as_slice() {
+        [part] => part.cels.first().and_then(|c| c.as_ref()).ok_or_else(|| failed(format!("{name} is empty")))?,
+        parts => return Err(failed(format!("{name} has {} layers; a linked picture has one", parts.len()))),
+    };
+    let at = if image.width <= width && image.height <= height { [(width - image.width) as i32 / 2, (height - image.height) as i32 / 2] } else { [0, 0] };
+    Ok(Arc::new(PreparedPicture { grid: port::grid_of(image, width, height, at), name }))
 }
 
 impl CanvasEditor {
@@ -1048,6 +1079,21 @@ mod tests {
         editor.lay(u64::MAX);
         assert_eq!(editor.pick(1, 1).unwrap(), vec![255, 0, 0, 255], "one undo step");
         assert!(editor.put_picture(9, other.png().unwrap(), "v2.png".into(), "Update".into()).is_err(), "no layer 9");
+    }
+
+    #[test]
+    fn a_picture_prepared_off_the_canvas_goes_in_the_same() {
+        let editor = CanvasEditor::create(64, 64, "pixel".into()).unwrap();
+        let other = CanvasEditor::create(8, 8, "pixel".into()).unwrap();
+        other.apply(r#"{"op": "fillRect", "layer": 1, "rect": [0, 0, 8, 8], "color": [0, 0, 255, 255]}"#.into(), "Fill".into()).unwrap();
+        let prepared = canvas_prepare_picture(other.png().unwrap(), "v2.png".into(), 64, 64).unwrap();
+        editor.put_prepared(1, prepared, "Update".into()).unwrap();
+        editor.lay(u64::MAX);
+        assert_eq!((editor.pick(30, 30).unwrap(), editor.pick(1, 1).unwrap()[3]), (vec![0, 0, 255, 255], 0), "in the middle, as put_picture puts it");
+        let wrong = canvas_prepare_picture(other.png().unwrap(), "v2.png".into(), 32, 32).unwrap();
+        let refused = editor.put_prepared(1, wrong, "Update".into()).unwrap_err().to_string();
+        assert!(refused.contains("32 × 32"), "read for another size: {refused}");
+        assert!(canvas_prepare_picture(vec![1, 2, 3], "junk.png".into(), 64, 64).is_err(), "not a picture");
     }
 
     #[test]

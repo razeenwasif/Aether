@@ -1,5 +1,6 @@
 import AetherGraph
 import CanvasCore
+import DiffuseBridge
 import Foundation
 
 /// The canvas in the project: its steps in the project's one history, layers
@@ -60,8 +61,24 @@ extension CanvasWorkspaceModel {
                 self?.notice = "Couldn’t read \(asset.name) v\(version.number): \(Self.describe(error))"
                 return
             }
+            // Read and tiled off the main thread, at the canvas's size;
+            // only the step is made here.
+            guard let canvas = self?.document else { return }
+            let name = "\(asset.name).png"
+            let (width, height) = (canvas.width, canvas.height)
+            let prepared: PreparedPicture
+            do {
+                let preparing = AssetPool.signposter.beginInterval("prepare", "\(bytes.count) bytes for a canvas layer")
+                defer { AssetPool.signposter.endInterval("prepare", preparing) }
+                prepared = try await Task.detached(priority: .userInitiated) {
+                    try CanvasDocument.prepare(bytes, named: name, width: width, height: height)
+                }.value
+            } catch {
+                self?.notice = "Couldn’t read \(asset.name) v\(version.number): \(Self.describe(error))"
+                return
+            }
             // Gone in the meantime: the canvas shut, or the layer undone.
-            guard let self, let document = self.document, project.path(of: document.url) == link.document,
+            guard let self, let document = self.document, document === canvas, project.path(of: document.url) == link.document,
                   document.state.layers.contains(where: { $0.id == cel % CanvasCel.step }) else { return }
             self.stop()
             self.finishTransform()
@@ -70,8 +87,8 @@ extension CanvasWorkspaceModel {
             let ops = (attached?.ops ?? []) + [.set(link.id, property: "shown", value: .int(version.number))]
             let with = Transaction(ops, origin: .canvas, label: attached?.label ?? "Take v\(version.number)", document: link.document)
             self.attaching = { (_: CanvasDocument.Applied) in with }
-            let taking = AssetPool.signposter.beginInterval("take", "\(bytes.count) bytes into a canvas layer")
-            let put = document.putPicture(bytes, into: cel, named: "\(asset.name).png", label: "Update \(asset.name) to v\(version.number)")
+            let taking = AssetPool.signposter.beginInterval("take", "a prepared picture into a canvas layer")
+            let put = document.putPrepared(prepared, into: cel, label: "Update \(asset.name) to v\(version.number)")
             AssetPool.signposter.endInterval("take", taking)
             if put == nil {
                 self.notice = document.refusal

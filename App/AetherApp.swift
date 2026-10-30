@@ -13,7 +13,6 @@ struct AetherApp: App {
                 .frame(minWidth: 1180, minHeight: 820)
                 .onAppear { delegate.model = model }
         }
-        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1440, height: 900)
         .commands { AetherCommands(model: model) }
     }

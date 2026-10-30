@@ -41,6 +41,7 @@ struct RenderTests {
         model.frameAll()
         model.renderSize = .wide
         model.render()
+        await model.renderFinished()
         let last = try #require(model.lastRender, "\(model.notice ?? "no render")")
         #expect(model.renderOpen)
         #expect((last.beauty.width, last.beauty.height) == (1536, 1024) && (last.depth.width, last.depth.height) == (1536, 1024))
@@ -65,27 +66,30 @@ struct RenderTests {
         // Moved, rendered again: new versions of the same two assets.
         model.camera.yaw += 40
         model.render()
+        await model.renderFinished()
         _ = try await published(project, versions: 2)
         #expect(project.assets.count == 2)
         #expect(model.lastRender?.versions?.beauty == 2)
     }
 
-    @Test func aClearBackgroundIsClear() throws {
+    @Test func aClearBackgroundIsClear() async throws {
         let (model, _) = try setUp()
         model.frameAll()
         model.renderSize = .square
         model.renderTransparent = true
         model.render()
+        await model.renderFinished()
         let last = try #require(model.lastRender)
         #expect(pixel(last.beauty, 3, 3)[3] == 0, "clear where nothing is")
         #expect(pixel(last.beauty, 512, 512)[3] == 255, "solid where the cube is")
         #expect(pixel(last.depth, 3, 3)[3] == 255, "the depth pass is always solid")
     }
 
-    @Test func nothingToRenderWithoutAScene() throws {
+    @Test func nothingToRenderWithoutAScene() async throws {
         let (model, _) = try setUp()
         model.close()
         model.render()
+        await model.renderFinished()
         #expect(model.lastRender == nil && model.notice == "Open a scene to render it.")
     }
 
@@ -107,7 +111,7 @@ struct RenderTests {
         }
     }
 
-    @Test func aCameraTakesTheViewAndARenderLooksThroughIt() throws {
+    @Test func aCameraTakesTheViewAndARenderLooksThroughIt() async throws {
         let (model, _) = try setUp()
         let cube = try #require(model.selected)
         model.frameAll()
@@ -137,10 +141,12 @@ struct RenderTests {
         model.camera.yaw += 3
         model.camera.target = SIMD3(40, 0, 0)
         model.render()
+        await model.renderFinished()
         let through1 = try #require(model.lastRender)
         #expect(pixel(through1.beauty, 512, 512)[0] > 60, "the cube, through the camera")
         model.renderCamera = nil
         model.render()
+        await model.renderFinished()
         #expect(pixel(model.lastRender!.beauty, 512, 512)[0] < 20, "the view, turned away, sees nothing")
 
         model.selected = placed.id
@@ -149,7 +155,7 @@ struct RenderTests {
         model.selected = cube
     }
 
-    @Test func shadowsFallOnTheFloorAndAFloorIsInTheDepth() throws {
+    @Test func shadowsFallOnTheFloorAndAFloorIsInTheDepth() async throws {
         let (model, _) = try setUp()
         model.frameAll()
         model.add(.light)
@@ -168,9 +174,11 @@ struct RenderTests {
 
         model.renderSize = .square
         model.render()
+        await model.renderFinished()
         let shadowed = try #require(model.lastRender)
         model.renderShadows = false
         model.render()
+        await model.renderFinished()
         let plain = try #require(model.lastRender)
         #expect(brightness(shadowed.beauty) < brightness(plain.beauty) - 0.5, "a shadow darkens the floor: \(brightness(shadowed.beauty)) vs \(brightness(plain.beauty))")
 
@@ -181,20 +189,23 @@ struct RenderTests {
         model.editLight("Light Strength") { $0.strength = 40 }
         model.change(.setTransform(lamp.id, part: .position, to: [-2.5, 3, -2.5]), label: "Move")
         model.render()
+        await model.renderFinished()
         let pointShadowed = try #require(model.lastRender)
         model.renderShadows = false
         model.render()
+        await model.renderFinished()
         let pointPlain = try #require(model.lastRender)
         #expect(brightness(pointShadowed.beauty) < brightness(pointPlain.beauty) - 0.5, "a point light's shadow: \(brightness(pointShadowed.beauty)) vs \(brightness(pointPlain.beauty))")
 
         model.renderFloor = false
         model.render()
+        await model.renderFinished()
         let bare = try #require(model.lastRender)
         #expect(brightness(plain.depth) > brightness(bare.depth) + 5, "the floor is in the depth pass")
         #expect(brightness(plain.beauty) > brightness(bare.beauty), "and in the picture")
     }
 
-    @Test func aLightsColourDraggedIsOneStep() throws {
+    @Test func aLightsColourDraggedIsOneStep() async throws {
         let (model, project) = try setUp()
         model.add(.light)
         for g in stride(from: 0.9, through: 0.3, by: -0.1) {

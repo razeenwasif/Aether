@@ -40,26 +40,33 @@ public struct CanvasWorkspace: View {
                 }
 
                 CanvasStatusBar(model: model, document: document)
-                    .padding(.leading, leftInset + 12)
+                    .padding(.leading, 12)
+                    .offset(x: leftInset)
                     .padding(.top, 12)
             }
 
             VStack(spacing: 10) {
                 if model.leaving != nil, let document = model.document {
                     LeaveBar(model: model, name: document.name).padding(.top, 12)
+                        .centred(between: leftInset, and: rightInset)
                 }
                 Spacer()
                 if let notice = model.notice {
                     CanvasNotice(text: notice) { model.notice = nil }
+                        .centred(between: leftInset, and: rightInset)
                 }
                 if let document = model.document {
-                    CanvasTimeline(model: model, document: document).padding(.horizontal, 24)
+                    // The timeline spans the space between the panels, so it
+                    // is laid out again as they slide.
+                    CanvasTimeline(model: model, document: document)
+                        .padding(.horizontal, 24)
+                        .padding(.leading, leftInset)
+                        .padding(.trailing, rightInset)
                     CanvasDock(model: model).padding(.bottom, 16)
+                        .centred(between: leftInset, and: rightInset)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.leading, leftInset)
-            .padding(.trailing, rightInset)
         }
         .animation(Motion.panel, value: model.navigatorOpen)
         .animation(Motion.panel, value: model.inspectorOpen)

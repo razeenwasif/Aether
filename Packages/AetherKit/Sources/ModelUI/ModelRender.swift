@@ -80,36 +80,35 @@ extension ModelWorkspaceModel {
         let (width, height) = renderSize.pixels
         if let id = renderCamera, document.node(id)?.kind != "camera" { renderCamera = nil }
         let settings = ModelRenderer.RenderSettings(width: width, height: height, transparent: renderTransparent, camera: renderCamera, floor: renderFloor, shadows: renderShadows, denoise: renderDenoise)
-        if renderEngine == .traced {
-            guard renderTask == nil else { return }
-            guard renderer.canTrace else { return notice = "This Mac’s GPU can’t trace rays: the quick render is the one there is." }
-            let samples = renderSamples
-            stopRendering = false
+        guard renderTask == nil else { return }
+        let traced = renderEngine == .traced
+        if traced, !renderer.canTrace { return notice = "This Mac’s GPU can’t trace rays: the quick render is the one there is." }
+        let samples = renderSamples
+        stopRendering = false
+        if traced {
             renderProgress = 0
             renderOpen = true
-            renderTask = Task { [weak self] in
-                defer {
-                    self?.renderTask = nil
-                    self?.renderProgress = nil
-                }
-                do {
-                    let pictures = try await renderer.pathTrace(settings, samples: samples) { done in
+        }
+        // Both engines run as a task: the GPU is waited for, and the pictures
+        // encoded and written, off the main thread (§7b).
+        renderTask = Task { [weak self] in
+            defer {
+                self?.renderTask = nil
+                self?.renderProgress = nil
+            }
+            do {
+                let pictures = traced
+                    ? try await renderer.pathTrace(settings, samples: samples) { done in
                         guard let self else { return false }
                         self.renderProgress = done
                         return !self.stopRendering
                     }
-                    guard let self, self.document === document else { return }
-                    self.keep(pictures, width: width, height: height, scene: document)
-                } catch {
-                    self?.notice = "Couldn’t render \(document.name): \(error.localizedDescription)"
-                }
+                    : try await renderer.render(settings)
+                guard let self, self.document === document else { return }
+                await self.keep(pictures, width: width, height: height, scene: document)
+            } catch {
+                self?.notice = "Couldn’t render \(document.name): \(error.localizedDescription)"
             }
-            return
-        }
-        do {
-            keep(try renderer.render(settings), width: width, height: height, scene: document)
-        } catch {
-            notice = "Couldn’t render \(document.name): \(error.localizedDescription)"
         }
     }
 
@@ -118,33 +117,36 @@ extension ModelWorkspaceModel {
         stopRendering = true
     }
 
-    /// Wait for a path-traced render under way to finish.
+    /// Wait for a render under way to finish: drawn, written and shown.
     public func renderFinished() async {
         await renderTask?.value
     }
 
-    /// A render's pictures written beside the scene, shown, and published.
-    private func keep(_ pictures: ModelRenderer.Pictures, width: Int, height: Int, scene document: SceneDocument) {
+    /// A render's pictures encoded and written beside the scene off the main
+    /// thread, then shown, and published.
+    private func keep(_ pictures: ModelRenderer.Pictures, width: Int, height: Int, scene document: SceneDocument) async {
+        let folder = document.folder.appending(path: "renders", directoryHint: .isDirectory)
+        let files = (folder.appending(path: "\(document.name) render.png"), folder.appending(path: "\(document.name) depth.png"))
+        let (beauty, depth) = (pictures.beauty, pictures.depth)
         do {
-            let folder = document.folder.appending(path: "renders", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let files = (folder.appending(path: "\(document.name) render.png"), folder.appending(path: "\(document.name) depth.png"))
             let encoding = ModelRenderer.signposter.beginInterval("png")
-            let beautyPNG = try Self.png(pictures.beauty)
-            let depthPNG = try Self.png(pictures.depth)
+            try await Task.detached(priority: .userInitiated) {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try Self.png(beauty).write(to: files.0, options: .atomic)
+                try Self.png(depth).write(to: files.1, options: .atomic)
+            }.value
             ModelRenderer.signposter.endInterval("png", encoding)
-            try beautyPNG.write(to: files.0, options: .atomic)
-            try depthPNG.write(to: files.1, options: .atomic)
-            lastRender = Rendered(beauty: pictures.beauty, depth: pictures.depth, files: files, versions: nil, at: Date())
-            renderOpen = true
-            publish(beautyPNG, depthPNG, width: width, height: height, scene: document)
         } catch {
             notice = "Couldn’t render \(document.name): \(error.localizedDescription)"
+            return
         }
+        lastRender = Rendered(beauty: beauty, depth: depth, files: files, versions: nil, at: Date())
+        renderOpen = true
+        publish(files, width: width, height: height, scene: document)
     }
 
     /// The two pictures as the project's assets, new versions of them.
-    private func publish(_ beauty: Data, _ depth: Data, width: Int, height: Int, scene: SceneDocument) {
+    private func publish(_ files: (beauty: URL, depth: URL), width: Int, height: Int, scene: SceneDocument) {
         guard let project else {
             notice = "Rendered \(width) × \(height) into renders/ beside the scene."
             return
@@ -156,8 +158,9 @@ extension ModelWorkspaceModel {
             do {
                 let beautyAsset = try project.asset(madeBy: documents.beauty, named: "\(name) Render", in: .model)
                 let depthAsset = try project.asset(madeBy: documents.depth, named: "\(name) Depth", in: .model)
-                let a = try project.publish(beautyAsset.id, blob: try await project.pool.store(beauty), width: width, height: height, note: "rendered")
-                let b = try project.publish(depthAsset.id, blob: try await project.pool.store(depth), width: width, height: height, note: "rendered")
+                // Cloned from the files just written, not written again.
+                let a = try project.publish(beautyAsset.id, blob: try await project.pool.store(contentsOf: files.beauty), width: width, height: height, note: "rendered")
+                let b = try project.publish(depthAsset.id, blob: try await project.pool.store(contentsOf: files.depth), width: width, height: height, note: "rendered")
                 guard let self else { return }
                 self.lastRender?.versions = (a.number, b.number)
                 self.notice = "Rendered \(width) × \(height): \(name) Render and \(name) Depth, v\(a.number). A flow’s Load Image or a canvas can follow them: find them in the omnibar."
@@ -246,7 +249,7 @@ extension ModelWorkspaceModel {
         NSWorkspace.shared.activateFileViewerSelecting([files.beauty, files.depth])
     }
 
-    static func png(_ image: CGImage) throws -> Data {
+    nonisolated static func png(_ image: CGImage) throws -> Data {
         let data = NSMutableData()
         guard let out = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
         CGImageDestinationAddImage(out, image, nil)

@@ -249,10 +249,35 @@ public final class CanvasDocument {
     /// version of its asset. One undo step, named `label`.
     @discardableResult
     public func putPicture(_ bytes: Data, into cel: UInt32, named name: String, label: String) -> Applied? {
+        put { try editor.putPicture(cel: cel, bytes: bytes, name: name, label: label) }
+    }
+
+    /// A picture (a PNG, one layer) read and laid into tiles for a canvas
+    /// `width` × `height`, off the main thread: the slow half of
+    /// `putPicture`, which `putPrepared` finishes (RESEARCH_PLAN.md §7b).
+    public nonisolated static func prepare(_ bytes: Data, named name: String, width: Int, height: Int) throws -> PreparedPicture {
+        try canvasPreparePicture(bytes: bytes, name: name, width: UInt32(width), height: UInt32(height))
+    }
+
+    /// `putPicture` with the picture already prepared: only the step is
+    /// made here. Refused if the canvas changed size since.
+    /// What it changed is laid together for the view a little at a time,
+    /// between frames: a whole layer at once held the main thread for
+    /// 25–40 ms (RESEARCH_PLAN.md §7b).
+    public func putPrepared(_ picture: PreparedPicture, into cel: UInt32, label: String) -> Applied? {
+        put(laying: false) { try editor.putPrepared(cel: cel, picture: picture, label: label) }
+    }
+
+    private func put(laying: Bool = true, _ make: () throws -> String) -> Applied? {
         do {
-            let applied = try JSONDecoder().decode(Applied.self, from: Data(editor.putPicture(cel: cel, bytes: bytes, name: name, label: label).utf8))
+            let applied = try JSONDecoder().decode(Applied.self, from: Data(make().utf8))
             refusal = nil
-            refresh()
+            if laying {
+                refresh()
+            } else {
+                refresh(laying: false)
+                layInSteps()
+            }
             stale(applied)
             stepped(applied)
             return applied
@@ -320,7 +345,7 @@ public final class CanvasDocument {
     // MARK: Reading back
 
     /// What the core says the canvas is now, and its pixels laid again.
-    private func refresh() {
+    private func refresh(laying: Bool = true) {
         previewing = false
         if let fresh = try? JSONDecoder().decode(CanvasState.self, from: Data(editor.view().utf8)) {
             if fresh.width != state.width || fresh.height != state.height {
@@ -329,7 +354,26 @@ public final class CanvasDocument {
             state = fresh
         }
         readSelection()
-        lay()
+        if laying { lay() }
+    }
+
+    /// Pixel-layers laid together a step: about 1.5 ms of work, measured at
+    /// 3 ms for 2²⁰ in Release, so a step and a frame's own work fit in one.
+    static let layStep: UInt64 = 1 << 19
+    @ObservationIgnored private var laying: Task<Void, Never>?
+
+    /// What waits to be laid together, a step at a time with a frame between,
+    /// until nothing waits. Anything that lays everything first leaves this
+    /// nothing to do.
+    private func layInSteps() {
+        guard laying == nil else { return }
+        laying = Task { [weak self] in
+            while let document = self, document.pending > 0 {
+                document.lay(budget: Self.layStep)
+                try? await Task.sleep(for: .milliseconds(4))
+            }
+            self?.laying = nil
+        }
     }
 
     /// The selection's edges again, when the core says they may have moved.

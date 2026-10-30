@@ -20,9 +20,12 @@ struct WindowChrome: NSViewRepresentable {
             observers.forEach(NotificationCenter.default.removeObserver)
             observers = []
             guard let window else { return }
+            // A titled window with its title bar hidden, not SwiftUI's
+            // hidden-title-bar style: see WindowDragArea.
+            window.styleMask.insert(.fullSizeContentView)
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
-            // The canvas drags; the window moves by its rail and title strip only.
+            // The canvas drags; the window moves by its rail (WindowDragArea).
             window.isMovableByWindowBackground = false
             let names: [Notification.Name] = [
                 NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification,
@@ -63,6 +66,35 @@ struct WindowChrome: NSViewRepresentable {
                 observers.forEach(NotificationCenter.default.removeObserver)
                 observers = []
             }
+        }
+    }
+}
+
+/// Where the window can be moved from: the rail's empty space. The window is
+/// a titled one with its title bar hidden, so AppKit only moves it from the
+/// strip the title bar would have had. A double-click does what the Mac's
+/// setting says (zoom, minimise or nothing), as a title bar's would.
+///
+/// SwiftUI's hidden-title-bar style did this itself, by working out which
+/// parts of the window are free to drag from whenever any view's shape
+/// moved. With panels sliding, that walk cost tens of milliseconds a toggle
+/// (RESEARCH_PLAN.md §7b), so the window is titled and this does the moving.
+struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragView { DragView() }
+    func updateNSView(_ view: DragView, context: Context) {}
+
+    final class DragView: NSView {
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            if event.clickCount == 2 {
+                switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+                case "Minimize": window.miniaturize(nil)
+                case "None": break
+                default: window.zoom(nil)
+                }
+                return
+            }
+            window.performDrag(with: event)
         }
     }
 }

@@ -33,7 +33,8 @@ public struct ModelWorkspace: View {
                         .sliding(open: model.inspectorOpen, from: .trailing, by: 300)
                 }
                 ModelStatusBar(model: model, document: document)
-                    .padding(.leading, leftInset + 12)
+                    .padding(.leading, 12)
+                    .offset(x: leftInset)
                     .padding(.top, 12)
             } else {
                 ModelHome(model: model)
@@ -41,28 +42,34 @@ public struct ModelWorkspace: View {
 
             VStack(spacing: 10) {
                 Spacer()
+                // The drawers span the space between the panels, so they are
+                // laid out again as the panels slide.
                 if model.renderOpen, let document = model.document {
                     RenderDrawer(model: model, document: document)
                         .frame(height: 270)
                         .padding(.horizontal, 12)
+                        .padding(.leading, leftInset)
+                        .padding(.trailing, rightInset)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 if model.graphOpen, model.editing == nil, let material = model.selectedMaterial {
                     MaterialGraphDrawer(model: model, material: material, isStack: model.stack(of: material.id) != nil)
                         .frame(height: 250)
                         .padding(.horizontal, 12)
+                        .padding(.leading, leftInset)
+                        .padding(.trailing, rightInset)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 if let notice = model.notice {
                     ModelNotice(text: notice) { model.notice = nil }
+                        .centred(between: leftInset, and: rightInset)
                 }
                 if model.document != nil {
                     ModelDock(model: model).padding(.bottom, 16)
+                        .centred(between: leftInset, and: rightInset)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.leading, leftInset)
-            .padding(.trailing, rightInset)
         }
         .animation(Motion.panel, value: model.navigatorOpen)
         .animation(Motion.panel, value: model.inspectorOpen)
