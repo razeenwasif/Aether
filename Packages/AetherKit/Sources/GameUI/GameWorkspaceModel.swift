@@ -4,6 +4,32 @@ import GameCore
 import ImageIO
 import Observation
 
+/// What's chosen in the room on screen.
+public enum GameSelection: Equatable, Sendable {
+    case entity(String)
+    case shape(String)
+    case light(String)
+    case spawn(String)
+
+    public var id: String {
+        switch self {
+        case let .entity(id), let .shape(id), let .light(id), let .spawn(id): id
+        }
+    }
+}
+
+/// What a click on the stage does.
+public enum GameTool: Equatable, Sendable {
+    /// Choose and move (v).
+    case select
+    /// Draw a line of collision, a click a point (p).
+    case draw
+    /// Place a light (l).
+    case light
+    /// Place a thing: a prefab of the game's, or a built-in kind.
+    case place(String)
+}
+
 /// The Game workspace's state: the games in the project's `Games/`, the one
 /// open, the room on screen, what is selected, and Play.
 @MainActor
@@ -15,10 +41,19 @@ public final class GameWorkspaceModel {
     public private(set) var document: GameDocument?
     /// The room on screen, by id.
     public var roomID: String? {
-        didSet { if roomID != oldValue { selected = nil; fitRequest &+= 1 } }
+        didSet { if roomID != oldValue { selection = nil; tool = .select; fitRequest &+= 1 } }
     }
-    /// The entity selected, by id.
-    public var selected: String?
+    /// What's chosen.
+    public var selection: GameSelection?
+    /// The thing chosen, by id, when a thing is.
+    public var selected: String? {
+        get { if case let .entity(id) = selection { id } else { nil } }
+        set { selection = newValue.map(GameSelection.entity) }
+    }
+    public var tool: GameTool = .select
+    /// The kind of line the draw tool makes: `solid`, `oneway`, `hazard`
+    /// or `nowall`.
+    public var drawKind = "solid"
     public var navigatorOpen = true
     public var inspectorOpen = true
     public var notice: String? {
@@ -35,6 +70,17 @@ public final class GameWorkspaceModel {
     /// Bumped to have the stage show the whole room.
     public private(set) var fitRequest = 0
     @ObservationIgnored public let images = GameImages()
+
+    /// The tool keys, while the stage has the keys and no run is playing.
+    func toolKey(_ character: String) -> Bool {
+        switch character {
+        case "v": tool = .select
+        case "p": tool = .draw
+        case "l": tool = .light
+        default: return false
+        }
+        return true
+    }
 
     public init(folder: URL) {
         self.folder = folder
@@ -125,9 +171,112 @@ public final class GameWorkspaceModel {
         moveEntity(id, by: x - from[0], y - from[1])
     }
 
+    /// ⌫: what's chosen, taken out of the room.
     public func removeSelected() {
-        guard let target = roomTarget, let id = selected else { return }
-        if apply([.remove(["entities", "#\(id)"])], to: target, label: "Remove \(id)") { selected = nil }
+        guard let target = roomTarget, let selection else { return }
+        let list = switch selection {
+        case .entity: "entities"
+        case .shape: "collision"
+        case .light: "lights"
+        case .spawn: "spawns"
+        }
+        if apply([.remove([list, "#\(selection.id)"])], to: target, label: "Remove \(selection.id)") { self.selection = nil }
+    }
+
+    // MARK: Collision
+
+    /// A line of collision through `points`, of the draw tool's kind, as one
+    /// step; it's chosen.
+    public func addLine(_ points: [CGPoint]) {
+        guard let target = roomTarget, let room, points.count >= 2 else { return }
+        let id = room.freshID(drawKind)
+        let value: [String: Any] = ["id": id, "kind": drawKind, "points": points.map { [Int($0.x.rounded()), Int($0.y.rounded())] }]
+        if apply([.insert(["collision"], value)], to: target, label: "Draw \(id)") { selection = .shape(id) }
+    }
+
+    /// Point `index` of a line, moved to `to`.
+    public func movePoint(_ shape: String, _ index: Int, to p: CGPoint) {
+        guard let target = roomTarget else { return }
+        apply([.set(["collision", "#\(shape)", "points", String(index)], [Int(p.x.rounded()), Int(p.y.rounded())])], to: target, label: "Move a point of \(shape)")
+    }
+
+    /// A point put into a line, before point `index`.
+    public func insertPoint(_ shape: String, at index: Int, _ p: CGPoint) {
+        guard let target = roomTarget else { return }
+        apply([.insert(["collision", "#\(shape)", "points"], [Int(p.x.rounded()), Int(p.y.rounded())], at: index)], to: target, label: "Add a point to \(shape)")
+    }
+
+    /// Point `index` taken out of a line that keeps two at least.
+    public func removePoint(_ shape: String, _ index: Int) {
+        guard let target = roomTarget, let line = room?.shape(shape) else { return }
+        guard line.points.count > 2 else { return notice = "A line needs two points at least: remove the line instead (⌫)." }
+        apply([.remove(["collision", "#\(shape)", "points", String(index)])], to: target, label: "Remove a point of \(shape)")
+    }
+
+    /// The whole line moved `dx`, `dy`.
+    public func moveLine(_ shape: String, by dx: Int, _ dy: Int) {
+        guard let target = roomTarget, let line = room?.shape(shape), dx != 0 || dy != 0 else { return }
+        apply([.set(["collision", "#\(shape)", "points"], line.points.map { [$0[0] + dx, $0[1] + dy] })], to: target, label: "Move \(shape)")
+    }
+
+    public func setLineKind(_ shape: String, _ kind: String) {
+        guard let target = roomTarget else { return }
+        apply([.set(["collision", "#\(shape)", "kind"], kind)], to: target, label: "Make \(shape) \(kind)")
+    }
+
+    public func setLineClosed(_ shape: String, _ closed: Bool) {
+        guard let target = roomTarget else { return }
+        apply([.set(["collision", "#\(shape)", "closed"], closed)], to: target, label: closed ? "Close \(shape)" : "Open \(shape)")
+    }
+
+    // MARK: Lights, spawns and things placed
+
+    /// A light at `p` on the play plane, with Proton's defaults; it's chosen.
+    public func addLight(at p: CGPoint) {
+        guard let target = roomTarget, let room else { return }
+        guard let plane = room.playPlane?.id ?? room.planes.last?.id else { return notice = "This room has no plane to stand a light on." }
+        let id = room.freshID("light")
+        let value: [String: Any] = ["id": id, "plane": plane, "at": [Int(p.x.rounded()), Int(p.y.rounded())], "radius": 400, "color": "#ffd9a0", "intensity": 1, "glow": 0.4]
+        if apply([.insert(["lights"], value)], to: target, label: "Add \(id)") { selection = .light(id) }
+    }
+
+    public func moveLight(_ id: String, by dx: Int, _ dy: Int) {
+        guard let target = roomTarget, let light = room?.light(id), dx != 0 || dy != 0 else { return }
+        apply([.set(["lights", "#\(id)", "at"], [light.at[0] + dx, light.at[1] + dy])], to: target, label: "Move \(id)")
+    }
+
+    /// One of a light's numbers or its colour, from the inspector.
+    public func setLight(_ id: String, _ key: String, _ value: Any) {
+        guard let target = roomTarget else { return }
+        apply([.set(["lights", "#\(id)", key], value)], to: target, label: "Change \(id)'s \(key)")
+    }
+
+    public func moveSpawn(_ id: String, by dx: Int, _ dy: Int) {
+        guard let target = roomTarget, let spawn = room?.spawn(id), dx != 0 || dy != 0 else { return }
+        apply([.set(["spawns", "#\(id)", "at"], [spawn.at[0] + dx, spawn.at[1] + dy])], to: target, label: "Move spawn \(id)")
+    }
+
+    /// What can be placed: the game's prefabs (not the player), then the
+    /// kinds every game has.
+    public var placeable: [(id: String, name: String)] {
+        let prefabs = (document?.view.prefabs ?? []).filter { $0.id != "player" }.map { ($0.id, $0.name.isEmpty ? $0.id : $0.name) }
+        let builtIn: [(String, String)] = [("save_point", "Bench"), ("ability_pickup", "Ability"), ("transition", "Door"), ("ability_gate", "Gate"), ("trigger", "Trigger")]
+        return prefabs + builtIn
+    }
+
+    /// A thing of kind `prefab` placed at `p`: standing there, or covering
+    /// an area there for the kinds that cover one. It's chosen.
+    public func place(_ prefab: String, at p: CGPoint) {
+        guard let target = roomTarget, let room else { return }
+        let id = room.freshID(prefab)
+        let (x, y) = (Int(p.x.rounded()), Int(p.y.rounded()))
+        var value: [String: Any] = ["id": id, "prefab": prefab]
+        switch prefab {
+        case "transition", "ability_gate", "trigger": value["rect"] = [x - 30, y - 200, 60, 200]
+        default: value["at"] = [x, y]
+        }
+        if prefab == "ability_pickup" { value["grants"] = document?.view.game.abilities.first ?? "dash" }
+        if apply([.insert(["entities"], value)], to: target, label: "Place \(id)") { selection = .entity(id) }
     }
 
     @discardableResult
@@ -213,6 +362,33 @@ public final class GameImages {
     var root: URL?
     private var cache: [String: CGImage] = [:]
     private var missing: Set<String> = []
+
+    private var anims: [String: GameAnim] = [:]
+    private var crops: [String: CGImage] = [:]
+
+    /// An animation, read once.
+    public func anim(_ rel: String) -> GameAnim? {
+        if let hit = anims[rel] { return hit }
+        guard !missing.contains(rel), let root,
+              let data = try? Data(contentsOf: root.appending(path: rel)), let anim = try? JSONDecoder().decode(GameAnim.self, from: data) else {
+            missing.insert(rel)
+            return nil
+        }
+        anims[rel] = anim
+        return anim
+    }
+
+    /// Frame `index` of an animation: its part of its sheet, cut once.
+    public func frame(_ rel: String, _ index: Int) -> (image: CGImage, frame: GameAnim.Frame)? {
+        guard let anim = anim(rel), index >= 0, index < anim.frames.count else { return nil }
+        let f = anim.frames[index]
+        guard f.rect.count == 4, f.rect[2] > 0, f.rect[3] > 0, f.sheet < anim.sheets.count else { return nil }
+        let key = "\(rel)#\(index)"
+        if let hit = crops[key] { return (hit, f) }
+        guard let sheet = image(anim.sheets[f.sheet]), let cut = sheet.cropping(to: CGRect(x: f.rect[0], y: f.rect[1], width: f.rect[2], height: f.rect[3])) else { return nil }
+        crops[key] = cut
+        return (cut, f)
+    }
 
     public func image(_ rel: String) -> CGImage? {
         if let hit = cache[rel] { return hit }

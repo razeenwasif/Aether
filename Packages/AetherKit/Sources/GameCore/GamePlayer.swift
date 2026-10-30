@@ -30,6 +30,8 @@ public struct GameDrawn: Equatable, Sendable {
     public var flash: Bool
     /// Spared for now: drawn faint.
     public var blink: Bool
+    /// The animation's frame shown, or -1 for a still image.
+    public var frame: Int
     /// 0 the player, a thing one more than its place in the room, a shot
     /// `1 << 20` and more.
     public var who: Int
@@ -64,7 +66,7 @@ public struct GameFrame: Equatable, Sendable {
             guard o + Self.record <= words.count else { return nil }
             let look = word(o + 5)
             return GameDrawn(sprite: word(o), at: CGPoint(x: word(o + 1), y: word(o + 2)), pivot: CGPoint(x: word(o + 3), y: word(o + 4)),
-                             flip: look & 1 != 0, flash: look & 2 != 0, blink: look & 4 != 0, who: word(o + 8))
+                             flip: look & 1 != 0, flash: look & 2 != 0, blink: look & 4 != 0, frame: word(o + 6), who: word(o + 8))
         }
     }
 }

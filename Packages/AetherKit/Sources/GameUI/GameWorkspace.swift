@@ -18,8 +18,8 @@ public struct GameWorkspace: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
-                GameStage(model: model, revision: document.revision, roomID: model.roomID, selected: model.selected, playing: model.playing, fitRequest: model.fitRequest,
-                          insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0))
+                GameStage(model: model, revision: document.revision, roomID: model.roomID, selection: model.selection, playing: model.playing, fitRequest: model.fitRequest,
+                          insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0), tool: model.tool)
                 HStack(alignment: .top, spacing: 0) {
                     GameNavigator(model: model, document: document)
                         .frame(width: 248)
@@ -45,6 +45,8 @@ public struct GameWorkspace: View {
                 }
                 if model.playing {
                     PlayHUD(model: model).padding(.bottom, 16)
+                } else if model.document != nil {
+                    GameDock(model: model).padding(.bottom, 16)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -152,10 +154,29 @@ private struct GameNavigator: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         ForEach(room.entities) { entity in
-                            row(entity.id, detail: document.view.prefab(entity.prefab)?.name ?? entity.prefab, dirty: false, chosen: entity.id == model.selected) {
-                                model.selected = entity.id
+                            row(entity.id, detail: document.view.prefab(entity.prefab)?.name ?? entity.prefab, dirty: false, chosen: model.selection == .entity(entity.id)) {
+                                model.selection = .entity(entity.id)
                             }
                         }
+                        ForEach(room.lights) { light in
+                            row(light.id, detail: "light", dirty: false, chosen: model.selection == .light(light.id)) { model.selection = .light(light.id) }
+                        }
+                        ForEach(room.spawns) { spawn in
+                            row("spawn \(spawn.id)", detail: "spawn", dirty: false, chosen: model.selection == .spawn(spawn.id)) { model.selection = .spawn(spawn.id) }
+                        }
+                    }
+                }
+                HStack {
+                    Text("Place").font(.aeLabel).foregroundStyle(Color.ink2)
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+                .help("Choose one, then click in the room where it goes")
+                ForEach(model.placeable, id: \.id) { kind in
+                    row(kind.name, detail: kind.id, dirty: false, chosen: model.tool == .place(kind.id)) {
+                        model.tool = model.tool == .place(kind.id) ? .select : .place(kind.id)
                     }
                 }
             }
@@ -197,7 +218,18 @@ private struct GameInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let id = model.selected, let entity = model.room?.entity(id) {
+            if case let .shape(id) = model.selection, let line = model.room?.shape(id) {
+                ShapeInspector(model: model, line: line)
+            } else if case let .light(id) = model.selection, let light = model.room?.light(id) {
+                LightInspector(model: model, light: light)
+            } else if case let .spawn(id) = model.selection, let spawn = model.room?.spawn(id) {
+                PanelSection("Spawn \(spawn.id)") {
+                    Text(id == "start" ? "Where a run starts." : "Where the player arrives through a door that names it.").font(.aeSmall).foregroundStyle(Color.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: "At \(spawn.at.first ?? 0), \(spawn.at.count > 1 ? spawn.at[1] : 0)").font(.aeMono).foregroundStyle(Color.ink)
+                    HStack { Spacer(); Button("Remove", role: .destructive, action: model.removeSelected).controlSize(.small) }
+                }
+            } else if let id = model.selected, let entity = model.room?.entity(id) {
                 PanelSection(entity.id) {
                     Text(document.view.prefab(entity.prefab)?.name ?? kindTitle(entity.prefab)).font(.aeBody).foregroundStyle(Color.ink)
                     placeRow(entity)
@@ -223,7 +255,7 @@ private struct GameInspector: View {
                     Text(verbatim: "\(Int(room.width)) × \(Int(room.height)) pixels").font(.aeBody).foregroundStyle(Color.ink)
                     Text(verbatim: "\(room.planes.count) planes · \(room.collision.count) lines of collision · \(room.entities.count) things · \(room.spawns.count) spawns")
                         .font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
-                    Text("Click a thing to choose it, drag it to move it. Drag nothing or use two fingers to move over the room; pinch or ⌘-scroll to zoom; f shows it all.")
+                    Text("Click anything to choose it, drag it to move it. p draws collision a click a point (double-click or ↩ ends it); on a chosen line drag its points, ⌥-click adds one, double-click takes one out. l places a light. Drag nothing or use two fingers to move over the room; pinch or ⌘-scroll to zoom; f shows it all.")
                         .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 }
                 PanelSection("Planes") {
@@ -265,6 +297,105 @@ private struct GameInspector: View {
         case "ability_pickup": "Ability"
         case "trigger": "Trigger"
         default: kind
+        }
+    }
+}
+
+/// A line of collision chosen: its kind, whether it closes, its points.
+private struct ShapeInspector: View {
+    let model: GameWorkspaceModel
+    let line: GameShape
+
+    var body: some View {
+        PanelSection(line.id) {
+            Picker("Kind", selection: Binding(get: { line.kind }, set: { model.setLineKind(line.id, $0) })) {
+                Text("Solid").tag("solid")
+                Text("One-way").tag("oneway")
+                Text("Hazard").tag("hazard")
+                Text("No wall").tag("nowall")
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text(kindNote).font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
+            Toggle("Closed", isOn: Binding(get: { line.closed }, set: { model.setLineClosed(line.id, $0) }))
+                .toggleStyle(.checkbox).font(.aeSmall)
+            Text(verbatim: "\(line.points.count) points").font(.aeSmall).foregroundStyle(Color.ink2)
+            HStack { Spacer(); Button("Remove", role: .destructive, action: model.removeSelected).controlSize(.small) }
+        }
+    }
+
+    private var kindNote: String {
+        switch line.kind {
+        case "oneway": "Solid only from above: jumped up through, dropped down from."
+        case "hazard": "Hurts, and sends the player back to where they last stood safely."
+        case "nowall": "Solid, but not a wall to cling to or jump from."
+        default: "Solid from every side."
+        }
+    }
+}
+
+/// A light chosen: its reach, colour, brightness, waver and halo.
+private struct LightInspector: View {
+    let model: GameWorkspaceModel
+    let light: GameLight
+
+    var body: some View {
+        PanelSection(light.id) {
+            Text(verbatim: "On \(light.plane), at \(light.at.first ?? 0), \(light.at.count > 1 ? light.at[1] : 0)").font(.aeSmall).foregroundStyle(Color.ink2)
+            HStack(spacing: 8) {
+                Text("Reach").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 64, alignment: .leading)
+                NumberField(value: light.radius) { model.setLight(light.id, "radius", max(1, $0)) }
+                Text("px").font(.aeSmall).foregroundStyle(Color.ink3)
+            }
+            slider("Brightness", light.intensity, 0...4, "intensity")
+            slider("Halo", light.glow, 0...1, "glow")
+            slider("Waver", light.flicker, 0...1, "flicker")
+            HStack(spacing: 8) {
+                Text("Colour").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 64, alignment: .leading)
+                ColorPicker("", selection: Binding(get: { color }, set: { model.setLight(light.id, "color", hex($0)) }), supportsOpacity: false)
+                    .labelsHidden()
+                Text(light.color).font(.aeMono).foregroundStyle(Color.ink3)
+            }
+            Text("Lights shade lit planes in Play once the lit renderer comes; their halos show now.").font(.aeSmall).foregroundStyle(Color.ink3)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack { Spacer(); Button("Remove", role: .destructive, action: model.removeSelected).controlSize(.small) }
+        }
+    }
+
+    private func slider(_ title: String, _ value: Double, _ range: ClosedRange<Double>, _ key: String) -> some View {
+        StepSlider(title: title, value: value, range: range) { model.setLight(light.id, key, ($0 * 100).rounded() / 100) }
+    }
+
+    private var color: Color {
+        let (r, g, b) = GameScene.rgb(light.color)
+        return Color(red: r, green: g, blue: b)
+    }
+
+    private func hex(_ color: Color) -> String {
+        let c = NSColor(color).usingColorSpace(.sRGB) ?? .white
+        return String(format: "#%02x%02x%02x", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+    }
+}
+
+/// A slider that makes its step once, when let go.
+private struct StepSlider: View {
+    let title: String
+    let value: Double
+    let range: ClosedRange<Double>
+    let set: (Double) -> Void
+    @State private var dragging: Double?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title).font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 64, alignment: .leading)
+            Slider(value: Binding(get: { dragging ?? value }, set: { dragging = $0 }), in: range) { editing in
+                if !editing, let dragging {
+                    set(dragging)
+                    self.dragging = nil
+                }
+            }
+            .controlSize(.small)
+            Text(verbatim: String(format: "%.2f", dragging ?? value)).font(.aeMono).foregroundStyle(Color.ink3).frame(width: 34, alignment: .trailing)
         }
     }
 }
@@ -323,6 +454,41 @@ private struct GameStatusBar: View {
         .padding(.horizontal, 12)
         .frame(height: 30)
         .aeGlass(.floating, radius: 9)
+    }
+}
+
+/// The tools: choose and move, draw collision of a kind, place a light;
+/// and undo.
+private struct GameDock: View {
+    @Bindable var model: GameWorkspaceModel
+
+    var body: some View {
+        HStack(spacing: 2) {
+            IconButton("cursorarrow", label: "Choose and move (v)", isOn: model.tool == .select) { model.tool = .select }
+            IconButton("scribble.variable", label: "Draw collision (p)", isOn: model.tool == .draw) { model.tool = .draw }
+            if model.tool == .draw {
+                Picker("Kind", selection: $model.drawKind) {
+                    Text("Solid").tag("solid")
+                    Text("One-way").tag("oneway")
+                    Text("Hazard").tag("hazard")
+                    Text("No wall").tag("nowall")
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                .padding(.horizontal, 4)
+            }
+            IconButton("lightbulb", label: "Place a light (l)", isOn: model.tool == .light) { model.tool = .light }
+            Divider().frame(height: 20).padding(.horizontal, 4)
+            IconButton("arrow.uturn.backward", label: "\(model.undoLabel ?? "Undo") (⌘Z)", action: model.undo)
+                .disabled(model.undoLabel == nil)
+            IconButton("arrow.uturn.forward", label: "\(model.redoLabel ?? "Redo") (⇧⌘Z)", action: model.redo)
+                .disabled(model.redoLabel == nil)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 44)
+        .aeGlass(.floating, radius: 12)
     }
 }
 

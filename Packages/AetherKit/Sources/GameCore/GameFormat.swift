@@ -18,13 +18,17 @@ public struct GameFile: Decodable, Equatable, Sendable {
     public var view: GameViewSettings
     /// Each action's keys, by Proton's names (`ArrowLeft`, `KeyZ`, `pad:a`).
     public var input: [String: [String]]
+    /// The abilities a player can gain, by id.
+    public var abilities: [String]
 
-    enum CodingKeys: String, CodingKey { case name, view, input }
+    private struct Ability: Decodable { var id: String }
+    enum CodingKeys: String, CodingKey { case name, view, input, abilities }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.value(.name, "")
         view = try c.value(.view, GameViewSettings())
         input = try c.value(.input, [:])
+        abilities = try c.value(.abilities, [Ability]()).map(\.id)
     }
 }
 
@@ -57,9 +61,10 @@ public struct GameRoom: Decodable, Equatable, Sendable {
     public var collision: [GameShape]
     public var entities: [GameEntity]
     public var spawns: [GameSpawn]
+    public var lights: [GameLight]
     public var fog: GameFog?
 
-    enum CodingKeys: String, CodingKey { case id, size, camera, planes, collision, entities, spawns, ambience }
+    enum CodingKeys: String, CodingKey { case id, size, camera, planes, collision, entities, spawns, lights, ambience }
     enum CameraKeys: String, CodingKey { case bounds }
     enum AmbienceKeys: String, CodingKey { case fog }
     public init(from decoder: Decoder) throws {
@@ -73,6 +78,7 @@ public struct GameRoom: Decodable, Equatable, Sendable {
         collision = try c.value(.collision, [])
         entities = try c.value(.entities, [])
         spawns = try c.value(.spawns, [])
+        lights = try c.value(.lights, [])
         if c.contains(.ambience) {
             fog = try c.nestedContainer(keyedBy: AmbienceKeys.self, forKey: .ambience).decodeIfPresent(GameFog.self, forKey: .fog)
         }
@@ -82,6 +88,20 @@ public struct GameRoom: Decodable, Equatable, Sendable {
     public var height: Double { Double(size.count > 1 ? size[1] : 1080) }
 
     public func entity(_ id: String) -> GameEntity? { entities.first { $0.id == id } }
+    public func shape(_ id: String) -> GameShape? { collision.first { $0.id == id } }
+    public func light(_ id: String) -> GameLight? { lights.first { $0.id == id } }
+    public func spawn(_ id: String) -> GameSpawn? { spawns.first { $0.id == id } }
+    /// The plane the game is played on, which collision, things and lights
+    /// belong to.
+    public var playPlane: GamePlane? { planes.first(where: \.gameplay) }
+
+    /// An id not yet taken in the room: `stem_1`, `stem_2`…
+    public func freshID(_ stem: String) -> String {
+        let taken = Set(collision.map(\.id) + entities.map(\.id) + lights.map(\.id) + spawns.map(\.id))
+        var n = 1
+        while taken.contains("\(stem)_\(n)") { n += 1 }
+        return "\(stem)_\(n)"
+    }
 }
 
 /// A sheet of art at a depth behind (positive) or before (negative) the play
@@ -197,6 +217,32 @@ public struct GameExit: Decodable, Equatable, Sendable {
     }
 }
 
+/// A light standing on a plane: its reach, its colour and how bright, how
+/// it wavers, and the halo round it in the air.
+public struct GameLight: Decodable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var plane: String
+    public var at: [Int]
+    public var radius: Int
+    public var color: String
+    public var intensity: Double
+    public var flicker: Double
+    public var glow: Double
+
+    enum CodingKeys: String, CodingKey { case id, plane, at, radius, color, intensity, flicker, glow }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.value(.id, "")
+        plane = try c.value(.plane, "")
+        at = try c.value(.at, [0, 0])
+        radius = try c.value(.radius, 400)
+        color = try c.value(.color, "#ffd9a0")
+        intensity = try c.value(.intensity, 1)
+        flicker = try c.value(.flicker, 0)
+        glow = try c.value(.glow, 0)
+    }
+}
+
 /// Where a player arrives: a run's start, or the far side of a door.
 public struct GameSpawn: Decodable, Equatable, Sendable, Identifiable {
     public var id: String
@@ -229,8 +275,11 @@ public struct GamePrefab: Decodable, Equatable, Sendable, Identifiable {
     public var pivot: [Int]
     public var size: [Int]
     public var health: Int?
+    /// For an animated sprite, the clip a state plays where it isn't the
+    /// clip of the state's own name.
+    public var clips: [String: String]
 
-    enum CodingKeys: String, CodingKey { case id, name, sprite, pivot, size, health }
+    enum CodingKeys: String, CodingKey { case id, name, sprite, pivot, size, health, clips }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
@@ -239,6 +288,69 @@ public struct GamePrefab: Decodable, Equatable, Sendable, Identifiable {
         pivot = try c.value(.pivot, [0, 0])
         size = try c.value(.size, [32, 32])
         health = try c.decodeIfPresent(Int.self, forKey: .health)
+        clips = try c.value(.clips, [:])
+    }
+
+    public var animated: Bool { sprite.hasSuffix(".anim.json") }
+}
+
+/// An animation (`.anim.json`): frames cut from sheets, placed on the
+/// sprite's canvas, in named clips.
+public struct GameAnim: Decodable, Equatable, Sendable {
+    public var size: [Int]
+    public var sheets: [String]
+    public var frames: [Frame]
+    public var clips: [Clip]
+
+    public struct Frame: Decodable, Equatable, Sendable {
+        public var sheet: Int
+        /// Left, top, width and height on the sheet.
+        public var rect: [Int]
+        /// Where the rectangle's top-left sits on the sprite's canvas.
+        public var offset: [Int]
+        public var ms: Int
+
+        enum CodingKeys: String, CodingKey { case sheet, rect, offset, ms }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sheet = try c.value(.sheet, 0)
+            rect = try c.value(.rect, [0, 0, 0, 0])
+            offset = try c.value(.offset, [0, 0])
+            ms = try c.value(.ms, 100)
+        }
+    }
+
+    public struct Clip: Decodable, Equatable, Sendable {
+        public var name: String
+        public var from: Int
+        public var to: Int
+        public var direction: String
+
+        enum CodingKeys: String, CodingKey { case name, from, to, direction }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = try c.value(.name, "")
+            from = try c.value(.from, 0)
+            to = try c.value(.to, 0)
+            direction = try c.value(.direction, "forward")
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case size, sheets, frames, clips }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        size = try c.value(.size, [0, 0])
+        sheets = try c.value(.sheets, [])
+        frames = try c.value(.frames, [])
+        clips = try c.value(.clips, [])
+    }
+
+    /// The frame a thing standing still shows: its idle clip's first — the
+    /// clip a prefab names for idle, else one called idle, else the first.
+    public func restingFrame(_ chosen: [String: String] = [:]) -> Int {
+        let clip = clips.first { $0.name == chosen["idle"] } ?? clips.first { $0.name.lowercased() == "idle" } ?? clips.first
+        guard let clip else { return 0 }
+        return clip.direction == "reverse" || clip.direction == "pingPongReverse" ? clip.to : clip.from
     }
 }
 
@@ -295,6 +407,31 @@ public enum GameScene {
     /// How far a plane's own pixels are shifted at a factor and a corner.
     public static func shift(_ factor: Double, corner: CGPoint) -> CGPoint {
         CGPoint(x: corner.x * (1 - factor), y: corner.y * (1 - factor))
+    }
+
+    /// Where an image stands on its feet: its frame in the room, flipped
+    /// about the feet so it turns where it stands (Proton's `standing`).
+    public static func stillFrame(size: CGSize, at: CGPoint, pivot: CGPoint, flip: Bool) -> CGRect {
+        let x = flip ? at.x - (size.width - pivot.x) : at.x - pivot.x
+        return CGRect(x: x, y: at.y - pivot.y, width: size.width, height: size.height)
+    }
+
+    /// Where an animation's frame stands on its feet: the part of its sheet
+    /// placed where it sits on the sprite's canvas, flipped about the feet
+    /// (Proton's `frameSprite`).
+    public static func animFrame(_ frame: GameAnim.Frame, at: CGPoint, pivot: CGPoint, flip: Bool) -> CGRect {
+        let (w, h) = (Double(frame.rect.count > 2 ? frame.rect[2] : 0), Double(frame.rect.count > 3 ? frame.rect[3] : 0))
+        let ox = Double(frame.offset.first ?? 0), oy = Double(frame.offset.count > 1 ? frame.offset[1] : 0)
+        let x = flip ? at.x + pivot.x - ox - w : at.x - pivot.x + ox
+        return CGRect(x: x, y: at.y - pivot.y + oy, width: w, height: h)
+    }
+
+    /// How far a point is from a segment.
+    public static func distance(_ p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> Double {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let length = dx * dx + dy * dy
+        let t = length == 0 ? 0 : max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
     }
 
     /// A plane's haze, `(r, g, b, amount)`: its own tint by its fog, or the

@@ -1445,6 +1445,39 @@ Not yet:
   - Animations (`.anim.json`) and skeletons drawn by their frames. A run with them draws the still image for now.
   - The importers (PSD to planes) in the window, prefabs' inspector, the world map, recordings and the agent's tools.
 
+**2026-10-30 · Game, second slice: the editor's hands, and animations by frame.** The user asked to "start it" (the second slice proposed above). The lit renderer moved to the third slice, as it means moving the stage from CALayers to Metal.
+
+- **What's chosen** is now a thing, a line of collision, a light or a spawn (`GameSelection`). What a click does is a tool (`GameTool`): choose and move (v), draw collision (p), place a light (l), or place a thing.
+- **Collision by hand,** as Proton's editor did it:
+  - The draw tool makes a line a click a point, of the kind chosen in the dock (solid, one-way, hazard, no wall). A double-click or ↩ ends it and Esc drops it; while drawing, the line runs on to the pointer.
+  - On a chosen line its points show as handles to drag, ⌥-click puts a point in on the nearest segment, and a double-click on a point takes it out. A line keeps two points at least, and says so.
+  - A line is dragged whole by its body. Its kind and whether it closes are set in the inspector.
+- **Placing:**
+  - The navigator's Place list holds the game's prefabs (not the player) and the built-in kinds.
+  - Choose one, then click where it goes. A door, gate or trigger covers an area there (60 × 200); the rest stand there. A pickup grants the game's first ability. Ids are fresh (`crawler_1`, `crawler_2`).
+  - A thing placed is in the next run: the tests count the crawlers drawn.
+- **Lights:**
+  - The light tool stands one on the play plane with Proton's defaults and a halo.
+  - Drawn while editing as their reach (dashed) and a bulb. Their halos (a radial gradient, added) show in editing and Play.
+  - The inspector sets reach, brightness, halo, waver and colour; a slider makes its step when let go, not as it moves.
+  - Shading lit planes waits for the lit renderer.
+- **Spawns** are chosen and dragged as things are.
+- **Animations by frame:**
+  - `GameImages` reads `.anim.json` and cuts each frame from its sheet once. A thing standing in the editor shows its animation's resting frame (the clip a prefab names for idle, else "idle", else the first).
+  - In Play, the frame the run's record names, placed on its feet and flipped about them (Proton's `frameSprite`).
+  - Still images now flip about their feet too (Proton's `standing`): before, they mirrored about their middle.
+- **Found and fixed on the way:** the overlay was on the play plane, so the foreground (the template's fronds) covered its marks and labels. It now draws over every plane.
+- **Checked:**
+  - Offscreen only: the request to take over the screen timed out again.
+  - The picture showed a chosen one-way line with its handles, two lights with their reach and halos, a crawler placed, the gate, the door and the spawns, all over the fronds.
+  - Dragging points, ⌥-click and double-click are covered by tests of the ops and of hit testing, not tried by hand.
+- **Tests:** 4 more in Swift.
+  - Drawing a line and editing it by its points, kind, closing, moving, removing and undo.
+  - Lights, spawns and things placed and moved, and placed things being run.
+  - An animation cut by frame, placed and flipped on its feet, and played by the run's frames.
+  - A click landing on the chosen line's points, then things, spawns, then lines.
+  - 400 Rust and 168 Swift tests pass.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1490,4 +1523,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Game, first slice: Proton's engine, the room stage and Play~~: done, see §10a. M4's replay criterion is met natively against Proton's recorded hashes.
 
-**Next, proposed:** Game's second slice, the editor's hands: drawing collision, placing prefabs from a list, animations drawn by their frames, and the lit renderer (lights, bloom, grade) on Metal. Then sound and particles. Launch time (§7b) stays open.
+~~Game's second slice: drawing collision, placing from a list, lights placed, animations by frame~~: done, see §10a.
+
+**Next, proposed:** Game's third slice, the lit renderer: the stage on Metal, with lights shading lit planes (and normal maps), ambience, bloom, grade and vignette, as Proton's `game-render.js` did. Then particles and sound. Launch time (§7b) stays open.

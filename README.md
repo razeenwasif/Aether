@@ -125,11 +125,16 @@ Not yet: a bevel of more than one segment, editing a graph as a graph, a point l
 Proton's own 2D engine, for painted side-scrollers on parallax planes: a game is a folder of JSON (`game.json`, `world.json`, a file a room and a prefab) and its art, in Proton's format, so either app opens it. Games live in the project's `Games/`.
 
 - **New game** makes one from Proton's Metroidvania template: two rooms, a player, a crawler, a bench and a gate, their art drawn in code.
-- **The stage** shows a room as the game's camera sees it, its planes moving by their depth, far ones hazed by the room's fog. Collision is drawn by kind (solid, one-way, hazard), with the things in the room and the spawns. Click a thing to choose it and drag it to move it. Drag on nothing or use two fingers to move over the room; pinch or ⌘-scroll to zoom; `f` shows it all; `⌫` removes. The navigator lists the rooms and what's in the one on screen, and the inspector sets where a thing stands.
+- **The stage** shows a room as the game's camera sees it, its planes moving by their depth, far ones hazed by the room's fog. Collision is drawn by kind (solid, one-way, hazard, no wall), with the things in the room, its lights and its spawns. Animated things show their resting frame. Drag on nothing or use two fingers to move over the room; pinch or ⌘-scroll to zoom; `f` shows it all.
+- **The tools** (in the dock):
+  - **Choose and move** (`v`): click anything to choose it and drag it to move it; `⌫` removes it.
+  - **Draw collision** (`p`): a click a point, of the kind chosen; double-click or `↩` ends the line, `⎋` drops it. On a chosen line, drag its points, `⌥`-click adds one, and double-click takes one out.
+  - **Place a light** (`l`): reach, brightness, halo, waver and colour are set in the inspector.
+- **Place** in the navigator lists the game's prefabs and the built-in kinds (bench, ability, door, gate, trigger): choose one, then click where it goes.
 - **Edits** are made by the core whole or not at all, each an undo step (⌘Z undoes the newest wherever it was made), and held until ⌘S.
 - **Play** (the rail's Play, or ⌘↩) runs the game as it is, unsaved edits and all, from its start, in the same stage, with no load step. Arrows or WASD move, Z or Space jumps, X swings, C or Shift dashes. Esc stops, and the run is replayed on a fresh copy of the world to check that it ends in the same state. The simulation is Proton's, in whole numbers: Proton's recorded replays end in the same hashes here.
 
-Not yet: drawing collision, lights and the lit renderer, animations drawn by their frames, particles, sound and the importers.
+Animations play by their frames in Play. Not yet: the lit renderer (lights shading the planes, bloom, grade), particles, sound and the importers.
 
 ## Canvas
 
