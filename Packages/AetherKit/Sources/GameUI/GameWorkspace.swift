@@ -308,14 +308,21 @@ private struct ShapeInspector: View {
 
     var body: some View {
         PanelSection(line.id) {
-            Picker("Kind", selection: Binding(get: { line.kind }, set: { model.setLineKind(line.id, $0) })) {
-                Text("Solid").tag("solid")
-                Text("One-way").tag("oneway")
-                Text("Hazard").tag("hazard")
-                Text("No wall").tag("nowall")
+            // A pop-up, not segments: four of those are wider than the panel.
+            HStack {
+                Text("Kind").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 64, alignment: .leading)
+                Picker("Kind", selection: Binding(get: { line.kind }, set: { model.setLineKind(line.id, $0) })) {
+                    Text("Solid").tag("solid")
+                    Text("One-way").tag("oneway")
+                    Text("Hazard").tag("hazard")
+                    Text("No wall").tag("nowall")
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+                .fixedSize()
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             Text(kindNote).font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
             Toggle("Closed", isOn: Binding(get: { line.closed }, set: { model.setLineClosed(line.id, $0) }))
                 .toggleStyle(.checkbox).font(.aeSmall)
@@ -481,9 +488,9 @@ private struct GameDock: View {
             }
             IconButton("lightbulb", label: "Place a light (l)", isOn: model.tool == .light) { model.tool = .light }
             Divider().frame(height: 20).padding(.horizontal, 4)
-            IconButton("arrow.uturn.backward", label: "\(model.undoLabel ?? "Undo") (⌘Z)", action: model.undo)
+            IconButton("arrow.uturn.backward", label: "Undo \(model.undoLabel ?? "") (⌘Z)", action: model.undo)
                 .disabled(model.undoLabel == nil)
-            IconButton("arrow.uturn.forward", label: "\(model.redoLabel ?? "Redo") (⇧⌘Z)", action: model.redo)
+            IconButton("arrow.uturn.forward", label: "Redo \(model.redoLabel ?? "") (⇧⌘Z)", action: model.redo)
                 .disabled(model.redoLabel == nil)
         }
         .padding(.horizontal, 8)

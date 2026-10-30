@@ -39,7 +39,7 @@ struct GameTests {
         let target = "room:crossroads_01"
         #expect(doc.apply([.set(["entities", "#bench", "at"], [760, 1800])], to: target, label: "Move bench"))
         #expect(doc.room("crossroads_01")?.entity("bench")?.at == [760, 1800])
-        #expect(doc.undoLabel == "Undo Move bench")
+        #expect(doc.undoLabel == "Move bench")
         #expect(doc.unsaved == ["rooms/crossroads_01.room.json"])
         // Another room's edit, then ⌘Z twice: the newest first, wherever.
         let things = try #require(doc.room("crossroads_02")?.entities.count)
@@ -47,7 +47,7 @@ struct GameTests {
         #expect(doc.room("crossroads_02")?.entities.count == things - 1)
         doc.undo()
         #expect(doc.room("crossroads_02")?.entities.count == things)
-        #expect(doc.undoLabel == "Undo Move bench")
+        #expect(doc.undoLabel == "Move bench")
         doc.undo()
         #expect(doc.room("crossroads_01")?.entity("bench")?.at == [700, 1800])
         doc.redo()

@@ -38,9 +38,9 @@ public final class GameDocument {
     /// Why the last edit was refused, in the core's words.
     public private(set) var refusal: String?
     /// The documents edited, oldest first, with each edit's name: what ⌘Z
-    /// and ⇧⌘Z walk.
-    @ObservationIgnored private var done: [(target: String, label: String)] = []
-    @ObservationIgnored private var undone: [(target: String, label: String)] = []
+    /// and ⇧⌘Z walk. Observed, so the Edit menu's names keep up.
+    private var done: [(target: String, label: String)] = []
+    private var undone: [(target: String, label: String)] = []
 
     public init(url: URL) throws {
         self.url = url
@@ -72,8 +72,10 @@ public final class GameDocument {
         }
     }
 
-    public var undoLabel: String? { done.last.map { "Undo \($0.label)" } }
-    public var redoLabel: String? { undone.last.map { "Redo \($0.label)" } }
+    /// The next step back's name and the next step on's, as the Edit menu
+    /// puts them after "Undo" and "Redo".
+    public var undoLabel: String? { done.last?.label }
+    public var redoLabel: String? { undone.last?.label }
 
     public func undo() {
         guard let last = done.popLast() else { return }

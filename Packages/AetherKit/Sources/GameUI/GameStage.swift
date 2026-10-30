@@ -102,6 +102,9 @@ final class GameStageView: NSView {
     private var actors: [Int: CALayer] = [:]
     /// The halos of the room's lights.
     private let halos = CALayer()
+    /// In Play, the stage outside the game's view covered, as Proton
+    /// letterboxes it: the room past the view isn't the game's to show.
+    private let bars = CAShapeLayer()
     /// A door's fade, over everything.
     private let fade = CALayer()
     private var drawnRoom: GameRoom?
@@ -122,6 +125,10 @@ final class GameStageView: NSView {
         root.addSublayer(scene)
         draftLayer.fillColor = nil
         draftLayer.lineDashPattern = [12, 8]
+        bars.fillColor = root.backgroundColor
+        bars.fillRule = .evenOdd
+        bars.isHidden = true
+        root.addSublayer(bars)
         fade.backgroundColor = NSColor.black.cgColor
         fade.opacity = 0
         root.addSublayer(fade)
@@ -179,6 +186,7 @@ final class GameStageView: NSView {
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
         scene.sublayers?.forEach { $0.removeFromSuperlayer() }
+        bars.isHidden = editing
         planes = []
         actors = [:]
         lines = []
@@ -780,6 +788,11 @@ final class GameStageView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         position(center: camera, zoom: zoom, room: room)
+        let shown = CGSize(width: view.width * zoom, height: view.height * zoom)
+        let bare = CGMutablePath()
+        bare.addRect(bounds)
+        bare.addRect(CGRect(x: (bounds.width - shown.width) / 2, y: (bounds.height - shown.height) / 2, width: shown.width, height: shown.height))
+        bars.path = bare
         var was: [Int: GameDrawn] = [:]
         for d in before?.drawn ?? [] { was[d.who] = d }
         var seen = Set<Int>()

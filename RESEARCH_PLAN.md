@@ -1471,6 +1471,8 @@ Not yet:
   - Offscreen only: the request to take over the screen timed out again.
   - The picture showed a chosen one-way line with its handles, two lights with their reach and halos, a crawler placed, the gate, the door and the spawns, all over the fronds.
   - Dragging points, ⌥-click and double-click are covered by tests of the ops and of hit testing, not tried by hand.
+  - On screen afterwards, with the user present: a line drawn a point at a time and ended by double-click, a point dragged, ⌥-click and double-click on a point, a crawler placed from the list, a light placed with a slider and a drag, Play and Stop (4158 ticks; replayed, the same state). A throwaway game, deleted after.
+  - Three things were found and fixed there. The Edit menu read plain "Undo", as the document's history was outside observation; the names would also have read "Undo Undo", as the document put the word in itself. A chosen line's four kind segments were wider than the inspector and pushed it off the window; they are a Kind pop-up now. And Play letterboxes the game's 16:9 view as Proton does: before, the room showed past the view, with nothing above the sky.
 - **Tests:** 4 more in Swift.
   - Drawing a line and editing it by its points, kind, closing, moving, removing and undo.
   - Lights, spawns and things placed and moved, and placed things being run.
