@@ -21,7 +21,11 @@ public final class GameWorkspaceModel {
     public var selected: String?
     public var navigatorOpen = true
     public var inspectorOpen = true
-    public var notice: String?
+    public var notice: String? {
+        didSet { noticeIsGood = false }
+    }
+    /// Whether the notice says something went well.
+    public private(set) var noticeIsGood = false
     /// The name the home page's form makes a game with.
     public var newName = "Lumen"
     /// Play, while it runs.
@@ -145,6 +149,7 @@ public final class GameWorkspaceModel {
         do {
             let written = try document.save()
             notice = written.isEmpty ? nil : "Saved \(written.count == 1 ? written[0] : "\(written.count) files")."
+            noticeIsGood = !written.isEmpty
         } catch {
             notice = "Couldn’t save: \(GameDocument.describe(error))"
         }
@@ -181,6 +186,7 @@ public final class GameWorkspaceModel {
             notice = check.same
                 ? "Played \(check.ticks) ticks; replayed, it ends in the same state (\(String(check.hash, radix: 16)))."
                 : "Played \(check.ticks) ticks, but the replay ended elsewhere: the run isn’t deterministic."
+            noticeIsGood = check.same
         }
     }
 

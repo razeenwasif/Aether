@@ -18,7 +18,8 @@ public struct GameWorkspace: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
-                GameStage(model: model, revision: document.revision, roomID: model.roomID, selected: model.selected, playing: model.playing, fitRequest: model.fitRequest)
+                GameStage(model: model, revision: document.revision, roomID: model.roomID, selected: model.selected, playing: model.playing, fitRequest: model.fitRequest,
+                          insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0))
                 HStack(alignment: .top, spacing: 0) {
                     GameNavigator(model: model, document: document)
                         .frame(width: 248)
@@ -40,7 +41,7 @@ public struct GameWorkspace: View {
             VStack(spacing: 10) {
                 Spacer()
                 if let notice = model.notice {
-                    GameNotice(text: notice) { model.notice = nil }
+                    GameNotice(text: notice, good: model.noticeIsGood) { model.notice = nil }
                 }
                 if model.playing {
                     PlayHUD(model: model).padding(.bottom, 16)
@@ -351,11 +352,13 @@ private struct PlayHUD: View {
 
 private struct GameNotice: View {
     let text: String
+    /// Saying something went well, not warning.
+    let good: Bool
     let dismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color.amber)
+            Image(systemName: good ? "checkmark.circle.fill" : "exclamationmark.circle.fill").foregroundStyle(good ? Color.live : Color.amber)
             Text(text).font(.system(size: 12)).foregroundStyle(Color.inkHi).lineLimit(3)
             Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                 .buttonStyle(.plain)

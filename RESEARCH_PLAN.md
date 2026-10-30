@@ -1426,9 +1426,16 @@ Not yet:
     - Play: the rail's Play (⌘↩) runs the game from its start in the same stage. The camera follows the run's frame, what the run draws stands on the play plane eased between ticks, doors fade, and the HUD shows health. Esc stops and replays the run to check it ends in the same state.
   - The shell: the Game rail button, Save, undo, the panels, project switching and the unsaved prompt. `Games/` marks a project folder too.
 - **Checked:**
-  - In the app, the workspace opens from View ▸ Game.
-  - The rest wasn't seen on screen: screen capture failed in the background, and the request to take over the screen timed out.
-  - Instead the stage was rendered offscreen to pictures, editing and after 90 ticks of Play. The editing picture showed the sky, the fogged hills, the ground, the fronds in front, collision by kind, the door, the gate, the bench and both spawns. The Play picture showed the camera on the player as it walked along the ground.
+  - First offscreen: the stage rendered to pictures, editing and after 90 ticks of Play, while screen capture failed in the background.
+  - Then in the app with the user at the screen, on a throwaway game (deleted after):
+    - New game made Lumen and opened its first room.
+    - Play with real keys: right walked and the camera followed, Z jumped, the thorns sent the player back, the HUD showed five pips.
+    - Esc stopped, and the notice said 2,641 ticks replayed end in the same state.
+    - Dragging the bench moved it to x 1094 as one step, with an unsaved dot and Save. ⌘Z put it back, and the second room showed its crawler.
+  - Found and fixed then:
+    - A room opened unfitted, because the fit ran before the stage had a size; it now waits for one.
+    - The fit ignored the panels, leaving part of the room under them; it now fits between them.
+    - A success (a save, a replay that matched) showed the warning icon; it now shows a check.
 - **Tests:**
   - 4 in the bridge: the three replay checks and a new game edited, undone and played.
   - 6 in Swift: the template read whole; an edit as one step, undone across rooms, refused whole, saved and reopened; Play's fixed clock and its replay check; the keys; the parallax arithmetic; the workspace making, editing, playing and closing a game.

@@ -26,6 +26,9 @@ struct GameStage: NSViewRepresentable {
     let selected: String?
     let playing: Bool
     let fitRequest: Int
+    /// How much of the stage the panels cover, left and right: a room is
+    /// fitted into what's left.
+    let insets: (left: CGFloat, right: CGFloat)
 
     func makeNSView(context: Context) -> GameStageView {
         let view = GameStageView()
@@ -35,6 +38,7 @@ struct GameStage: NSViewRepresentable {
 
     func updateNSView(_ view: GameStageView, context: Context) {
         view.model = model
+        view.insets = insets
         view.update(revision: revision, roomID: roomID, selected: selected, playing: playing, fit: fitRequest)
     }
 }
@@ -47,6 +51,9 @@ final class GameStageView: NSView {
     private var center = CGPoint(x: 960, y: 540)
     private var zoom: CGFloat = 0.3
     private var shown: (revision: Int, room: String?, selected: String?, playing: Bool, fit: Int)?
+    var insets: (left: CGFloat, right: CGFloat) = (0, 0)
+    /// A fit asked for before the stage had a size: made once it has one.
+    private var fitPending = false
 
     private let root = CALayer()
     /// Everything in room pixels: scaled and moved as the camera says.
@@ -89,7 +96,7 @@ final class GameStageView: NSView {
     override func layout() {
         super.layout()
         fade.frame = bounds
-        if model?.playing == true { drawPlay(alpha: 1) } else { place() }
+        if model?.playing == true { drawPlay(alpha: 1) } else if fitPending { fitRoom() } else { place() }
     }
 
     func update(revision: Int, roomID: String?, selected: String?, playing: Bool, fit: Int) {
@@ -289,10 +296,15 @@ final class GameStageView: NSView {
         }
     }
 
+    /// The whole room, in the stage between the panels.
     private func fitRoom() {
-        guard let room = drawnRoom ?? model?.room, bounds.width > 0 else { return }
-        center = CGPoint(x: room.width / 2, y: room.height / 2)
-        zoom = max(0.02, min((bounds.width - 48) / room.width, (bounds.height - 48) / room.height))
+        guard let room = drawnRoom ?? model?.room else { return }
+        let free = bounds.width - insets.left - insets.right
+        guard free > 48, bounds.height > 48 else { return fitPending = true }
+        fitPending = false
+        zoom = max(0.02, min((free - 48) / room.width, (bounds.height - 48) / room.height))
+        // The room's middle at the middle of what the panels leave.
+        center = CGPoint(x: room.width / 2 - (insets.left - insets.right) / 2 / zoom, y: room.height / 2)
         place()
     }
 
