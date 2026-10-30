@@ -65,11 +65,14 @@ public struct GameSprite: Equatable, Sendable {
     /// `normal`, `add`, `multiply` or `screen`.
     public var blend = "normal"
     public var lit = false
+    /// A skeleton's part: triangles where the pose puts them, drawn from
+    /// `key` instead of the rectangle (which bounds them).
+    public var mesh: GameMesh?
 
     public static let glow = "#glow"
 
     public init(key: String, normal: String? = nil, rect: CGRect, uv: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1), rot: Double = 0, flip: Bool = false,
-                opacity: Double = 1, tint: SIMD4<Float> = .zero, blend: String = "normal", lit: Bool = false) {
+                opacity: Double = 1, tint: SIMD4<Float> = .zero, blend: String = "normal", lit: Bool = false, mesh: GameMesh? = nil) {
         self.key = key
         self.normal = normal
         self.rect = rect
@@ -80,6 +83,7 @@ public struct GameSprite: Equatable, Sendable {
         self.tint = tint
         self.blend = blend
         self.lit = lit
+        self.mesh = mesh
     }
 }
 
@@ -105,10 +109,11 @@ public struct GameLighting: Equatable, Sendable {
     }
 }
 
-/// Something standing on the play plane: an image or an animation's frame
-/// on its feet (`frame` nil for a still image), just hurt (`flash`, drawn
-/// white) or spared for now (`blink`, faint). A shot with no image is a glow
-/// `glow` across, its middle at `at`.
+/// Something standing on the play plane: an image, an animation's frame or
+/// a skeleton posed, on its feet (`frame` nil at rest), just hurt (`flash`,
+/// drawn white) or spared for now (`blink`, faint), squashed or stretched
+/// about its feet by `scale`. A shot with no image is a glow `glow` across,
+/// its middle at `at`.
 public struct GameStanding: Equatable, Sendable {
     public var key: String
     public var at: CGPoint
@@ -118,8 +123,12 @@ public struct GameStanding: Equatable, Sendable {
     public var flash = false
     public var blink = false
     public var glow: Double?
+    public var scale: CGSize?
+    /// The clips its prefab chose for each state, for the one it rests in.
+    public var clips: [String: String] = [:]
 
-    public init(key: String, at: CGPoint, pivot: CGPoint, flip: Bool = false, frame: Int? = nil, flash: Bool = false, blink: Bool = false, glow: Double? = nil) {
+    public init(key: String, at: CGPoint, pivot: CGPoint, flip: Bool = false, frame: Int? = nil, flash: Bool = false, blink: Bool = false, glow: Double? = nil,
+                scale: CGSize? = nil, clips: [String: String] = [:]) {
         self.key = key
         self.at = at
         self.pivot = pivot
@@ -128,20 +137,25 @@ public struct GameStanding: Equatable, Sendable {
         self.flash = flash
         self.blink = blink
         self.glow = glow
+        self.scale = scale
+        self.clips = clips
     }
 }
 
 /// What the layout asks of the game's art: an image's size, how an image is
-/// cut up, an animation. What isn't loaded yet is left out.
+/// cut up, an animation, a skeleton. What isn't loaded yet is left out.
 public struct GameArt {
     public var size: (String) -> CGSize?
     public var parts: (String) -> GameImageParts?
     public var anim: (String) -> GameAnim?
+    public var skel: (String) -> GameSkel?
 
-    public init(size: @escaping (String) -> CGSize?, parts: @escaping (String) -> GameImageParts? = { _ in nil }, anim: @escaping (String) -> GameAnim? = { _ in nil }) {
+    public init(size: @escaping (String) -> CGSize?, parts: @escaping (String) -> GameImageParts? = { _ in nil }, anim: @escaping (String) -> GameAnim? = { _ in nil },
+                skel: @escaping (String) -> GameSkel? = { _ in nil }) {
         self.size = size
         self.parts = parts
         self.anim = anim
+        self.skel = skel
     }
 }
 
@@ -154,10 +168,11 @@ extension GameScene {
     /// `air` is the moment the room's particles are shown at (none when
     /// nil), and `sparks` are bursts begun by what happened, flying on the
     /// play plane in front of what stands there. `snap` keeps pixel art on
-    /// whole pixels.
+    /// whole pixels. `tick` is the run's ticks a second, which a
+    /// skeleton's frames are counted in.
     public static func layout(_ room: GameRoom, focal: Double, view: CGSize, center: CGPoint, art: GameArt,
                               standing: [GameStanding] = [], time: Double? = nil, air: Double? = nil, sparks: [GameSpark] = [],
-                              snap: Bool = false) -> [GameSprite] {
+                              snap: Bool = false, tick: Int = 60) -> [GameSprite] {
         let corner = corner(room, view: view, center: center)
         var out: [GameSprite] = []
         for plane in room.planes {
@@ -179,11 +194,12 @@ extension GameScene {
             }
             if plane.gameplay {
                 for s in standing {
-                    guard var sprite = sprite(s, art: art) else { continue }
-                    if snap { sprite.rect.origin = CGPoint(x: sprite.rect.minX.rounded(), y: sprite.rect.minY.rounded()) }
-                    if s.flash { sprite.tint = SIMD4(1, 1, 1, 0.85) }
-                    if s.blink { sprite.opacity = 0.35 }
-                    out.append(sprite)
+                    for var sprite in sprites(s, art: art, tick: tick) {
+                        if snap, sprite.mesh == nil { sprite.rect.origin = CGPoint(x: sprite.rect.minX.rounded(), y: sprite.rect.minY.rounded()) }
+                        if s.flash { sprite.tint = SIMD4(1, 1, 1, 0.85) }
+                        if s.blink { sprite.opacity = 0.35 }
+                        out.append(sprite)
+                    }
                 }
                 for spark in sparks { out += GameFX.burst(spark, time: time ?? 0) }
             }
@@ -242,17 +258,50 @@ extension GameScene {
         return 1 - light.flicker * (0.5 + 0.5 * wave)
     }
 
+    /// What stands at `s.at`, as sprites: a skeleton posed (a sprite a part
+    /// it shows), or the one sprite `sprite` makes. None while what it's
+    /// drawn from isn't loaded.
+    public static func sprites(_ s: GameStanding, art: GameArt, tick: Int = 60) -> [GameSprite] {
+        guard s.glow == nil, s.key.hasSuffix(".skel.json") else { return sprite(s, art: art).map { [$0] } ?? [] }
+        guard let skel = art.skel(s.key), art.size(skel.atlas) != nil else { return [] }
+        let m = skel.moment(tick, s.frame, chosen: s.clips)
+        let meshes = skel.meshes(skel.pose(m.clip, m.frame), at: s.at, pivot: s.pivot, flip: s.flip, scale: s.scale ?? CGSize(width: 1, height: 1))
+        return meshes.map { mesh in
+            let xs = mesh.points.map { Double($0.x) }, ys = mesh.points.map { Double($0.y) }
+            let bounds = CGRect(x: xs.min() ?? 0, y: ys.min() ?? 0, width: (xs.max() ?? 0) - (xs.min() ?? 0), height: (ys.max() ?? 0) - (ys.min() ?? 0))
+            return GameSprite(key: skel.atlas, rect: bounds, flip: s.flip, mesh: mesh)
+        }
+    }
+
+    /// Where what stands at `s.at` is drawn, all of it: for finding it under
+    /// the pointer.
+    public static func bounds(_ s: GameStanding, art: GameArt, tick: Int = 60) -> CGRect? {
+        let all = sprites(s, art: art, tick: tick)
+        guard let first = all.first else { return nil }
+        return all.dropFirst().reduce(first.rect) { $0.union($1.rect) }
+    }
+
     /// What stands at `s.at` as a sprite: an animation's frame (the part of
-    /// its sheet it is), an image on its feet, or a shot's glow. None while
-    /// what it's drawn from isn't loaded.
+    /// its sheet it is), an image on its feet, or a shot's glow, squashed or
+    /// stretched about its feet. None while what it's drawn from isn't
+    /// loaded, and none for a skeleton (`sprites` poses one).
     public static func sprite(_ s: GameStanding, art: GameArt) -> GameSprite? {
+        guard var out = unsquashed(s, art: art) else { return nil }
+        if let k = s.scale, s.glow == nil, k != CGSize(width: 1, height: 1) {
+            out.rect = CGRect(x: s.at.x + (out.rect.minX - s.at.x) * k.width, y: s.at.y + (out.rect.minY - s.at.y) * k.height,
+                              width: out.rect.width * k.width, height: out.rect.height * k.height)
+        }
+        return out
+    }
+
+    private static func unsquashed(_ s: GameStanding, art: GameArt) -> GameSprite? {
         if let glow = s.glow {
             let r = glow / 2
             return GameSprite(key: GameSprite.glow, rect: CGRect(x: s.at.x - r, y: s.at.y - r, width: r * 2, height: r * 2), tint: SIMD4(1, 0.55, 0.3, 1), blend: "add")
         }
         if s.key.hasSuffix(".anim.json") {
             guard let anim = art.anim(s.key) else { return nil }
-            let index = s.frame ?? anim.restingFrame()
+            let index = s.frame ?? anim.restingFrame(s.clips)
             guard index >= 0, index < anim.frames.count else { return nil }
             let f = anim.frames[index]
             guard f.rect.count == 4, f.rect[2] > 0, f.rect[3] > 0, f.sheet < anim.sheets.count, let sheet = art.size(anim.sheets[f.sheet]) else { return nil }

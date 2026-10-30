@@ -1,5 +1,6 @@
 // The stage's shaders, in Metal: Proton's `game-render.js` programs ported.
-// A sprite is one instanced quad of sixteen floats; a lit one is the room's
+// A sprite is one instanced quad of sixteen floats, and a skeleton's part
+// triangles already where its pose puts them; a lit one is the room's
 // ambient plus each light's colour falling off to nothing at its reach,
 // shaded by the angle it meets the art's normal map at, or straight on
 // without one. Afterwards: the bright part blurred small and laid back
@@ -32,6 +33,15 @@ enum GameRenderSource {
         float opacity;
         float2 world;
         float4 turn;    // cos, sin, lit, 1 or -1 flipped
+        float4 color;   // multiplied in: a skeleton slot's colour
+    };
+
+    struct MeshPoint {
+        float2 world;
+        float2 uv;
+        float4 color;
+        float4 tint;
+        float4 misc;    // opacity, 0, lit, 0
     };
 
     vertex Out spriteVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
@@ -49,6 +59,21 @@ enum GameRenderSource {
         o.opacity = s.misc.x;
         o.world = world;
         o.turn = float4(c, n, s.misc.z, s.misc.w > 0.5 ? -1.0 : 1.0);
+        o.color = float4(1.0);
+        return o;
+    }
+
+    // A skeleton's part: each point already where the pose puts it.
+    vertex Out meshVertex(uint vid [[vertex_id]], const device MeshPoint *points [[buffer(0)]], constant Frame &frame [[buffer(1)]]) {
+        MeshPoint p = points[vid];
+        Out o;
+        o.position = frame.matrix * float4(p.world, 0.0, 1.0);
+        o.uv = p.uv;
+        o.tint = p.tint;
+        o.opacity = p.misc.x;
+        o.world = p.world;
+        o.turn = float4(1.0, 0.0, p.misc.z, 1.0);
+        o.color = p.color;
         return o;
     }
 
@@ -71,7 +96,7 @@ enum GameRenderSource {
     fragment float4 spriteFragment(Out in [[stage_in]], constant Frame &frame [[buffer(1)]], constant float &mapped [[buffer(2)]],
                                    texture2d<float> art [[texture(0)]], texture2d<float> normals [[texture(1)]], sampler s [[sampler(0)]]) {
         float4 texel = art.sample(s, in.uv);   // premultiplied
-        float3 rgb = texel.rgb;
+        float3 rgb = texel.rgb * in.color.rgb;
         if (in.turn.z > 0.5) {
             // The map's normal, flipped and turned with the art.
             float3 n = normals.sample(s, in.uv).xyz * 2.0 - 1.0;
@@ -80,7 +105,7 @@ enum GameRenderSource {
             rgb *= lit(frame, in.world, normalize(n), mapped > 0.5);
         }
         float3 hazed = mix(rgb, in.tint.rgb * texel.a, in.tint.a);
-        return float4(hazed, texel.a) * in.opacity;
+        return float4(hazed, texel.a) * in.color.a * in.opacity;
     }
 
     struct Full {

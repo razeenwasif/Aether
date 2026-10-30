@@ -11,6 +11,8 @@ public struct GameRunInfo: Decodable, Sendable {
     public var sprites: [String]
     public var start: Start
     public var health: Int
+    /// The names animations' frames say, by their place.
+    public var cues: [String]
 
     public struct Start: Decodable, Sendable {
         public var room: Int
@@ -90,6 +92,8 @@ public final class GamePlayer {
     public private(set) var before: GameFrame?
     /// What happened since it was last taken: `happened` bits.
     public private(set) var happened: UInt32 = 0
+    /// The cues frames said since they were last taken, by name.
+    public private(set) var said: [String] = []
     /// The input held, tick by tick, as runs of the same.
     public private(set) var recording: [(input: UInt32, ticks: UInt32)] = []
     private let world: String
@@ -112,7 +116,11 @@ public final class GamePlayer {
     public func step() {
         let input = held | struck
         struck = 0
-        happened |= run.step(input: input)
+        let bits = run.step(input: input)
+        happened |= bits
+        if bits & Self.cue != 0 {
+            said += run.cues().compactMap { Int($0) < info.cues.count ? info.cues[Int($0)] : nil }.filter { !$0.isEmpty }
+        }
         if let last = recording.last, last.input == input {
             recording[recording.count - 1].ticks += 1
         } else {
@@ -140,6 +148,15 @@ public final class GamePlayer {
         defer { happened = 0 }
         return happened
     }
+
+    /// The cues said since last asked, and forget them.
+    public func takeSaid() -> [String] {
+        defer { said = [] }
+        return said
+    }
+
+    /// The bit a step says when a frame with a cue was shown.
+    public static let cue: UInt32 = 64
 
     /// The input played, replayed on a fresh run of the same world from the
     /// same start: whether it ends in the same state, and that state's hash.

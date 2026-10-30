@@ -645,7 +645,7 @@ Proton saw the same four: `proton-game`'s `Niche` names Metroidvania, Roguelite,
 3. Low-poly: Model scenes as rooms, the orthographic 3D camera, walking on the scene. Serves Tunic; Monument Valley's paths after.
 4. When wanted, between these: roguelite runs, and Model → sprite sheets.
 
-Before isometric, by the user's choice (30 Oct): side-on finished first. ~~The importers, Send to Game and particles~~: done, see §10a. Sound and drawing skeletons are left of it.
+Before isometric, by the user's choice (30 Oct): side-on finished first. ~~The importers, Send to Game and particles~~ and ~~sound, skeletons drawn, squash, stretch and shake~~: done, see §10a. Side-on is finished; the isometric slice is next.
 
 **Still not goals:** a free or first-person 3D camera, streamed open worlds, networked play.
 
@@ -1560,7 +1560,30 @@ Not yet:
     - A key struck and let go between two ticks was lost. It now counts for the next tick (`GamePlayer.struck`).
     - A plane's undo steps are named by the plane's name, not its id.
   - 182 Swift tests pass.
-- **Not yet:** sound, drawing skeletons, squash, stretch and shake on landing and blows, Proton's import status (a source changed since it was imported) and its Assets tab.
+- **Not yet:** Proton's import status (a source changed since it was imported) and its Assets tab.
+
+**2026-10-31 · Game: sound, skeletons drawn, and feel — side-on finished.** Asked as "push and finish the side on work". There's no remote to push to (the repository has none), so that waits on the user.
+
+- **Skeletons:** Proton's `game-skel.js` ported (`GameSkel`): a `.skel.json` read with the empty lists proton-game leaves out put back. Each bone is posed at a moment of a clip, eased as DragonBones eases (step, linear, in, out, in-out, Bézier). A slot's part and colour follow their keys. A run's frame maps to a clip and its frame through `clipTicks` (proton-game's rounding). Boxes are shown with their parts.
+  - Drawing: Proton's renderer carried each point by its bones in a shader. Aether skins the points on the CPU, so each part is a mesh in world pixels, flipped and squashed about the feet. The renderer draws it with a second vertex function feeding the same fragment, which now multiplies a slot's colour in.
+  - The editor shows a skeleton in its resting clip. A prefab's look can be a skeleton (pivot at its origin), and its atlas isn't offered as a look.
+- **Feel:** `game.json`'s `feel` read (lookahead, shake, squash; the lookahead was already the sim's).
+  - `GameJolt` ports `game-play.js`: a jump stretches the player and a landing squashes it, about its feet, easing back over 10 ticks.
+  - A hurt or a death shakes the screen at full strength, a blow landed at 0.35 and a thing beaten at 0.6. A lesser blow while it shakes doesn't soften it. The jolt is Proton's noise of the tick, fading over 14 ticks.
+- **Sound:** `game-audio.js` ported on AVFoundation (`GameAudio`). `GameSound.files` maps a tick's bits and cues to files, each once; a death's sound replaces the hurt's. At most four of one sound play at once.
+  - An area's music loops and crossfades over 1.2 s as rooms change areas. `world.json` now comes to Swift (`GameWorldMap`).
+  - The run's cues come back by name (`GamePlayer.said`, from the core's `cues()` and the info's names).
+- **Inspector:** Feel (lead, shake, squash) and Sound (the two loudnesses, a sound for each event and each cue with ▶ Listen, the room's area's music, Silent in Play). Each change is one step on `game.json` or `world.json`.
+- **Checked:**
+  - Tests:
+    - Proton's skeleton cases with its hand-worked numbers (eases; a bone turned on its parent; points carried by one bone and by two; a slot's part and colour; ticks back to frames; boxes).
+    - The skeleton proton-game's importer writes, posed whole.
+    - A skinned part on the GPU: red and blue either side of the feet, swapped when flipped, squashed, turned on its bone, faint by its slot's colour.
+    - The jolt; a tick's sounds; an area's music; the template's sounds and feel; a jump's sound from a run.
+    - The setters as single undo steps.
+  - 192 Swift tests pass.
+  - On screen with the user, in a throwaway game: the player as a skeleton (Proton's fixture armature) walking, jumping and attacking; the squash and stretch; the shake; the sounds. "All works".
+- **Not yet:** the Run tab's boxes over a run (Aether has no Run tab), and inverse kinematics, deform and nested armatures, which Proton left out too.
 
 ## 10. Status and handoff
 
@@ -1613,4 +1636,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Game's art brought in (the importers and Send to Game) and particles~~: done, see §10a.
 
-**Next, proposed:** sound and drawing skeletons, to finish side-on; then Game's isometric slice (§9b, 2). Launch time (§7b) stays open.
+~~Sound, skeletons drawn, squash, stretch and shake: side-on finished~~: done, see §10a.
+
+**Next, proposed:** Game's isometric slice (§9b, 2). Launch time (§7b) stays open.

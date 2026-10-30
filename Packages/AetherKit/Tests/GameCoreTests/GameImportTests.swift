@@ -111,6 +111,31 @@ struct GameImportTests {
         model.stop()
     }
 
+    @Test func theGamesFeelLoudnessSoundsAndAnAreasMusicAreSetInOneStepEach() throws {
+        let model = try opened()
+        let files = model.audioFiles
+        #expect(files.contains("audio/jump.wav") && files.allSatisfy { $0.hasPrefix("audio/") }, "\(files)")
+        model.setFeel("shake", 0.8)
+        #expect(model.document?.view.game.feel.shake == 0.8 && model.undoLabel == "Set the shake")
+        model.setFeel("lookahead", 140)
+        #expect(model.document?.view.game.feel.lookahead == 140)
+        model.setVolume("music", 0.25)
+        #expect(model.document?.view.game.audio.music == 0.25)
+        model.setSound("jump", "audio/land.wav")
+        #expect(model.document?.view.game.audio.sounds["jump"] == "audio/land.wav" && model.undoLabel == "Set jump’s sound")
+        model.setSound("jump", nil)
+        #expect(model.document?.view.game.audio.sounds["jump"] == nil, "silenced")
+        model.setMusic("crossroads", "audio/rest.wav")
+        #expect(model.document?.view.world.music("crossroads_01") == "audio/rest.wav")
+        model.setMusic("crossroads", nil)
+        #expect(model.document?.view.world.music("crossroads_01") == nil)
+        model.undo()
+        #expect(model.document?.view.world.music("crossroads_01") == "audio/rest.wav", "one step back")
+        model.undo()
+        model.undo()
+        #expect(model.document?.view.game.audio.sounds["jump"] == "audio/land.wav")
+    }
+
     // MARK: Particles
 
     @Test func particlesAreProtonsArithmeticToTheBit() {

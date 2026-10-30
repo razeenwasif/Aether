@@ -73,6 +73,10 @@ public final class GameWorkspaceModel {
     /// Bumped to have the stage show the whole room.
     public private(set) var fitRequest = 0
     @ObservationIgnored public let images = GameImages()
+    /// Play's sounds and music.
+    @ObservationIgnored let audio = GameAudio()
+    /// Play heard or not; the run is the same either way.
+    public var silent = false { didSet { audio.muted = silent } }
 
     /// The tool keys, while the stage has the keys and no run is playing.
     func toolKey(_ character: String) -> Bool {
@@ -135,6 +139,8 @@ public final class GameWorkspaceModel {
             let doc = try GameDocument(url: url)
             document = doc
             images.root = url
+            audio.forget()
+            audio.root = url
             roomID = doc.view.rooms.first?.id
             fitRequest &+= 1
         } catch {
@@ -359,19 +365,26 @@ public final class GameWorkspaceModel {
             guard path.hasPrefix(root.path + "/") else { continue }
             let rel = String(path.dropFirst(root.path.count + 1))
             if rel.hasPrefix("art/source/") || rel.hasSuffix(".normal.png") { continue }
-            if rel.hasSuffix(".anim.json") || url.pathExtension.lowercased() == "png" { found.append(rel) }
+            if rel.hasSuffix(".anim.json") || rel.hasSuffix(".skel.json") || url.pathExtension.lowercased() == "png" { found.append(rel) }
         }
-        // A sheet an animation is cut from isn't a look of its own.
-        let sheets = Set(found.filter { $0.hasSuffix(".anim.json") }.flatMap { images.anim($0)?.sheets ?? [] })
+        // A sheet an animation is cut from isn't a look of its own, nor is a
+        // skeleton's atlas.
+        let sheets = Set(found.filter { $0.hasSuffix(".anim.json") }.flatMap { images.anim($0)?.sheets ?? [] }
+            + found.filter { $0.hasSuffix(".skel.json") }.compactMap { images.skel($0)?.atlas })
         return found.filter { !sheets.contains($0) }.sorted()
     }
 
     /// A prefab made to look like `look`, standing on the middle of its
-    /// bottom edge, as one step.
+    /// bottom edge (a skeleton on its origin, where its feet are drawn), as
+    /// one step.
     public func setLook(_ prefab: String, _ look: String) {
         let size: [Int]? = look.hasSuffix(".anim.json") ? images.anim(look)?.size : images.image(look).map { [$0.width, $0.height] }
         var ops: [GameOp] = [.set(["sprite"], look)]
-        if let size, size.count == 2, size[0] > 0 { ops.append(.set(["pivot"], [size[0] / 2, size[1]])) }
+        if look.hasSuffix(".skel.json") {
+            ops.append(.set(["pivot"], [0, 0]))
+        } else if let size, size.count == 2, size[0] > 0 {
+            ops.append(.set(["pivot"], [size[0] / 2, size[1]]))
+        }
         apply(ops, to: "prefab:\(prefab)", label: "Set \(prefab)’s look")
     }
 
@@ -397,6 +410,59 @@ public final class GameWorkspaceModel {
     public func setPlaneLit(_ plane: String, _ lit: Bool) {
         guard let target = roomTarget else { return }
         apply([.set(["planes", "#\(plane)", "lit"], lit)], to: target, label: lit ? "Light \(planeName(plane))" : "Unlight \(planeName(plane))")
+    }
+
+    // MARK: Feel and sound
+
+    /// How the game feels, set in `game.json` as one step: `lookahead`,
+    /// `shake` or `squash`.
+    public func setFeel(_ key: String, _ value: Double) {
+        let names = ["lookahead": "how far the camera leads", "shake": "the shake", "squash": "the squash"]
+        let v: Any = key == "lookahead" ? Int(value.rounded()) : (value * 100).rounded() / 100
+        apply([.set(["feel", key], v)], to: "game", label: "Set \(names[key] ?? key)")
+    }
+
+    /// How loud sounds (`effects`) or music (`music`) are, as one step.
+    public func setVolume(_ key: String, _ value: Double) {
+        apply([.set(["audio", key], (value * 100).rounded() / 100)], to: "game", label: key == "music" ? "Set the music’s loudness" : "Set the sounds’ loudness")
+    }
+
+    /// The file an event or cue plays, or none, as one step.
+    public func setSound(_ event: String, _ file: String?) {
+        guard let document else { return }
+        let had = document.view.game.audio.sounds[event] != nil
+        guard let file else {
+            if had { apply([.remove(["audio", "sounds", event])], to: "game", label: "Silence \(event)") }
+            return
+        }
+        apply([.set(["audio", "sounds", event], file)], to: "game", label: "Set \(event)’s sound")
+    }
+
+    /// The music an area plays, or none, as one step.
+    public func setMusic(_ area: String, _ file: String?) {
+        apply([.set(["areas", "#\(area)", "music"], file.map { $0 as Any } ?? NSNull())], to: "world", label: file == nil ? "Silence the area" : "Set the area’s music")
+    }
+
+    /// The game's sounds and music: every `.wav`, `.mp3` and `.m4a` in its folder.
+    public var audioFiles: [String] {
+        guard let root = document?.url.standardizedFileURL.resolvingSymlinksInPath(),
+              let walk = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
+        var found: [String] = []
+        for case let url as URL in walk where ["wav", "mp3", "m4a"].contains(url.pathExtension.lowercased()) {
+            let path = url.standardizedFileURL.resolvingSymlinksInPath().path
+            if path.hasPrefix(root.path + "/") { found.append(String(path.dropFirst(root.path.count + 1))) }
+        }
+        return found.sorted()
+    }
+
+    /// ▶ Listen: a sound played as Play would, at the game's loudness.
+    public func listen(_ file: String) {
+        guard let document else { return }
+        audio.root = document.url
+        audio.muted = false
+        audio.effects = Float(document.view.game.audio.effects)
+        audio.play(file)
+        audio.muted = silent
     }
 
     /// A plane's name as the painter gave it, for an undo step's label.
@@ -443,6 +509,14 @@ public final class GameWorkspaceModel {
             keys = GamePlayer.keys(document.view.game.input)
             health = (next.now.health, next.now.mostHealth)
             notice = nil
+            jolt = GameJolt()
+            let sound = document.view.game.audio
+            audio.effects = Float(sound.effects)
+            audio.musicVolume = Float(sound.music)
+            audio.muted = silent
+            audio.preload(Array(Set(sound.sounds.values)))
+            heardRoom = nil
+            heard(next)
         } catch {
             notice = "Couldn’t play \(document.name): \(GameDocument.describe(error))"
         }
@@ -457,6 +531,7 @@ public final class GameWorkspaceModel {
     public func stop() {
         guard let player else { return }
         self.player = nil
+        audio.stop()
         if let check = try? player.replayCheck(), check.ticks > 0 {
             notice = check.same
                 ? "Played \(check.ticks) ticks; replayed, it ends in the same state (\(String(check.hash, radix: 16)))."
@@ -485,6 +560,26 @@ public final class GameWorkspaceModel {
         let next = (player.now.health, player.now.mostHealth)
         if next != health { health = next }
     }
+
+    /// The player's squash and the screen's shake, from what the run did.
+    @ObservationIgnored var jolt = GameJolt()
+    /// The room whose area's music is playing.
+    @ObservationIgnored private var heardRoom: Int?
+
+    /// What the run did since last asked, felt and heard: the jolt it gives,
+    /// each event's and cue's sound once, and the area's music as rooms
+    /// change. What happened is left for the stage's bursts.
+    func heard(_ player: GamePlayer, happened: UInt32 = 0) {
+        guard let document else { return }
+        jolt.felt(happened, tick: player.now.tick)
+        let said = player.takeSaid()
+        for file in GameSound.files(happened, cues: said, sounds: document.view.game.audio.sounds) { audio.play(file) }
+        let room = player.now.room
+        if room != heardRoom, room < player.info.rooms.count {
+            heardRoom = room
+            audio.music(document.view.world.music(player.info.rooms[room]))
+        }
+    }
 }
 
 /// A game's images, read once each from its folder.
@@ -495,6 +590,7 @@ public final class GameImages {
     private var missing: Set<String> = []
 
     private var anims: [String: GameAnim] = [:]
+    private var skels: [String: GameSkel] = [:]
     private var crops: [String: CGImage] = [:]
     private var cut: [String: GameImageParts] = [:]
 
@@ -503,6 +599,7 @@ public final class GameImages {
         cache = [:]
         missing = []
         anims = [:]
+        skels = [:]
         crops = [:]
         cut = [:]
     }
@@ -519,11 +616,25 @@ public final class GameImages {
         return parts
     }
 
-    /// What the layout asks of the art: sizes, cut-up images, animations.
+    /// What the layout asks of the art: sizes, cut-up images, animations,
+    /// skeletons.
     public var art: GameArt {
         GameArt(size: { self.image($0).map { CGSize(width: $0.width, height: $0.height) } },
                 parts: { self.parts($0) },
-                anim: { self.anim($0) })
+                anim: { self.anim($0) },
+                skel: { self.skel($0) })
+    }
+
+    /// A skeleton, read once.
+    public func skel(_ rel: String) -> GameSkel? {
+        if let hit = skels[rel] { return hit }
+        guard !missing.contains(rel), let root,
+              let data = try? Data(contentsOf: root.appending(path: rel)), let skel = try? JSONDecoder().decode(GameSkel.self, from: data) else {
+            missing.insert(rel)
+            return nil
+        }
+        skels[rel] = skel
+        return skel
     }
 
     /// An animation, read once.

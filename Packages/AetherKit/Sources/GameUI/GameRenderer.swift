@@ -22,6 +22,7 @@ final class GameRenderer {
     let device: MTLDevice
     private let queue: MTLCommandQueue
     private var sprites: [String: MTLRenderPipelineState] = [:]
+    private var meshes: [String: MTLRenderPipelineState] = [:]
     private let bright: MTLRenderPipelineState
     private let blur: MTLRenderPipelineState
     private let composite: MTLRenderPipelineState
@@ -67,8 +68,10 @@ final class GameRenderer {
             return try? device.makeRenderPipelineState(descriptor: d)
         }
         for blend in ["normal", "add", "multiply", "screen"] {
-            guard let made = pipeline("spriteVertex", "spriteFragment", Self.pictureFormat, blend: blend) else { return nil }
+            guard let made = pipeline("spriteVertex", "spriteFragment", Self.pictureFormat, blend: blend),
+                  let mesh = pipeline("meshVertex", "spriteFragment", Self.pictureFormat, blend: blend) else { return nil }
             sprites[blend] = made
+            meshes[blend] = mesh
         }
         guard let bright = pipeline("fullVertex", "brightFragment", Self.pictureFormat),
               let blur = pipeline("fullVertex", "blurFragment", Self.pictureFormat),
@@ -178,6 +181,14 @@ final class GameRenderer {
         var misc: SIMD4<Float>
     }
 
+    private struct MeshPoint {
+        var world: SIMD2<Float>
+        var uv: SIMD2<Float>
+        var color: SIMD4<Float>
+        var tint: SIMD4<Float>
+        var misc: SIMD4<Float>
+    }
+
     private struct Frame {
         var matrix: simd_float4x4
         var ambient: SIMD4<Float>
@@ -220,6 +231,20 @@ final class GameRenderer {
                             misc: SIMD4(Float(s.opacity), Float(s.rot * .pi / 180), s.lit ? 1 : 0, s.flip ? 1 : 0))
         }
         guard let vertices = device.makeBuffer(bytes: instances, length: MemoryLayout<Instance>.stride * instances.count, options: .storageModeShared) else { return }
+        // Skeletons' parts, their triangles laid out point by point, each
+        // part's run of them by where it starts.
+        var points: [MeshPoint] = []
+        var runs: [Int: Range<Int>] = [:]
+        for (i, s) in job.sprites.enumerated() {
+            guard let mesh = s.mesh else { continue }
+            let from = points.count
+            let misc = SIMD4<Float>(Float(s.opacity), 0, s.lit ? 1 : 0, 0)
+            for index in mesh.indices where Int(index) < mesh.points.count && Int(index) < mesh.uv.count {
+                points.append(MeshPoint(world: mesh.points[Int(index)], uv: mesh.uv[Int(index)], color: mesh.color, tint: s.tint, misc: misc))
+            }
+            runs[i] = from..<points.count
+        }
+        let meshBuffer = points.isEmpty ? nil : device.makeBuffer(bytes: points, length: MemoryLayout<MeshPoint>.stride * points.count, options: .storageModeShared)
         var f = frame(job, size: CGSize(width: picture.width, height: picture.height))
         encoder.setVertexBuffer(vertices, offset: 0, index: 0)
         encoder.setVertexBytes(&f, length: MemoryLayout<Frame>.stride, index: 1)
@@ -231,8 +256,24 @@ final class GameRenderer {
         let all = job.sprites
         while start < all.count {
             let first = all[start]
+            if first.mesh != nil {
+                // A skeleton's part, alone.
+                if let run = runs[start], !run.isEmpty, let meshBuffer, let pipeline = meshes[first.blend] ?? meshes["normal"],
+                   let art = texture(first.key, images: images, mipmapped: !job.pixelArt) {
+                    var mapped: Float = 0
+                    encoder.setRenderPipelineState(pipeline)
+                    encoder.setVertexBuffer(meshBuffer, offset: 0, index: 0)
+                    encoder.setFragmentTexture(art, index: 0)
+                    encoder.setFragmentTexture(flat, index: 1)
+                    encoder.setFragmentBytes(&mapped, length: 4, index: 2)
+                    encoder.drawPrimitives(type: .triangle, vertexStart: run.lowerBound, vertexCount: run.count)
+                    encoder.setVertexBuffer(vertices, offset: 0, index: 0)
+                }
+                start += 1
+                continue
+            }
             var end = start + 1
-            while end < all.count, all[end].key == first.key, all[end].blend == first.blend, all[end].normal == first.normal { end += 1 }
+            while end < all.count, all[end].mesh == nil, all[end].key == first.key, all[end].blend == first.blend, all[end].normal == first.normal { end += 1 }
             let art = first.key == GameSprite.glow ? glow : texture(first.key, images: images, mipmapped: !job.pixelArt)
             if let art, let pipeline = sprites[first.blend] ?? sprites["normal"] {
                 let normal = first.normal.flatMap { texture($0, images: images, mipmapped: !job.pixelArt) }

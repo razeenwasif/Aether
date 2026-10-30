@@ -319,7 +319,7 @@ private struct GameInspector: View {
                             Toggle("Normal maps for lights", isOn: $model.importNormals).toggleStyle(.checkbox).font(.aeSmall)
                         }
                         PanelSection("Looks") {
-                            Text("What each prefab is drawn as: a picture or an animation in the game's art.")
+                            Text("What each prefab is drawn as: a picture, an animation or a skeleton in the game's art.")
                                 .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                             let looks = model.looks
                             ForEach(document.view.prefabs) { prefab in
@@ -334,6 +334,7 @@ private struct GameInspector: View {
                                 }
                             }
                         }
+                        FeelAndSound(model: model, view: document.view, room: room)
                     }
                 }
             }
@@ -449,7 +450,7 @@ private struct LightInspector: View {
                     .labelsHidden()
                 Text(light.color).font(.aeMono).foregroundStyle(Color.ink3)
             }
-            Text("Lights shade lit planes in Play once the lit renderer comes; their halos show now.").font(.aeSmall).foregroundStyle(Color.ink3)
+            Text("It lights the lit planes, through their normal maps where they have them; ⇧P shows the finish here too.").font(.aeSmall).foregroundStyle(Color.ink3)
                 .fixedSize(horizontal: false, vertical: true)
             HStack { Spacer(); Button("Remove", role: .destructive, action: model.removeSelected).controlSize(.small) }
         }
@@ -471,6 +472,67 @@ private struct LightInspector: View {
 }
 
 /// A slider that makes its step once, when let go.
+/// The whole game's feel and sound, under the room: how far the camera
+/// leads, how hard blows shake and bodies squash, how loud sounds and music
+/// are, the sound each event plays (▶ to listen), and the room's area's music.
+private struct FeelAndSound: View {
+    let model: GameWorkspaceModel
+    let view: GameProjectView
+    let room: GameRoom
+
+    var body: some View {
+        let feel = view.game.feel, audio = view.game.audio
+        let files = model.audioFiles
+        PanelSection("Feel") {
+            Text("The whole game's: the camera leading the player the way they face, the screen shaking at a blow, a body stretching as it jumps and squashing as it lands.")
+                .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Text("Lead").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 64, alignment: .leading)
+                NumberField(value: feel.lookahead) { model.setFeel("lookahead", Double(max(0, $0))) }
+                Text("px").font(.aeSmall).foregroundStyle(Color.ink3)
+            }
+            StepSlider(title: "Shake", value: feel.shake, range: 0...1) { model.setFeel("shake", $0) }
+            StepSlider(title: "Squash", value: feel.squash, range: 0...1) { model.setFeel("squash", $0) }
+        }
+        PanelSection("Sound") {
+            StepSlider(title: "Sounds", value: audio.effects, range: 0...1) { model.setVolume("effects", $0) }
+            StepSlider(title: "Music", value: audio.music, range: 0...1) { model.setVolume("music", $0) }
+            Toggle("Silent in Play", isOn: Binding(get: { model.silent }, set: { model.silent = $0 })).toggleStyle(.checkbox).font(.aeSmall)
+            ForEach(GameSound.described, id: \.name) { event in
+                soundRow(event.name, help: event.what, file: audio.sounds[event.name], files: files)
+            }
+            // Cues animations say that have sounds, too.
+            ForEach(audio.sounds.keys.filter { key in !GameSound.described.contains { $0.name == key } }.sorted(), id: \.self) { cue in
+                soundRow(cue, help: "a cue an animation says", file: audio.sounds[cue], files: files)
+            }
+            if let area = view.world.area(of: room.id) {
+                HStack(spacing: 6) {
+                    Text("Music").font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 64, alignment: .leading)
+                    Picker("Music", selection: Binding(get: { area.music ?? "" }, set: { model.setMusic(area.id, $0.isEmpty ? nil : $0) })) {
+                        Text("None").tag("")
+                        ForEach(Array(Set(files + [area.music ?? ""])).filter { !$0.isEmpty }.sorted(), id: \.self) { Text(verbatim: $0).tag($0) }
+                    }
+                    .labelsHidden().pickerStyle(.menu).controlSize(.small)
+                    .help("What \(area.name.isEmpty ? area.id : area.name) plays, looping; it crossfades as the player goes from one area to another")
+                }
+            }
+        }
+    }
+
+    private func soundRow(_ name: String, help: String, file: String?, files: [String]) -> some View {
+        HStack(spacing: 6) {
+            Text(name.capitalized).font(.aeSmall).foregroundStyle(Color.ink).frame(width: 64, alignment: .leading).help(help.prefix(1).uppercased() + help.dropFirst())
+            Picker(name, selection: Binding(get: { file ?? "" }, set: { model.setSound(name, $0.isEmpty ? nil : $0) })) {
+                Text("None").tag("")
+                ForEach(Array(Set(files + [file ?? ""])).filter { !$0.isEmpty }.sorted(), id: \.self) { Text(verbatim: $0.replacingOccurrences(of: "audio/", with: "")).tag($0) }
+            }
+            .labelsHidden().pickerStyle(.menu).controlSize(.small)
+            Button { if let file { model.listen(file) } } label: { Image(systemName: "play.fill") }
+                .buttonStyle(.borderless).disabled(file == nil).help("Listen")
+        }
+    }
+}
+
 private struct StepSlider: View {
     let title: String
     let value: Double

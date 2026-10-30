@@ -237,13 +237,14 @@ final class GameStageView: NSView {
     // MARK: Drawing the room
 
     /// The things standing in the room as the editor shows them: each
-    /// prefab's image, or its animation's resting frame, on its feet.
+    /// prefab's image, its animation's resting frame or its skeleton at rest,
+    /// on its feet.
     private func resting(_ room: GameRoom) -> [GameStanding] {
         guard let doc = model?.document else { return [] }
         return room.entities.compactMap { entity in
             guard let at = entity.at, at.count == 2, let prefab = doc.view.prefab(entity.prefab), !prefab.sprite.isEmpty else { return nil }
             let frame = prefab.animated ? model?.images.anim(prefab.sprite)?.restingFrame(prefab.clips) : nil
-            return GameStanding(key: prefab.sprite, at: CGPoint(x: at[0], y: at[1]), pivot: Self.point(prefab.pivot), frame: frame)
+            return GameStanding(key: prefab.sprite, at: CGPoint(x: at[0], y: at[1]), pivot: Self.point(prefab.pivot), frame: frame, clips: prefab.clips)
         }
     }
 
@@ -251,8 +252,8 @@ final class GameStageView: NSView {
     private func restingFrame(_ entity: GameEntity) -> CGRect? {
         guard let at = entity.at, at.count == 2, let prefab = model?.document?.view.prefab(entity.prefab), let images = model?.images else { return nil }
         let frame = prefab.animated ? images.anim(prefab.sprite)?.restingFrame(prefab.clips) : nil
-        let standing = GameStanding(key: prefab.sprite, at: CGPoint(x: at[0], y: at[1]), pivot: Self.point(prefab.pivot), frame: frame)
-        return GameScene.sprite(standing, art: images.art)?.rect
+        let standing = GameStanding(key: prefab.sprite, at: CGPoint(x: at[0], y: at[1]), pivot: Self.point(prefab.pivot), frame: frame, clips: prefab.clips)
+        return GameScene.bounds(standing, art: images.art)
     }
 
     /// The room drawn for the editor's camera: the planes as the game camera
@@ -770,6 +771,7 @@ final class GameStageView: NSView {
         if happened != 0, player.now.room == before.room {
             sparks += GameFX.felt(happened, now: player.now, before: player.before, tick: player.info.tick, tall: gameView.height)
         }
+        model.heard(player, happened: happened)
         sparks = GameFX.living(sparks, time: Double(player.now.tick) / Double(max(1, player.info.tick)))
         model.ticked()
         drawPlay(alpha: alpha)
@@ -821,6 +823,8 @@ final class GameStageView: NSView {
         var was: [Int: GameDrawn] = [:]
         for d in before?.drawn ?? [] { was[d.who] = d }
         let art = model.images.art
+        let tick = Double(now.tick) + alpha
+        let feel = model.document?.view.game.feel ?? GameFeel()
         let standing = now.drawn.map { d -> GameStanding in
             let at = was[d.who].map { ease($0.at, d.at) } ?? d.at
             guard d.sprite >= 0, d.sprite < player.info.sprites.count else {
@@ -831,17 +835,24 @@ final class GameStageView: NSView {
             var pivot = d.pivot
             // A shot is drawn about its middle.
             if d.who >= 1 << 20, let size = art.size(key) { pivot = CGPoint(x: size.width / 2, y: size.height / 2) }
-            return GameStanding(key: key, at: at, pivot: pivot, flip: d.flip, frame: key.hasSuffix(".anim.json") && d.frame >= 0 ? d.frame : nil,
-                                flash: d.flash, blink: d.blink)
+            let moves = key.hasSuffix(".anim.json") || key.hasSuffix(".skel.json")
+            // The player stretched into a jump and squashed by a landing.
+            let squash = d.who == 0 ? model.jolt.scale(at: tick, feel: feel) : nil
+            return GameStanding(key: key, at: at, pivot: pivot, flip: d.flip, frame: moves && d.frame >= 0 ? d.frame : nil,
+                                flash: d.flash, blink: d.blink, scale: squash)
         }
-        let camera = before.map { ease($0.camera, now.camera) } ?? now.camera
+        var camera = before.map { ease($0.camera, now.camera) } ?? now.camera
+        // A blow's jolt.
+        let jolt = model.jolt.offset(at: tick, feel: feel)
+        camera.x += jolt.dx
+        camera.y += jolt.dy
         let time = (Double(now.tick) + alpha) / Double(max(1, player.info.tick))
         // Pixel art at the game's own size, the camera on its grid.
         let picture = pixelArt ? view : box.pixels
         var eye = GameCamera(center: camera, zoom: picture.width / view.width)
         if pixelArt { eye = eye.snapped(target: picture) }
         var job = GameRenderer.Job(sprites: GameScene.layout(room, focal: focal, view: view, center: eye.center, art: art, standing: standing, time: time,
-                                                             air: time, sparks: sparks, snap: pixelArt),
+                                                             air: time, sparks: sparks, snap: pixelArt, tick: player.info.tick),
                                    camera: eye, post: model.document?.view.game.post, pixelArt: pixelArt, pictureSize: pixelArt ? view : nil)
         job.lighting = GameScene.lighting(room, focal: focal, view: view, center: eye.center, time: time)
         guard let drawable = metal.nextDrawable() else { return }

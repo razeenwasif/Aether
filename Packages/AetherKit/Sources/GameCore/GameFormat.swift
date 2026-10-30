@@ -6,7 +6,7 @@ import Foundation
 // out what is empty, so every field here reads as its default when absent,
 // as the Rust types do.
 
-private extension KeyedDecodingContainer {
+extension KeyedDecodingContainer {
     func value<T: Decodable>(_ key: Key, _ fallback: T) throws -> T {
         try decodeIfPresent(T.self, forKey: key) ?? fallback
     }
@@ -22,9 +22,12 @@ public struct GameFile: Decodable, Equatable, Sendable {
     public var abilities: [String]
     /// What's done to the whole picture after it's drawn.
     public var post: GamePost
+    /// How it feels to hold, and what it sounds like.
+    public var feel: GameFeel
+    public var audio: GameAudioSettings
 
     private struct Ability: Decodable { var id: String }
-    enum CodingKeys: String, CodingKey { case name, view, input, abilities, post }
+    enum CodingKeys: String, CodingKey { case name, view, input, abilities, post, feel, audio }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.value(.name, "")
@@ -32,6 +35,8 @@ public struct GameFile: Decodable, Equatable, Sendable {
         input = try c.value(.input, [:])
         abilities = try c.value(.abilities, [Ability]()).map(\.id)
         post = try c.value(.post, GamePost())
+        feel = try c.value(.feel, GameFeel())
+        audio = try c.value(.audio, GameAudioSettings())
     }
 }
 
@@ -439,6 +444,8 @@ public struct GameProjectView: Decodable, Equatable, Sendable {
     public var rooms: [Row]
     public var unsaved: [String]
     public var problems: [String]
+    /// The map, as far as sound goes: each area's music.
+    public var world: GameWorldMap
 
     public struct Row: Decodable, Equatable, Sendable, Identifiable {
         public var id: String
