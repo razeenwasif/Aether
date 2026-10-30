@@ -85,6 +85,7 @@ struct GameImportTests {
         let hills = try #require(model.room?.planes.first { $0.id == "hills_far" })
         model.setPlaneDepth(hills.id, 2400)
         #expect(model.room?.planes.first { $0.id == hills.id }?.depth == 2400)
+        #expect(model.undoLabel == "Set \(hills.name)’s depth", "by the name the painter sees")
         model.setPlaneLit(hills.id, true)
         #expect(model.room?.planes.first { $0.id == hills.id }?.lit == true)
         let air = try #require(model.room).particles
@@ -93,6 +94,21 @@ struct GameImportTests {
         #expect(model.room?.particles.map(\.preset) == ["motes", "rain"])
         model.undo()
         #expect(model.room?.particles.count == 1)
+    }
+
+    @Test func aTapQuickerThanATickStillJumps() throws {
+        let model = try opened()
+        model.play()
+        let player = try #require(model.player)
+        for _ in 0..<60 { player.step() }
+        let ground = player.now.player.y
+        // Down and up again before the next tick, as a quick thumb does.
+        model.key("KeyZ", down: true)
+        model.key("KeyZ", down: false)
+        #expect(player.held == 0)
+        for _ in 0..<8 { player.step() }
+        #expect(player.now.player.y < ground - 4, "it left the ground: \(ground) → \(player.now.player.y)")
+        model.stop()
     }
 
     // MARK: Particles

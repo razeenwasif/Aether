@@ -378,7 +378,7 @@ public final class GameWorkspaceModel {
     /// A plane's depth behind the play plane, set from the inspector.
     public func setPlaneDepth(_ plane: String, _ depth: Double) {
         guard let target = roomTarget else { return }
-        apply([.set(["planes", "#\(plane)", "depth"], depth)], to: target, label: "Set \(plane)’s depth")
+        apply([.set(["planes", "#\(plane)", "depth"], depth)], to: target, label: "Set \(planeName(plane))’s depth")
     }
 
     /// What hangs in the room's air: `preset` on `plane`, added or taken out.
@@ -396,7 +396,13 @@ public final class GameWorkspaceModel {
     /// Whether lights fall on a plane.
     public func setPlaneLit(_ plane: String, _ lit: Bool) {
         guard let target = roomTarget else { return }
-        apply([.set(["planes", "#\(plane)", "lit"], lit)], to: target, label: lit ? "Light \(plane)" : "Unlight \(plane)")
+        apply([.set(["planes", "#\(plane)", "lit"], lit)], to: target, label: lit ? "Light \(planeName(plane))" : "Unlight \(planeName(plane))")
+    }
+
+    /// A plane's name as the painter gave it, for an undo step's label.
+    private func planeName(_ plane: String) -> String {
+        let name = room?.planes.first { $0.id == plane }?.name ?? ""
+        return name.isEmpty ? plane : name
     }
 
     @discardableResult
@@ -465,7 +471,12 @@ public final class GameWorkspaceModel {
     /// A key went down or up, by Proton's name for it.
     func key(_ name: String, down: Bool) {
         guard let player, let bit = keys[name] else { return }
-        if down { player.held |= bit } else { player.held &= ~bit }
+        if down {
+            player.held |= bit
+            player.struck |= bit
+        } else {
+            player.held &= ~bit
+        }
     }
 
     /// The HUD's numbers, after the stage stepped the run.

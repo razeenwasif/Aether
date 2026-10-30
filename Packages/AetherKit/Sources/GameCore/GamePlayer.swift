@@ -82,6 +82,9 @@ public final class GamePlayer {
     public let info: GameRunInfo
     /// The input held now: a bit an action.
     public var held: UInt32 = 0
+    /// Keys struck since the last tick, so a tap quicker than a tick still
+    /// reaches the game: they count for the next tick, then go.
+    public var struck: UInt32 = 0
     /// The newest frame, and the one before it, to ease between.
     public private(set) var now: GameFrame
     public private(set) var before: GameFrame?
@@ -107,11 +110,13 @@ public final class GamePlayer {
 
     /// One tick with the input held.
     public func step() {
-        happened |= run.step(input: held)
-        if let last = recording.last, last.input == held {
+        let input = held | struck
+        struck = 0
+        happened |= run.step(input: input)
+        if let last = recording.last, last.input == input {
             recording[recording.count - 1].ticks += 1
         } else {
-            recording.append((held, 1))
+            recording.append((input, 1))
         }
         before = now
         now = GameFrame(run.frame())

@@ -1553,6 +1553,13 @@ Not yet:
   - The bridge's tests: a PSD made into planes by depth, with normal maps, then imported again replacing them; a sprite sheet made into an animation; a file of another kind refused plainly.
   - The Swift tests: a PSD from a canvas, outside the game, made into a plane in one undo step and drawn from its pieces with their normal map; a canvas's sheet made into an animation and set as the player's look; a plane's depth, lighting and the room's air set and undone; particles to the bit; air and bursts in the layout.
   - 181 Swift and 34 bridge tests pass.
+  - On screen with the user (31 Oct), in a throwaway game:
+    - Import Art… made a PNG one plane, as one undo step; its depth and light were set; rain was added. Play showed the motes, the rain, and dust at the feet on landing.
+    - Send to Game: a one-frame canvas came over as a plane; with two frames, as an animation the player then wore in Play.
+  - Two fixes from that check:
+    - A key struck and let go between two ticks was lost. It now counts for the next tick (`GamePlayer.struck`).
+    - A plane's undo steps are named by the plane's name, not its id.
+  - 182 Swift tests pass.
 - **Not yet:** sound, drawing skeletons, squash, stretch and shake on landing and blows, Proton's import status (a source changed since it was imported) and its Assets tab.
 
 ## 10. Status and handoff
