@@ -1,0 +1,10 @@
+[package]
+name = "proton-design"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license = "MIT"
+description = "Design mode's document: the tokens in a theme.css, and how to change one without rewriting the file."
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }

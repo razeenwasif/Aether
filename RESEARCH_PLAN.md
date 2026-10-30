@@ -1,6 +1,6 @@
 # RESEARCH_PLAN.md — Aether: a native creative studio for macOS
 
-Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **Design approved and Q1–Q5 settled 27 Oct; Diffuse and Canvas are built, and M1's project graph links them (see §10a); the other four are designed and waiting**
+Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **Design approved and Q1–Q5 settled 27 Oct; Diffuse and Canvas are built, and M1's project graph links them; Model is built in part, Game for side-on games, and Design's first slice is in (see §10a); Video is designed and waiting**
 
 Design canvas (12 boards, click-through prototype): https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv
 Status & Plan (run order with live statuses, renders of every board): https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7
@@ -1585,10 +1585,35 @@ Not yet:
   - On screen with the user, in a throwaway game: the player as a skeleton (Proton's fixture armature) walking, jumping and attacking; the squash and stretch; the shake; the sounds. "All works".
 - **Not yet:** the Run tab's boxes over a run (Aether has no Run tab), and inverse kinematics, deform and nested armatures, which Proton left out too.
 
+**2026-10-31 · Design, first slice: pages of layers, Proton's tokens, drawn natively.** Asked by the session that runs Aether's build: set up Design mode by porting Proton's. The user chose the native tree over HTML in a web view.
+
+- **What Proton's Design was** (`9111812^`): two files, a component's `.html` and a `theme.css` of custom properties, drawn by an iframe.
+  - `proton-design` scanned the tokens with their scopes (light and dark are two tokens) and spliced one value back, moving nothing else. It read the markup into a layer tree with byte spans, and set a layer's text or attributes the same way.
+  - `proton-core::design` found the files and wrote each edit to disk at once. It had no undo, no breakpoints and no Pagepilot.
+- **The decision:** Aether has no web view (§0), and only a browser draws HTML faithfully. So a page is Aether's own document, laid out natively, with HTML and CSS written from it. The tokens stay Proton's: `theme.css` in Proton's format, spliced by `proton-design`, so either app's palette file is the other's.
+- **Format** (`cores/aether-design`): a design's folder.
+  - `design.json` holds the name and the pages in order.
+  - `theme.css` holds the tokens.
+  - `pages/<id>.page.json` holds the breakpoints, the root and a flat list of layers. A layer is a frame, text or a shape, with a frame's children by id, `w` and `h` (`hug`, `fill` or points), `minW`, a frame's layout (direction, gap, padding, align, justify, wrap) and a style (fill, stroke, radius, colour, font, text align, opacity). A value is a token's name or a value as written.
+  - It's written by Game's ordered writer, so an edit is one line.
+  - A page is checked as a whole: one root frame, each layer in one frame, none in no frame, sizes and words valid, and no CSS value that could end a rule. Ids are plain names, as they're file names and CSS classes.
+- **Core:** `Design` holds `Doc<DesignFile>` and `Doc<Page>` (proton-game's ops, whole or not at all, with undo) and `ThemeDoc` (Proton's `Theme` with an undo of the text each step left). A token's value can't hold `;`, a brace or a comment. The design's page list can be reordered but not grown or shrunk by an edit. Pages are written as HTML and CSS (`html.rs`): an element a layer, its id its class, flexbox rules that say what the inspector says, and tokens as `var()`s. `proton-design` came over whole, minus `ts-rs`, with its test's fixture (Proton's window at that commit). The bridge is `DesignEditor` in `aether-diffuse`.
+- **Swift:** `DesignCore` and `DesignUI`.
+  - `DesignDocument` keeps one step list across the pages and the theme, so ⌘Z is the newest wherever it was made. A colour well's drag coalesces into one step.
+  - `DesignResolver` follows tokens and `var()`s and reads colours, lengths and CSS's `font` shorthand.
+  - `DesignLayout` is flexbox as the HTML writes it: fill along a row grows from its basis, a row wraps, fill down a column stretches, and text is measured and drawn by the same AppKit string drawing.
+  - The workspace: the home page; the artboards side by side on an `NSView` that pans and zooms; Layers and Tokens; the inspector; the code drawer (⌘/); Save; Preview to the browser.
+  - The shell: Design on the rail with Preview as its verb, ⌘S, undo, a Design menu, `Designs/` in a project, and unsaved designs asked about when switching projects.
+- **Checked:**
+  - Rust: 12 new tests in `aether-design` (the starter reads back to its bytes; an edit is one line; a lost layer, a layer in two frames, a bad size or a CSS-breaking style refused with nothing changed; a move between frames undone whole; a token spliced and undone to the same bytes; bad token values refused; saving only what changed; pages not added through `design.json`; a page outside the folder not read; a missing token said; the HTML). `proton-design`'s 29 and 16 pass here.
+  - Swift: 15 new tests (colours, fonts and token chains; column, row, wrap, justify and align, text wrapping, a loop drawn once; the starter laid out with cards in a row on Desktop and stacked on Mobile, all inside the phone; undo across page and theme; a colour drag as one step; add, move, frame and remove; refusals said; save, close and reopen; Preview's files). 207 Swift tests pass.
+  - On screen: made the starter; chose a layer on the artboard; edited the title (one step, both artboards); changed `--color-lantern-500` (the buttons and eyebrow followed); undid both in order and redid; Esc to the frame; added text; the code drawer; saved (only the page written); relaunched and reopened. The Tokens tab's colour wells overlapped the names, and are fixed. The user then checked it on screen: "Looks good".
+- **Not yet:** components with variants and Used in; a breakpoint's own values; image layers following a Diffuse or Canvas asset; two-way sync with `src/components` (`proton-design`'s markup parser is here for it); the dark palette drawn; Pagepilot.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
-- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, Edit mode with extrude, inset, loop cut, bevel and the face as the handle, material layers, and a first Render, published as assets (§10a). The other three workspaces are placeholders.
+- Built (at the user's direction, ahead of the LE): the Diffuse workspace end to end, including its Gallery (§10a), and the Canvas workspace on `proton-raster` with selections, move and transform, copy and paste, the palette, the pixel grid, mirror drawing, resize, animation, and Send to Canvas (§10a). M1's project graph is built too: transactions, one history, live links between Diffuse and Canvas, and the omnibar (§6.4a, §10a). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, Edit mode with extrude, inset, loop cut, bevel and the face as the handle, material layers, and a first Render, published as assets (§10a). Game is built for side-on games, and Design's first slice is in: pages of layers bound to Proton's `theme.css` tokens, drawn natively (§10a). Video is a placeholder.
 - Not done: no `VERDICT.md` or `SANDBOX_LOG.md` exists for Aether yet.
 
 **Roles from 2026-10-27:** the user has no Codex subscription for now, so Claude does the Lab Engineer's implementation as well as the PI's work. The LE's open tasks, the §7 frame budget and the §6.4 transaction rules, moved to Claude, and were done with M1 (§7a, §6.4a).

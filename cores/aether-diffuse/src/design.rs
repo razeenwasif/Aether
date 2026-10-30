@@ -1,0 +1,136 @@
+//! Design, for Swift: a design's folder open for editing (`aether-design`'s
+//! `Design`: its pages changed by Game's ops and its theme's tokens spliced,
+//! each document with its own undo, held until saved), and the HTML and CSS
+//! a page is written as.
+
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+use aether_design::{html, starter, Design, Target};
+use proton_game::Op;
+
+use crate::{failed, json, lock, DiffuseError};
+
+/// The designs in `folder`: each folder in it (or it itself) holding a
+/// `design.json`. JSON: a list of `{path, name, pages}`, by name.
+#[uniffi::export]
+pub fn design_found(folder: String) -> String {
+    let root = Path::new(&folder);
+    let mut dirs = vec![root.to_path_buf()];
+    if let Ok(entries) = std::fs::read_dir(root) {
+        dirs.extend(entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()));
+    }
+    let mut found: Vec<serde_json::Value> = dirs
+        .into_iter()
+        .filter(|d| Design::is_design(d))
+        .filter_map(|d| {
+            let design = Design::open(&d).ok()?;
+            Some(serde_json::json!({
+                "path": d.to_string_lossy(),
+                "name": design.design.get().name,
+                "pages": design.pages.len(),
+            }))
+        })
+        .collect();
+    found.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+    json(&found)
+}
+
+/// A new design called `name` in `dir`, from the starter: Lumen's landing
+/// page and its palette. Refused if `dir` already holds a design.
+#[uniffi::export]
+pub fn design_create(dir: String, name: String) -> Result<(), DiffuseError> {
+    starter::write(Path::new(&dir), &starter::files(&name)).map_err(failed)
+}
+
+/// One design open for editing.
+#[derive(uniffi::Object)]
+pub struct DesignEditor {
+    held: Mutex<Design>,
+}
+
+fn target(text: &str) -> Result<Target, DiffuseError> {
+    Target::parse(text).ok_or_else(|| failed(format!("{text} is not one of a design's documents")))
+}
+
+#[uniffi::export]
+impl DesignEditor {
+    /// The design in the folder at `path`.
+    #[uniffi::constructor]
+    pub fn open(path: String) -> Result<Arc<DesignEditor>, DiffuseError> {
+        Ok(Arc::new(DesignEditor { held: Mutex::new(Design::open(Path::new(&path)).map_err(failed)?) }))
+    }
+
+    /// Everything but the pages' layers, as JSON: the design, a row a page,
+    /// the theme's tokens, what is unsaved and the tokens pages use that the
+    /// theme lacks.
+    pub fn view(&self) -> String {
+        let d = lock(&self.held);
+        let pages: Vec<serde_json::Value> = d
+            .pages
+            .iter()
+            .map(|p| serde_json::json!({ "id": p.get().id, "name": p.get().name, "dirty": p.is_dirty(), "canUndo": p.can_undo(), "canRedo": p.can_redo() }))
+            .collect();
+        json(&serde_json::json!({
+            "path": d.root().to_string_lossy(),
+            "design": d.design.get(),
+            "pages": pages,
+            "theme": {
+                "exists": d.theme.exists(),
+                "tokens": d.theme.tokens(),
+                "dirty": d.theme.is_dirty(),
+            },
+            "unsaved": d.unsaved_files(),
+            "problems": d.problems(),
+        }))
+    }
+
+    /// Page `id`, as JSON, as it is now.
+    pub fn page(&self, id: String) -> Option<String> {
+        lock(&self.held).page(&id).map(|p| json(p.get()))
+    }
+
+    /// A batch of ops (JSON, Game's ops) on `design` or `page:<id>`, whole
+    /// or not at all. Whether it changed anything.
+    pub fn apply(&self, target_name: String, ops: String) -> Result<bool, DiffuseError> {
+        let ops: Vec<Op> = serde_json::from_str(&ops).map_err(|e| failed(format!("not ops: {e}")))?;
+        lock(&self.held).apply(&target(&target_name)?, &ops).map_err(failed)
+    }
+
+    /// One token's value, by name and scope, as a step of `theme`.
+    pub fn set_token(&self, name: String, scope: String, value: String) -> Result<bool, DiffuseError> {
+        lock(&self.held).set_token(&name, &scope, &value).map_err(failed)
+    }
+
+    pub fn undo(&self, target_name: String) -> Result<bool, DiffuseError> {
+        lock(&self.held).undo(&target(&target_name)?).map_err(failed)
+    }
+
+    pub fn redo(&self, target_name: String) -> Result<bool, DiffuseError> {
+        lock(&self.held).redo(&target(&target_name)?).map_err(failed)
+    }
+
+    /// Write every changed file; the files written.
+    pub fn save(&self) -> Result<Vec<String>, DiffuseError> {
+        lock(&self.held).save().map_err(failed)
+    }
+
+    /// The theme's text as it is now, saved or not.
+    pub fn theme_text(&self) -> String {
+        lock(&self.held).theme.text().to_string()
+    }
+
+    /// Page `id` as an HTML document, its tokens from `theme_href`.
+    pub fn html(&self, id: String, theme_href: String) -> Option<String> {
+        lock(&self.held).page(&id).map(|p| html::document(p.get(), &theme_href))
+    }
+
+    /// Layer `layer` of page `id` and everything in it, as JSON:
+    /// `{html, css}`.
+    pub fn code(&self, id: String, layer: String) -> Option<String> {
+        let d = lock(&self.held);
+        let page = d.page(&id)?.get();
+        page.layer(&layer)?;
+        Some(json(&serde_json::json!({ "html": html::markup(page, &layer), "css": html::css(page, &layer) })))
+    }
+}

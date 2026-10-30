@@ -1382,6 +1382,308 @@ public func FfiConverterTypeCanvasEditor_lower(_ value: CanvasEditor) -> UInt64 
 
 
 /**
+ * One design open for editing.
+ */
+public protocol DesignEditorProtocol: AnyObject, Sendable {
+    
+    /**
+     * A batch of ops (JSON, Game's ops) on `design` or `page:<id>`, whole
+     * or not at all. Whether it changed anything.
+     */
+    func apply(targetName: String, ops: String) throws  -> Bool
+    
+    /**
+     * Layer `layer` of page `id` and everything in it, as JSON:
+     * `{html, css}`.
+     */
+    func code(id: String, layer: String)  -> String?
+    
+    /**
+     * Page `id` as an HTML document, its tokens from `theme_href`.
+     */
+    func html(id: String, themeHref: String)  -> String?
+    
+    /**
+     * Page `id`, as JSON, as it is now.
+     */
+    func page(id: String)  -> String?
+    
+    func redo(targetName: String) throws  -> Bool
+    
+    /**
+     * Write every changed file; the files written.
+     */
+    func save() throws  -> [String]
+    
+    /**
+     * One token's value, by name and scope, as a step of `theme`.
+     */
+    func setToken(name: String, scope: String, value: String) throws  -> Bool
+    
+    /**
+     * The theme's text as it is now, saved or not.
+     */
+    func themeText()  -> String
+    
+    func undo(targetName: String) throws  -> Bool
+    
+    /**
+     * Everything but the pages' layers, as JSON: the design, a row a page,
+     * the theme's tokens, what is unsaved and the tokens pages use that the
+     * theme lacks.
+     */
+    func view()  -> String
+    
+}
+/**
+ * One design open for editing.
+ */
+open class DesignEditor: DesignEditorProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_aether_diffuse_fn_clone_designeditor(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_aether_diffuse_fn_free_designeditor(handle, $0) }
+    }
+
+    
+    /**
+     * The design in the folder at `path`.
+     */
+public static func `open`(path: String)throws  -> DesignEditor  {
+    return try  FfiConverterTypeDesignEditor_lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_constructor_designeditor_open(
+        FfiConverterString.lower(path),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+    /**
+     * A batch of ops (JSON, Game's ops) on `design` or `page:<id>`, whole
+     * or not at all. Whether it changed anything.
+     */
+open func apply(targetName: String, ops: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_apply(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(targetName),
+        FfiConverterString.lower(ops),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Layer `layer` of page `id` and everything in it, as JSON:
+     * `{html, css}`.
+     */
+open func code(id: String, layer: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_code(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterString.lower(layer),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Page `id` as an HTML document, its tokens from `theme_href`.
+     */
+open func html(id: String, themeHref: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_html(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterString.lower(themeHref),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Page `id`, as JSON, as it is now.
+     */
+open func page(id: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_page(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+open func redo(targetName: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_redo(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(targetName),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Write every changed file; the files written.
+     */
+open func save()throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_save(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * One token's value, by name and scope, as a step of `theme`.
+     */
+open func setToken(name: String, scope: String, value: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_set_token(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(scope),
+        FfiConverterString.lower(value),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The theme's text as it is now, saved or not.
+     */
+open func themeText() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_theme_text(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+open func undo(targetName: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_undo(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(targetName),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Everything but the pages' layers, as JSON: the design, a row a page,
+     * the theme's tokens, what is unsaved and the tokens pages use that the
+     * theme lacks.
+     */
+open func view() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_view(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDesignEditor: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = DesignEditor
+
+    public static func lift(_ handle: UInt64) throws -> DesignEditor {
+        return DesignEditor(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: DesignEditor) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DesignEditor {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: DesignEditor, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDesignEditor_lift(_ handle: UInt64) throws -> DesignEditor {
+    return try FfiConverterTypeDesignEditor.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDesignEditor_lower(_ value: DesignEditor) -> UInt64 {
+    return FfiConverterTypeDesignEditor.lower(value)
+}
+
+
+
+
+
+
+/**
  * One `.flow.json`: changed by batches of ops, each one undo step, written
  * on save beside the file and renamed over it.
  */
@@ -5131,6 +5433,30 @@ public func canvasRamp(base: Data, steps: UInt32, shift: UInt32, spread: UInt32)
 })
 }
 /**
+ * A new design called `name` in `dir`, from the starter: Lumen's landing
+ * page and its palette. Refused if `dir` already holds a design.
+ */
+public func designCreate(dir: String, name: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_design_create(
+        FfiConverterString.lower(dir),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+}
+}
+/**
+ * The designs in `folder`: each folder in it (or it itself) holding a
+ * `design.json`. JSON: a list of `{path, name, pages}`, by name.
+ */
+public func designFound(folder: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_func_design_found(
+        FfiConverterString.lower(folder),uniffiCallStatus
+    )
+})
+}
+/**
  * A new game called `name` in `dir`, from Proton's metroidvania template:
  * two rooms, a player, a crawler and their art, drawn in code. Refused if
  * `dir` already holds a game.
@@ -5226,6 +5552,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_canvas_ramp() != 45216) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_design_create() != 12439) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_func_design_found() != 15366) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_game_create() != 33738) {
@@ -5411,6 +5743,36 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_apply() != 8193) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_code() != 57325) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_html() != 31788) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_page() != 13516) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_redo() != 47840) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_save() != 5879) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_set_token() != 52924) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_theme_text() != 23926) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_undo() != 48911) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_view() != 4680) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_gameeditor_apply() != 1479) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5562,6 +5924,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_canvaseditor_open() != 57588) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_constructor_designeditor_open() != 9756) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_constructor_gameeditor_open() != 40389) {

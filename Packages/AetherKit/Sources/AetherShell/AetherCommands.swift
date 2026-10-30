@@ -3,6 +3,7 @@ import AppKit
 import CanvasUI
 import DiffuseBridge
 import DiffuseCore
+import DesignUI
 import DiffuseUI
 import ModelCore
 import ModelUI
@@ -23,6 +24,8 @@ public struct AetherCommands: Commands {
     private var onCanvas: Bool { model.active == .canvas }
     private var modeling: ModelWorkspaceModel { model.modeling }
     private var onModel: Bool { model.active == .model }
+    private var design: DesignWorkspaceModel { model.design }
+    private var onDesign: Bool { model.active == .design && model.design.document != nil }
 
     public var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -61,12 +64,13 @@ public struct AetherCommands: Commands {
             .disabled(model.otherRecentProjects.isEmpty)
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { onModel ? modeling.saveNow() : onCanvas ? canvas.save() : model.active == .game ? model.game.saveNow() : diffuse.save() }
+            Button("Save") { onModel ? modeling.saveNow() : onCanvas ? canvas.save() : model.active == .game ? model.game.saveNow() : model.active == .design ? design.saveNow() : diffuse.save() }
                 .keyboardShortcut("s")
             Button("Save As…") { onCanvas ? canvas.saveAs() : diffuse.saveAs() }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
-                // A scene is saved as it's edited, beside its meshes.
-                .disabled(onModel)
+                // A scene is saved as it's edited, beside its meshes; a
+                // design's files are its folder's.
+                .disabled(onModel || model.active == .design)
             if onModel {
                 Button("Close the Scene") { modeling.close() }
                     .keyboardShortcut("w", modifiers: [.command, .shift])
@@ -247,12 +251,36 @@ public struct AetherCommands: Commands {
             Button("All Canvases") { canvas.close() }
                 .disabled(!onCanvas || canvas.document == nil)
         }
+        CommandMenu("Design") {
+            Button("Preview  (⌘↩)") { design.preview() }
+                .disabled(!onDesign)
+            Button(design.codeOpen ? "Hide the Code" : "Show the Code") { design.codeOpen.toggle() }
+                .keyboardShortcut("/")
+                .disabled(!onDesign)
+            Button("Show Every Artboard  (f)") { design.fit() }
+                .disabled(!onDesign)
+            Divider()
+            Button("Add a Frame  (A)") { design.add(.frame) }
+                .disabled(!onDesign)
+            Button("Add Text  (T)") { design.add(.text) }
+                .disabled(!onDesign)
+            Button("Add a Shape  (R)") { design.add(.rect) }
+                .disabled(!onDesign)
+            Button("Put in a Frame") { design.wrapSelected() }
+                .keyboardShortcut("g", modifiers: [.command, .option])
+                .disabled(!onDesign || design.selection == nil)
+            Button("Choose the Frame It's In  (Esc)") { design.chooseParent() }
+                .disabled(!onDesign || design.selection == nil)
+            Divider()
+            Button("All Designs") { design.close() }
+                .disabled(!onDesign)
+        }
         CommandMenu("Flow") {
             // ⌘↩ is each workspace's one verb: Generate here, and Render in
             // Model, through the same item, as two items can't share a key.
             Button("Generate") { model.run() }
                 .keyboardShortcut(.return)
-                .disabled(model.active != .diffuse && !(model.active == .model && modeling.document != nil))
+                .disabled(model.active != .diffuse && !(model.active == .model && modeling.document != nil) && !(model.active == .design && design.page != nil))
             Button("Run to Selected Node") { if let node = diffuse.runTarget { diffuse.runTo(node) } }
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .disabled(diffuse.runTarget == nil || diffuse.stage != .graph)

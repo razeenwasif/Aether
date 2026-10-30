@@ -32,7 +32,7 @@ public enum Workspace: String, CaseIterable, Identifiable, Sendable, Codable {
         }
     }
 
-    public var isBuilt: Bool { self == .diffuse || self == .canvas || self == .model }
+    public var isBuilt: Bool { self != .video }
 }
 
 public struct NodeID: Hashable, Sendable, Comparable, Codable, CustomStringConvertible {
@@ -559,7 +559,7 @@ public final class ProjectGraph {
         let fm = FileManager.default
         var isFolder: ObjCBool = false
         guard fm.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else { return false }
-        return folder.pathExtension == "aether" || ["project.json", "Canvases", "Flows", "Models", "Games"].contains { fm.fileExists(atPath: folder.appending(path: $0).path) }
+        return folder.pathExtension == "aether" || ["project.json", "Canvases", "Flows", "Models", "Games", "Designs"].contains { fm.fileExists(atPath: folder.appending(path: $0).path) }
     }
 
     /// Where the project's canvases, flows and scenes go.
@@ -567,6 +567,7 @@ public final class ProjectGraph {
     public var flowsFolder: URL? { folder?.appending(path: "Flows", directoryHint: .isDirectory) }
     public var modelsFolder: URL? { folder?.appending(path: "Models", directoryHint: .isDirectory) }
     public var gamesFolder: URL? { folder?.appending(path: "Games", directoryHint: .isDirectory) }
+    public var designsFolder: URL? { folder?.appending(path: "Designs", directoryHint: .isDirectory) }
 }
 
 /// A listener held: let go, it stops.

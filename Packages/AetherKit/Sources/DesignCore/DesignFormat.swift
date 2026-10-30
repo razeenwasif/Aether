@@ -1,0 +1,282 @@
+import Foundation
+
+// A design's files as the Design workspace reads them: aether-design's
+// `format`. Its writer leaves out what is empty, so every field here reads
+// as its default when absent, as the Rust types do.
+
+extension KeyedDecodingContainer {
+    func value<T: Decodable>(_ key: Key, _ fallback: T) throws -> T {
+        try decodeIfPresent(T.self, forKey: key) ?? fallback
+    }
+}
+
+/// A number, or a word: a token's name, `hug`, `fill`, a CSS value.
+public enum DesignVal: Codable, Hashable, Sendable, CustomStringConvertible {
+    case num(Double)
+    case text(String)
+
+    public static let hug = DesignVal.text("hug")
+    public static let fill = DesignVal.text("fill")
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let n = try? c.decode(Double.self) { self = .num(n) } else { self = .text(try c.decode(String.self)) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case let .num(n): try c.encode(n)
+        case let .text(t): try c.encode(t)
+        }
+    }
+
+    /// As the core's ops take it.
+    public var json: Any {
+        switch self {
+        case let .num(n): n
+        case let .text(t): t
+        }
+    }
+
+    public var number: Double? { if case let .num(n) = self { n } else { nil } }
+    public var word: String? { if case let .text(t) = self { t } else { nil } }
+    public var isToken: Bool { word?.hasPrefix("--") == true }
+
+    public var description: String {
+        switch self {
+        case let .num(n): n.formatted(.number.precision(.fractionLength(0...2)))
+        case let .text(t): t
+        }
+    }
+}
+
+/// What a layer is.
+public enum DesignKind: String, Codable, Sendable, CaseIterable {
+    /// A box that lays out its children in a row or a column.
+    case frame
+    /// A run of text, wrapped to the width it is given.
+    case text
+    /// A plain shape.
+    case rect
+
+    public var title: String {
+        switch self {
+        case .frame: "Frame"
+        case .text: "Text"
+        case .rect: "Shape"
+        }
+    }
+}
+
+/// A width a page is drawn at.
+public struct DesignBreakpoint: Decodable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var width: Double
+
+    enum CodingKeys: String, CodingKey { case id, name, width }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.value(.id, "")
+        name = try c.value(.name, "")
+        width = try c.value(.width, 0)
+    }
+}
+
+/// How a frame lays out its children.
+public struct DesignFlex: Decodable, Hashable, Sendable {
+    public var direction: String?
+    public var gap: DesignVal?
+    public var padH: DesignVal?
+    public var padV: DesignVal?
+    public var align: String?
+    public var justify: String?
+    public var wrap: Bool?
+
+    public init() {}
+    public var isRow: Bool { direction == "row" }
+}
+
+/// How a layer looks.
+public struct DesignStyle: Decodable, Hashable, Sendable {
+    public var fill: String?
+    public var stroke: String?
+    public var radius: DesignVal?
+    public var color: String?
+    public var font: String?
+    public var textAlign: String?
+    public var opacity: Double?
+
+    public init() {}
+}
+
+/// One layer of a page.
+public struct DesignLayer: Decodable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var kind: DesignKind
+    public var name: String
+    public var tag: String
+    public var text: String
+    public var children: [String]
+    public var w: DesignVal?
+    public var h: DesignVal?
+    public var minW: Double?
+    public var layout: DesignFlex
+    public var style: DesignStyle
+
+    enum CodingKeys: String, CodingKey { case id, kind, name, tag, text, children, w, h, minW, layout, style }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.value(.id, "")
+        kind = try c.value(.kind, .frame)
+        name = try c.value(.name, "")
+        tag = try c.value(.tag, "")
+        text = try c.value(.text, "")
+        children = try c.value(.children, [])
+        w = try c.decodeIfPresent(DesignVal.self, forKey: .w)
+        h = try c.decodeIfPresent(DesignVal.self, forKey: .h)
+        minW = try c.decodeIfPresent(Double.self, forKey: .minW)
+        layout = try c.value(.layout, DesignFlex())
+        style = try c.value(.style, DesignStyle())
+    }
+
+    /// What the layer tree calls it.
+    public var label: String { name.isEmpty ? id : name }
+
+    /// Its width as said, or the kind's: `fill` for a frame or a shape,
+    /// `hug` for text (aether-design's `html::width`).
+    public var width: DesignVal { w ?? (kind == .text ? .hug : .fill) }
+    /// Its height as said, or `hug` (100 points for a shape).
+    public var height: DesignVal { h ?? (kind == .rect ? .num(100) : .hug) }
+}
+
+/// A page: the widths it is drawn at, and its layers.
+public struct DesignPage: Decodable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var breakpoints: [DesignBreakpoint]
+    public var root: String
+    public var layers: [DesignLayer]
+
+    enum CodingKeys: String, CodingKey { case id, name, breakpoints, root, layers }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.value(.id, "")
+        name = try c.value(.name, "")
+        breakpoints = try c.value(.breakpoints, [])
+        root = try c.value(.root, "")
+        layers = try c.value(.layers, [])
+    }
+
+    public func layer(_ id: String) -> DesignLayer? {
+        layers.first { $0.id == id }
+    }
+
+    /// The frame `id` is in.
+    public func parent(of id: String) -> DesignLayer? {
+        layers.first { $0.children.contains(id) }
+    }
+
+    /// The layers in the tree's order with their depth, as the layer panel
+    /// lists them; a loop is walked once.
+    public func tree() -> [(layer: DesignLayer, depth: Int)] {
+        var out: [(DesignLayer, Int)] = []
+        var seen = Set<String>()
+        func walk(_ id: String, _ depth: Int) {
+            guard seen.insert(id).inserted, let layer = layer(id) else { return }
+            out.append((layer, depth))
+            for child in layer.children { walk(child, depth + 1) }
+        }
+        walk(root, 0)
+        return out
+    }
+
+    /// `id` and every layer inside it.
+    public func subtree(_ id: String) -> [String] {
+        var out: [String] = []
+        var seen = Set<String>()
+        func walk(_ id: String) {
+            guard seen.insert(id).inserted, let layer = layer(id) else { return }
+            out.append(id)
+            layer.children.forEach(walk)
+        }
+        walk(id)
+        return out
+    }
+
+    /// The frames `id` is inside, nearest first.
+    public func ancestors(of id: String) -> [DesignLayer] {
+        var out: [DesignLayer] = []
+        var at = id
+        while let up = parent(of: at), !out.contains(where: { $0.id == up.id }) {
+            out.append(up)
+            at = up.id
+        }
+        return out
+    }
+}
+
+/// One custom property of the theme, and where it is (proton-design's
+/// `Token`).
+public struct DesignToken: Decodable, Hashable, Sendable, Identifiable {
+    public var name: String
+    public var value: String
+    /// The blocks it is declared in: `:root`, or a dark palette's media
+    /// query and selector.
+    public var scope: String
+    public var line: Int
+
+    public var id: String { "\(scope)|\(name)" }
+}
+
+/// What the workspace reads of an open design: everything but the layers.
+public struct DesignView: Decodable, Sendable {
+    public struct Info: Decodable, Sendable {
+        public var name: String
+        public var pages: [String]
+        enum CodingKeys: String, CodingKey { case name, pages }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = try c.value(.name, "")
+            pages = try c.value(.pages, [])
+        }
+    }
+
+    public struct PageRow: Decodable, Sendable, Identifiable {
+        public var id: String
+        public var name: String
+        public var dirty: Bool
+        public var canUndo: Bool
+        public var canRedo: Bool
+    }
+
+    public struct Theme: Decodable, Sendable {
+        public var exists: Bool
+        public var tokens: [DesignToken]
+        public var dirty: Bool
+    }
+
+    public var path: String
+    public var design: Info
+    public var pages: [PageRow]
+    public var theme: Theme
+    public var unsaved: [String]
+    public var problems: [String]
+}
+
+/// A design in a folder, as the home page lists it.
+public struct DesignFound: Decodable, Sendable, Identifiable {
+    public var path: String
+    public var name: String
+    public var pages: Int
+
+    public var id: String { path }
+    public var url: URL { URL(fileURLWithPath: path, isDirectory: true) }
+}
+
+/// A layer's code: its elements and the rules that style them.
+public struct DesignCode: Decodable, Sendable, Equatable {
+    public var html: String
+    public var css: String
+}

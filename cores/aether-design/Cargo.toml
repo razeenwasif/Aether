@@ -1,0 +1,16 @@
+[package]
+name = "aether-design"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license = "MIT"
+description = "Design's document: a design's folder — its pages as trees of layers, and Proton's theme.css for their tokens — edited by ops with undo, held until saved, and written out as HTML and CSS."
+
+[dependencies]
+# The tokens: Proton's theme.css, read and spliced.
+proton-design = { path = "../proton-design" }
+# Game's documents: ops by id, applied whole or not at all, undo, the ordered
+# writer and the atomic save. Without its editor feature, so no PNG or PSD.
+proton-game = { path = "../proton-game", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

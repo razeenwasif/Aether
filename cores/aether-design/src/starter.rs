@@ -1,0 +1,204 @@
+//! A new design's files: a landing page and its palette, the Design board's.
+//!
+//! Lumen's home page, as the design canvas draws it: a nav, a hero with its
+//! eyebrow, title, body and two actions, and three feature cards in a row
+//! that wraps on a phone. Everything is set in tokens, so the first thing a
+//! new design shows is the binding: change `--color-lantern-500` and every
+//! layer that uses it follows. What nobody has decided yet — the platforms,
+//! the release window — is a placeholder, not an invented fact.
+
+use std::path::Path;
+
+use crate::format::{Breakpoint, DesignFile, Kind, Layer, Layout, Page, Style, Val};
+
+/// One file: where it goes in the design's folder, and its text.
+pub struct File {
+    pub rel: String,
+    pub text: String,
+}
+
+const THEME: &str = "/* The palette. Layers use these tokens; change one here and every layer
+   that uses it follows. */
+:root {
+  --color-ground: #0f1412;
+  --color-surface: #18201c;
+  --color-line: #34403a;
+  --color-ink: #f2efe6;
+  --color-ink-muted: #a9b0a8;
+  --color-lantern-500: #f2b84b;
+  --color-lantern-ink: #1d1406;
+
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-md: 12px;
+  --radius-full: 999px;
+
+  --type-display: 700 56px/1.05 system-ui, sans-serif;
+  --type-title: 600 22px/1.25 system-ui, sans-serif;
+  --type-body: 400 17px/1.5 system-ui, sans-serif;
+  --type-label-md: 600 15px/1 system-ui, sans-serif;
+  --type-eyebrow: 600 13px/1 system-ui, sans-serif;
+}
+";
+
+/// The files of a new design called `name`.
+pub fn files(name: &str) -> Vec<File> {
+    let design = DesignFile { name: name.to_string(), pages: vec!["home".into()], ..DesignFile::default() };
+    vec![
+        File { rel: crate::DESIGN.into(), text: proton_game::doc::to_text(&design) },
+        File { rel: crate::THEME.into(), text: THEME.into() },
+        File { rel: crate::page_rel("home"), text: proton_game::doc::to_text(&home()) },
+    ]
+}
+
+/// Write them into `root`, refusing a folder that already holds a design.
+pub fn write(root: &Path, files: &[File]) -> Result<(), String> {
+    if root.join(crate::DESIGN).exists() {
+        return Err(format!("{} already holds a design", root.display()));
+    }
+    for file in files {
+        proton_game::doc::write_atomically(&root.join(&file.rel), file.text.as_bytes()).map_err(|e| format!("{}: {e}", file.rel))?;
+    }
+    Ok(())
+}
+
+fn token(name: &str) -> Option<Val> {
+    Some(Val::Text(name.into()))
+}
+
+fn frame(id: &str, name: &str, children: &[&str], layout: Layout, style: Style) -> Layer {
+    Layer {
+        id: id.into(),
+        kind: Kind::Frame,
+        name: name.into(),
+        children: children.iter().map(|c| c.to_string()).collect(),
+        layout,
+        style,
+        ..Layer::default()
+    }
+}
+
+fn text(id: &str, name: &str, words: &str, font: &str, color: &str) -> Layer {
+    Layer {
+        id: id.into(),
+        kind: Kind::Text,
+        name: name.into(),
+        text: words.into(),
+        style: Style { font: Some(font.into()), color: Some(color.into()), ..Style::default() },
+        ..Layer::default()
+    }
+}
+
+fn row(gap: &str) -> Layout {
+    Layout { direction: Some("row".into()), gap: token(gap), align: Some("center".into()), ..Layout::default() }
+}
+
+fn button(id: &str, name: &str, fill: Option<&str>, stroke: Option<&str>) -> Layer {
+    Layer {
+        tag: "a".into(),
+        w: Some(Val::Text("hug".into())),
+        ..frame(
+            id,
+            name,
+            &[&format!("{id}-label")],
+            Layout { direction: Some("row".into()), pad_h: Some(Val::Num(20.0)), pad_v: Some(Val::Num(12.0)), align: Some("center".into()), ..Layout::default() },
+            Style { fill: fill.map(Into::into), stroke: stroke.map(Into::into), radius: token("--radius-full"), ..Style::default() },
+        )
+    }
+}
+
+fn feature(id: &str, title: &str, body: &str) -> [Layer; 3] {
+    [
+        Layer {
+            min_w: Some(240.0),
+            ..frame(
+                id,
+                title,
+                &[&format!("{id}-title"), &format!("{id}-body")],
+                Layout { gap: token("--space-3"), pad_h: token("--space-6"), pad_v: token("--space-6"), ..Layout::default() },
+                Style { fill: Some("--color-surface".into()), radius: token("--radius-md"), ..Style::default() },
+            )
+        },
+        Layer { tag: "h3".into(), ..text(&format!("{id}-title"), "Title", title, "--type-title", "--color-ink") },
+        Layer { w: Some(Val::Text("fill".into())), ..text(&format!("{id}-body"), "Body", body, "--type-body", "--color-ink-muted") },
+    ]
+}
+
+fn home() -> Page {
+    let mut layers = vec![
+        frame("page", "Home", &["nav", "hero", "features"], Layout::default(), Style { fill: Some("--color-ground".into()), ..Style::default() }),
+        Layer {
+            tag: "nav".into(),
+            ..frame(
+                "nav",
+                "Nav",
+                &["logo", "links"],
+                Layout { pad_h: token("--space-8"), pad_v: token("--space-4"), justify: Some("between".into()), ..row("--space-6") },
+                Style::default(),
+            )
+        },
+        text("logo", "Logo", "LUMEN", "--type-label-md", "--color-ink"),
+        Layer { w: Some(Val::Text("hug".into())), ..frame("links", "Links", &["story", "world", "press"], row("--space-6"), Style::default()) },
+        Layer { tag: "a".into(), ..text("story", "Story", "Story", "--type-label-md", "--color-ink-muted") },
+        Layer { tag: "a".into(), ..text("world", "World", "World", "--type-label-md", "--color-ink-muted") },
+        Layer { tag: "a".into(), ..text("press", "Press kit", "Press kit", "--type-label-md", "--color-ink-muted") },
+        Layer {
+            tag: "header".into(),
+            ..frame(
+                "hero",
+                "Hero",
+                &["eyebrow", "title", "body", "actions", "availability"],
+                Layout { gap: token("--space-6"), pad_h: token("--space-8"), pad_v: token("--space-16"), ..Layout::default() },
+                Style::default(),
+            )
+        },
+        text("eyebrow", "Eyebrow", "A hand-painted adventure", "--type-eyebrow", "--color-lantern-500"),
+        Layer { tag: "h1".into(), w: Some(Val::Text("fill".into())), ..text("title", "Title", "Carry the light through the Hollow Grove.", "--type-display", "--color-ink") },
+        Layer {
+            w: Some(Val::Text("fill".into())),
+            ..text(
+                "body",
+                "Body",
+                "Wren has one lantern and a forest that remembers. Light the way, outwit the moths, and find what the dark is keeping.",
+                "--type-body",
+                "--color-ink-muted",
+            )
+        },
+        Layer { w: Some(Val::Text("hug".into())), ..frame("actions", "Actions", &["wishlist", "trailer"], row("--space-2"), Style::default()) },
+        button("wishlist", "Wishlist CTA", Some("--color-lantern-500"), None),
+        text("wishlist-label", "Label", "Wishlist now", "--type-label-md", "--color-lantern-ink"),
+        button("trailer", "Watch the trailer", None, Some("--color-line")),
+        text("trailer-label", "Label", "Watch the trailer", "--type-label-md", "--color-ink"),
+        text("availability", "Availability", "Coming to Mac · [PLATFORMS] · [RELEASE WINDOW]", "--type-eyebrow", "--color-ink-muted"),
+        Layer {
+            tag: "section".into(),
+            ..frame(
+                "features",
+                "Features",
+                &["lantern", "painted", "remembers"],
+                Layout { direction: Some("row".into()), gap: token("--space-6"), pad_h: token("--space-8"), pad_v: token("--space-12"), wrap: Some(true), ..Layout::default() },
+                Style::default(),
+            )
+        },
+    ];
+    layers.extend(feature("lantern", "A lantern that matters", "Its light opens paths, wakes shrines and keeps the moths at bay."));
+    layers.extend(feature("painted", "Painted by hand", "Every plane of the Hollow Grove is painted, then lit in real time."));
+    layers.extend(feature("remembers", "A forest that remembers", "Paths you light stay lit. The grove changes with every return."));
+    Page {
+        id: "home".into(),
+        name: "Home".into(),
+        breakpoints: vec![
+            Breakpoint { id: "desktop".into(), name: "Desktop".into(), width: 1280.0 },
+            Breakpoint { id: "mobile".into(), name: "Mobile".into(), width: 390.0 },
+        ],
+        root: "page".into(),
+        layers,
+        ..Page::default()
+    }
+}

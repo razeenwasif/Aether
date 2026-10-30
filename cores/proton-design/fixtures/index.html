@@ -1,0 +1,1685 @@
+<!doctype html>
+<html lang="en" data-theme="aura-dark" data-mode="codex">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proton</title>
+<link rel="icon" href="../../brand/proton-icon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <!-- UI cut of the mark. Same construction as brand/proton-mark.svg, but the
+       strokes are 20 rather than 13 and the electrons are larger: this is drawn
+       at 13–42px, where the master's hairlines fall below a pixel. -->
+  <symbol id="i-proton" viewBox="0 0 512 512">
+    <g fill="none" stroke="currentColor" stroke-width="20">
+      <ellipse cx="256" cy="256" rx="172" ry="60" transform="rotate(-30 256 256)"/>
+      <ellipse cx="256" cy="256" rx="172" ry="60" transform="rotate(30 256 256)"/>
+      <ellipse cx="256" cy="256" rx="172" ry="60" transform="rotate(90 256 256)"/>
+    </g>
+    <g fill="currentColor">
+      <circle cx="405" cy="170" r="27"/>
+      <circle cx="405" cy="342" r="27"/>
+      <circle cx="256" cy="84"  r="27"/>
+      <circle cx="256" cy="256" r="52"/>
+    </g>
+  </symbol>
+  <g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 17l-5-5 5-5M15 7l5 5-5 5"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 19l7-7-4-4-7 7-1 5 5-1zM15 5l4 4"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5"/></symbol>
+    <symbol id="i-game" viewBox="0 0 24 24"><path d="M7 12h4M9 10v4M16 11h.01M18 13h.01"/><rect x="2" y="7" width="20" height="11" rx="4"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="2" y="6" width="13" height="12" rx="2.5"/><path d="M15 10.5L22 7v10l-7-3.5z"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16M8 16V11M12.5 16V7M17 16v-4"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6.2L4.6 18.3A1.8 1.8 0 006.1 21h11.8a1.8 1.8 0 001.5-2.7L14 9.2V3M7 15.5h10"/></symbol>
+    <symbol id="i-files" viewBox="0 0 24 24"><path d="M3 6a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V18a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+    <symbol id="i-git" viewBox="0 0 24 24"><circle cx="7" cy="5.5" r="2.5"/><circle cx="7" cy="18.5" r="2.5"/><circle cx="17" cy="12" r="2.5"/><path d="M7 8v8M9.5 12H14.5M9.5 12a5 5 0 004.8-3.6"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><rect x="8" y="7" width="8" height="12" rx="4"/><path d="M8 11H4M20 11h-4M8 16H4.5M20 16h-3.5M9.5 7l-1-2.5M14.5 7l1-2.5"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M10 4h4v3a2 2 0 104 0V4h2v6h-3a2 2 0 100 4h3v6h-6v-3a2 2 0 10-4 0v3H4V4h6z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17l9 5 9-5"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 12h3M11 12h9M4 17h11M19 17h1"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17" r="2"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M18.5 16l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 4L4 9l5 5M4 9h10a6 6 0 010 12"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 4l5 5-5 5M20 9H10a6 6 0 000 12"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+    <symbol id="i-desktop" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M9 21h6M12 17v4"/></symbol>
+    <symbol id="i-tablet" viewBox="0 0 24 24"><rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5l12 7.5-12 7.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 4.5v15M15 4.5v15"/></symbol>
+    <symbol id="i-step" viewBox="0 0 24 24"><path d="M6 4.5l10 7.5-10 7.5zM19 4.5v15"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="M7 9.5l3 2.5-3 2.5M13 15h4"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5h6a3 3 0 013 3V20a2.5 2.5 0 00-2.5-2.5H4zM20 4.5h-6a3 3 0 00-3 3V20a2.5 2.5 0 012.5-2.5H20z"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13h5l1.5 3h5L16 13h5M3 13l3-8h12l3 8v6a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 01-8 8H8l-4 2 1-4.2A8 8 0 1121 12z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3h6l-1 6 4 3v2H6v-2l4-3-1-6zM12 14v7"/></symbol>
+    <symbol id="i-split-v" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></symbol>
+    <symbol id="i-split-h" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></symbol>
+
+    <!-- ── Codex's title bar and agent panel ─────────────────────────
+         Drawn after Zed's own: a panel is a frame with a bar down one
+         side, and the agent's header carries the usual three — new,
+         expand, more. -->
+    <symbol id="i-panel-left" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M9 4.5v15"/></symbol>
+    <symbol id="i-panel-right" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M15 4.5v15"/></symbol>
+    <symbol id="i-dots" viewBox="0 0 24 24"><path d="M5.5 12h.01M12 12h.01M18.5 12h.01" stroke-width="2.6"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.5 4.5l16 7.5-16 7.5 2.5-7.5z"/><path d="M7 12h6"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 17.5h6M10 21h4"/><path d="M12 3a6 6 0 00-3.6 10.8c.6.5 1 1.2 1 2V17.5h5.2V15.8c0-.8.4-1.5 1-2A6 6 0 0012 3z"/></symbol>
+
+    <!-- ── tree and files ──────────────────────────────────────────
+         Drawn at 12–13px in the explorer, which is why these are the
+         plainest shapes in the set: at that size an outline with more
+         than about six segments stops being a picture and becomes a
+         smudge. -->
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2V18a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></symbol>
+    <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="M3 19V7a2 2 0 012-2h4l2 2.5h8a2 2 0 012 2v1.5"/><path d="M3.5 19l2.6-7h15.2l-2.6 7z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H7a2 2 0 00-2 2v13a2 2 0 002 2h10a2 2 0 002-2V8.5zM14 3.5V8.5h5"/></symbol>
+    <symbol id="i-file-code" viewBox="0 0 24 24"><path d="M13.5 3.5H7a2 2 0 00-2 2v13a2 2 0 002 2h10a2 2 0 002-2V9zM13.5 3.5V9h5.5"/><path d="M10 12.8l-2.2 2.6L10 18M14 12.8l2.2 2.6L14 18"/></symbol>
+    <symbol id="i-file-doc" viewBox="0 0 24 24"><path d="M14 3.5H7a2 2 0 00-2 2v13a2 2 0 002 2h10a2 2 0 002-2V8.5zM14 3.5V8.5h5"/><path d="M8.5 13h7M8.5 16.5h4.5"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M4 16.5l4.5-4 4 3.5 3-2.5 4.5 4"/></symbol>
+    <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 11v2M8 8.5v7M12 5v14M16 8.5v7M20 11v2"/></symbol>
+
+    <!-- ── scene and media ────────────────────────────────────────── -->
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M3 8.5a2 2 0 012-2h2.5l1.5-2h6l1.5 2H21a0 0 0 010 0v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="12" cy="12" r="3.5"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9.5h18M3 14.5h18M8 4.5v15M16 4.5v15"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.2 2.4 3.4 5.4 3.4 8.5S14.2 18.1 12 20.5c-2.2-2.4-3.4-5.4-3.4-8.5S9.8 5.9 12 3.5z"/></symbol>
+    <symbol id="i-mesh" viewBox="0 0 24 24"><path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z"/><path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/></symbol>
+    <symbol id="i-light" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8"/></symbol>
+    <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="6.5" cy="6.5" r="2.5"/><path d="M8.6 8.2L19 18M19 6L8.6 15.8"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 000 17c1.4 0 2-1 2-1.8 0-1.6-1.3-1.7-1.3-3 0-.9.8-1.7 1.8-1.7H17a3.5 3.5 0 003.5-3.5C20.5 6.6 16.7 3.5 12 3.5z"/><circle cx="8" cy="9.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="7.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="16" cy="9.5" r="1.1" fill="currentColor" stroke="none"/></symbol>
+
+    <symbol id="i-nodes" viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="6" rx="1.5"/><rect x="14" y="14" width="7" height="6" rx="1.5"/><path d="M10 7h2.5a2 2 0 012 2v3a2 2 0 002 2"/><circle cx="17.5" cy="7" r="2.2"/><path d="M15.3 7H12.5"/></symbol>
+
+    <!-- ── status and marks ───────────────────────────────────────── -->
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.5 2.5L5 13.5h6l-.5 8 8.5-11h-6z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13.5a4 4 0 006 .5l2.5-2.5a4.2 4.2 0 00-6-6L11 7"/><path d="M14 10.5a4 4 0 00-6-.5L5.5 12.5a4.2 4.2 0 006 6L13 17"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 19.5a6 6 0 0112 0M16 5.2a3.2 3.2 0 010 5.6M17.5 19.5a6 6 0 00-2-4.5"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18.5a4 4 0 01-.4-8A5.5 5.5 0 0117.4 10a3.8 3.8 0 01.4 8.5z"/></symbol>
+    <symbol id="i-buoy" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M6 6l3.5 3.5M14.5 14.5L18 18M18 6l-3.5 3.5M9.5 14.5L6 18"/></symbol>
+
+    <!-- ── diagnostics ────────────────────────────────────────────
+         Solid, because these are drawn at 9px in the sign column where
+         an outline has nothing left to outline. Distinguished by
+         silhouette as well as colour: a round dot, a triangle, a square
+         and a bar stay apart from each other for a reader who cannot
+         tell red from amber. -->
+    <symbol id="i-d-error" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></symbol>
+    <symbol id="i-d-warning" viewBox="0 0 24 24"><path d="M12 4l8.5 15h-17z"/></symbol>
+    <symbol id="i-d-info" viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="2.5"/></symbol>
+    <symbol id="i-d-hint" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="4" rx="2"/></symbol>
+
+    <!-- ── language servers ───────────────────────────────────────
+         Three states that have to be told apart in the corner of the
+         eye: a ring with a gap that turns while the server thinks, a
+         solid dot once it is ready, and a hollow one for a language
+         whose server is not installed — which is a normal state, not a
+         fault, so it is dimmed rather than flagged. -->
+    <symbol id="i-srv-busy" viewBox="0 0 24 24"><path d="M12 4.5a7.5 7.5 0 017.5 7.5" stroke-width="2.6"/><circle cx="12" cy="12" r="7.5" opacity=".28" stroke-width="2.6"/></symbol>
+    <symbol id="i-srv-ready" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5.5"/></symbol>
+    <symbol id="i-srv-off" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5.5" stroke-dasharray="2.6 2.4"/></symbol>
+
+    <!-- ── completion kinds ───────────────────────────────────────
+         Twelve categories, drawn at 11px in a list the eye scans
+         vertically. Legibility at that size rules out pictograms, so
+         these are category *marks*: distinct silhouettes that you learn
+         once, the way you learn that a diamond means keyword. -->
+    <symbol id="i-k-function" viewBox="0 0 24 24"><path d="M15 5.5h-1.8A2.7 2.7 0 0010.5 8.2V19M7.5 11.5h7"/></symbol>
+    <symbol id="i-k-method" viewBox="0 0 24 24"><path d="M15 5.5h-1.8A2.7 2.7 0 0010.5 8.2V19M7.5 11.5h7"/><circle cx="17.5" cy="17.5" r="1.9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-k-field" viewBox="0 0 24 24"><rect x="7.5" y="7.5" width="9" height="9" rx="1.6" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-k-variable" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></symbol>
+    <symbol id="i-k-type" viewBox="0 0 24 24"><path d="M6.5 6.5h11M12 6.5V18"/></symbol>
+    <symbol id="i-k-module" viewBox="0 0 24 24"><rect x="4.5" y="5.5" width="15" height="13" rx="2"/><path d="M4.5 10h15M10 10v8.5"/></symbol>
+    <symbol id="i-k-keyword" viewBox="0 0 24 24"><path d="M12 5.5l6.5 6.5-6.5 6.5-6.5-6.5z"/></symbol>
+    <symbol id="i-k-constant" viewBox="0 0 24 24"><path d="M6.5 8.5h11M10 8.5V18M14.5 8.5V18"/></symbol>
+    <symbol id="i-k-other" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"/></symbol>
+
+    <!-- ── layout nouns, for the Design layer tree ─────────────────── -->
+    <symbol id="i-frame" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2.5"/></symbol>
+    <symbol id="i-button" viewBox="0 0 24 24"><rect x="3" y="8.5" width="18" height="7" rx="3.5"/></symbol>
+    <symbol id="i-columns" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.2 4.5v15M14.8 4.5v15"/></symbol>
+    <symbol id="i-avatar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="10" r="2.8"/><path d="M6.8 18.4a5.6 5.6 0 0110.4 0"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6.5V5h14v1.5M12 5v14M9 19h6"/></symbol>
+
+    <!-- ── modelling nouns ─────────────────────────────────────────── -->
+    <symbol id="i-sphere" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><ellipse cx="12" cy="12" rx="8.5" ry="3.6"/></symbol>
+    <symbol id="i-plane" viewBox="0 0 24 24"><path d="M2.5 16.5L9 7.5h12.5L15 16.5z"/></symbol>
+    <symbol id="i-material" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 010 16z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-orbit" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9.5" ry="4.5" transform="rotate(-30 12 12)"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/></symbol>
+
+    <!-- ── game nouns ──────────────────────────────────────────────── -->
+    <symbol id="i-node" viewBox="0 0 24 24"><path d="M12 3.5l8.5 8.5-8.5 8.5-8.5-8.5z"/></symbol>
+    <symbol id="i-collision" viewBox="0 0 24 24"><path d="M12 3.5l8.5 8.5-8.5 8.5-8.5-8.5z" stroke-dasharray="4.6 3.4"/></symbol>
+    <symbol id="i-sprite" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9.2h17M3.5 14.8h17M9.2 3.5v17M14.8 3.5v17"/></symbol>
+
+    <!-- ── data nouns ──────────────────────────────────────────────── -->
+    <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M3 9.5h18M9.5 9.5v10"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5.2l3.4 2"/></symbol>
+    <symbol id="i-cards" viewBox="0 0 24 24"><rect x="7.5" y="3.5" width="13" height="9.5" rx="1.8"/><path d="M5 7.2h-.2A1.8 1.8 0 003 9v9.7a1.8 1.8 0 001.8 1.8h11.4a1.8 1.8 0 001.8-1.8V16"/><path d="M11 8.2h6"/></symbol>
+  </g>
+</defs></svg>
+
+<div class="field" aria-hidden="true">
+  <div class="blob a"></div><div class="blob b"></div><div class="blob c"></div><div class="blob d"></div>
+</div>
+
+<div class="app">
+
+  <!-- ══ chrome rail — window controls, identity, modes, actions ═══ -->
+  <div class="body">
+    <!-- ══ activity rail ═════════════════════════════════════════ -->
+    <!-- The outer rail chooses which application you are in; the inner one
+         chooses what you are looking at inside it. -->
+    <nav class="chrome-rail" aria-label="Window and workspace">
+      <div class="lights" aria-label="Window controls">
+        <i title="Close"></i><i title="Minimise"></i><i title="Maximise"></i>
+      </div>
+      <div class="brand-mark" title="Proton"><svg class="i"><use href="#i-proton"/></svg></div>
+
+      <!-- Three rails in a real hierarchy: this one chooses which project you
+           are in, the mode rail below chooses what you are doing in it, and the
+           panel rail chooses what you are looking at. -->
+      <div class="ws-rail" role="tablist" aria-label="Project" data-workspaces></div>
+      <button class="ws-add" data-open-workspace title="Open a folder — ␣fp">
+        <svg class="i"><use href="#i-plus"/></svg>
+      </button>
+      <div class="rail-sep" aria-hidden="true"></div>
+
+      <div class="mode-rail" role="tablist" aria-label="Mode">
+      <button class="mode" role="tab" aria-selected="false" data-mode="chat"><svg class="i"><use href="#i-chat"/></svg><span>Chat</span></button>
+      <button class="mode" role="tab" aria-selected="true"  data-mode="codex"><svg class="i"><use href="#i-code"/></svg><span>Codex</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="data"><svg class="i"><use href="#i-chart"/></svg><span>Data</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="research"><svg class="i"><use href="#i-flask"/></svg><span>Research</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="study"><svg class="i"><use href="#i-book"/></svg><span>Notebook</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="design"><svg class="i"><use href="#i-pen"/></svg><span>Design</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="modeling"><svg class="i"><use href="#i-cube"/></svg><span>Model</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="game"><svg class="i"><use href="#i-game"/></svg><span>Game</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="raster"><svg class="i"><use href="#i-palette"/></svg><span>Canvas</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="diffuse"><svg class="i"><use href="#i-nodes"/></svg><span>Diffuse</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="video"><svg class="i"><use href="#i-video"/></svg><span>Video</span></button>
+      </div>
+
+      <div class="rail-drag" aria-hidden="true"></div>
+
+      <div class="rail-actions">
+        <button class="rail-btn" disabled title="Build commands are not configured yet">Build</button>
+        <button class="rail-btn" disabled title="Sharing is not available yet">Share</button>
+        <button class="rail-btn" data-open="settings" title="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
+      </div>
+    </nav>
+
+    <nav class="rail" aria-label="Panels">
+      <button title="Chat  ␣aa" data-mode-go="chat"><svg class="i"><use href="#i-chat"/></svg></button>
+      <button class="on" data-panel-toggle="left" title="Hide sidebar" aria-label="Hide sidebar" aria-expanded="true"><svg class="i"><use href="#i-files"/></svg></button>
+      <button data-panel-toggle="right" title="Hide right panel" aria-label="Hide right panel" aria-expanded="true"><svg class="i"><use href="#i-sliders"/></svg></button>
+      <button title="Telescope  ␣ff" data-open="telescope"><svg class="i"><use href="#i-search"/></svg></button>
+      <button title="Git  ␣gg" data-dock="git"><svg class="i"><use href="#i-git"/></svg></button>
+      <button title="Debug — ␣db sets a breakpoint, ␣dr runs" data-dock="debug"><svg class="i"><use href="#i-bug"/></svg></button>
+      <button title="Code Visualizer  ␣cv" data-dock="visualizer"><svg class="i"><use href="#i-proton"/></svg></button>
+      <button title="Database  ␣dd"><svg class="i"><use href="#i-db"/></svg></button>
+      <button title="Plugins  ␣px"><svg class="i"><use href="#i-ext"/></svg></button>
+      <span class="spacer"></span>
+      <button title="Docs"><svg class="i"><use href="#i-book"/></svg></button>
+      <button title="Settings" data-open="settings"><svg class="i"><use href="#i-gear"/></svg></button>
+    </nav>
+
+    <!-- ══ CHAT ══════════════════════════════════════════════════ -->
+    <!-- Claude Code, as its own app draws it: sessions down the left, the
+         conversation in a column, and what it publishes in a pane on the
+         right. The engine is the real `claude` (proton-claude); this is the
+         window onto it. The artifacts pane starts closed and opens on the
+         first thing published. -->
+    <section class="workspace cc" data-ws="chat" data-right-start="hidden"
+             style="--col-l:264px; --col-r:480px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side cc-side">
+        <div class="cc-side-head">
+          <button class="cc-new" data-claude-new title="New session"><svg class="i"><use href="#i-plus"/></svg>New session</button>
+          <button class="cc-new-folder" data-claude-new-folder title="New folder" aria-label="New folder"><svg class="i"><use href="#i-folder"/></svg></button>
+        </div>
+        <!-- From Event::ClaudeSessions: your folders, then the sessions Claude
+             Code keeps for this folder — started here, in a terminal or in its
+             own app — and the other engines' conversations, newest first. -->
+        <div class="scroll cc-sessions" data-claude-sessions></div>
+
+        <!-- The council: one question put to every model with a
+             subscription, answered as a brief. `/council` in the composer
+             convenes it. -->
+        <div class="cc-council">
+          <header>Council <span class="grow"></span>
+            <button class="hbtn" data-council-new title="Put the question in the composer to the council"><svg class="i"><use href="#i-users"/></svg></button>
+          </header>
+          <div class="scroll tree" data-council-list></div>
+        </div>
+        <div class="cc-account-box" data-claude-account></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+
+      <main class="pane cc-main">
+        <header class="cc-head">
+          <div class="cc-title" data-claude-title>New session</div>
+          <span class="grow"></span>
+          <button class="hbtn cc-art-toggle" data-artifacts-toggle title="Artifacts"><svg class="i"><use href="#i-layers"/></svg><span class="cc-count" data-artifacts-count hidden></span></button>
+        </header>
+
+        <div class="scroll cc-thread" data-claude-thread>
+          <div class="cc-col">
+            <div class="cc-welcome" data-claude-welcome>
+              <div class="cc-welcome-star">✻</div>
+              <h2 data-claude-welcome-title>What should Claude work on?</h2>
+              <p data-claude-welcome-text>Claude Code, in this project. It reads, edits and runs things here, asks before anything you have not allowed, and what it publishes opens beside the chat.</p>
+            </div>
+            <div class="cc-earlier" data-claude-earlier hidden>Earlier messages in this session are not shown.</div>
+            <div class="cc-items" data-claude-items></div>
+            <div class="cc-working" data-claude-working hidden></div>
+          </div>
+        </div>
+
+        <!-- Shown instead of the conversation while a debate is on screen. -->
+        <div class="scroll cc-council-view" data-council-view hidden></div>
+
+        <div class="cc-dock">
+          <div class="cc-tasks" data-claude-tasks hidden></div>
+          <div class="cc-composer">
+            <div class="cc-menu" data-claude-menu hidden></div>
+            <div class="cc-attachments" data-claude-attachments hidden></div>
+            <textarea class="cc-input" data-claude-input rows="1" spellcheck="true" aria-label="Message Claude"
+                      placeholder="Ask Claude to build, fix or explain something…"></textarea>
+            <div class="cc-foot">
+              <button class="cc-pill icon" data-claude-attach title="Attach an image"><svg class="i"><use href="#i-plus"/></svg></button>
+              <button class="cc-pill" data-claude-engine data-pop="engine" title="Which agent answers"></button>
+              <button class="cc-pill" data-claude-mode data-pop="mode" title="Permissions  ⇧⇥"></button>
+              <span class="grow"></span>
+              <span class="cc-meter" data-claude-meter></span>
+              <button class="cc-pill" data-claude-model data-pop="model" title="Model and effort"></button>
+              <button class="cc-send" data-claude-send title="Send  ⏎" aria-label="Send" disabled><svg class="i"><use href="#i-arrow-up"/></svg></button>
+            </div>
+            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden data-claude-file>
+          </div>
+        </div>
+        <div class="cc-pop" data-claude-pop hidden></div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+
+      <!-- What Claude publishes with its Artifact tool, kept here a version at
+           a time and served from artifact://, a scheme of its own: the page
+           runs in a sandbox with an origin that is not the editor's, under a
+           policy that lets it load what claude.ai lets it load and reach
+           nothing of Proton's. -->
+      <aside class="pane cc-artifacts" data-claude-artifacts>
+        <header class="cc-art-head">
+          <span class="cc-art-icon" data-artifact-icon><svg class="i"><use href="#i-layers"/></svg></span>
+          <div class="cc-art-title" data-artifact-title>Artifacts</div>
+          <select class="cc-art-version" data-artifact-version hidden aria-label="Version"></select>
+          <span class="grow"></span>
+          <button class="hbtn" data-artifact-reload title="Reload"><svg class="i"><use href="#i-redo"/></svg></button>
+          <button class="hbtn" data-artifact-open title="Open on claude.ai"><svg class="i"><use href="#i-ext"/></svg></button>
+          <button class="hbtn" data-artifact-gallery title="All artifacts"><svg class="i"><use href="#i-grid"/></svg></button>
+          <button class="hbtn" data-artifact-close title="Close"><svg class="i"><use href="#i-close"/></svg></button>
+        </header>
+        <div class="cc-art-body">
+          <iframe class="cc-art-frame" data-artifact-frame hidden title="Artifact"
+                  sandbox="allow-scripts allow-forms allow-modals allow-popups allow-downloads"
+                  allow="fullscreen; picture-in-picture; autoplay" allowfullscreen
+                  referrerpolicy="no-referrer"></iframe>
+          <div class="scroll cc-art-doc" data-artifact-doc hidden></div>
+          <div class="cc-art-empty" data-artifact-empty>
+            <p>Nothing is open. Artifacts Claude publishes open here, and every one it has published is in the list.</p>
+            <button class="cc-secondary" data-artifact-gallery>Show artifacts</button>
+          </div>
+          <div class="scroll cc-gallery" data-artifact-gallery-list hidden></div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ══ CODEX ═════════════════════════════════════════════════ -->
+    <section class="workspace on" data-ws="codex" style="--col-l:200px; --col-r:330px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side">
+        <header>Explorer <span class="grow"></span>
+          <button class="hbtn" data-reveal title="Reveal the file you are in — ␣e"><svg class="i"><use href="#i-target"/></svg></button>
+        </header>
+        <button class="find" data-open="telescope"><svg class="i" width="13" height="13" style="opacity:.6"><use href="#i-search"/></svg> Find files… <kbd>␣ f f</kbd></button>
+        <!-- Rendered from Event::Tree. The core decides what is in it, what is
+             open and where you are; this draws rows. -->
+        <div class="scroll tree" data-tree></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane">
+        <!-- The code and the shell, side by side, the way a Zed pane group
+             splits a terminal to the right of the editor. The terminal is
+             view state: open or shut, and how wide, live in this window and
+             nowhere in the core. -->
+        <div class="stage-row">
+          <div class="stage-code" data-doc-host>
+            <!-- Built from Event::Splits. The core owns how many there are,
+                 which buffer each shows and which has the focus; this is
+                 where they go. -->
+            <div class="splits" id="codex-splits"></div>
+
+            <!-- A document is looked at, not edited, so it covers the panes
+                 rather than becoming one of them: it has no cursor, no undo
+                 and no :w, and a pane implies all three. Closing it puts the
+                 code back exactly as it was, because the code never went
+                 anywhere. Here it covers the code and not the shell beside it;
+                 opened in another mode it moves over that mode's stage. -->
+            <div id="doc-viewer" hidden>
+              <header>
+                <svg class="i" style="opacity:.6"><use href="#i-file-doc"/></svg>
+                <span data-doc-name>document</span>
+                <span class="chip" data-doc-at></span>
+                <span class="grow"></span>
+                <button class="hbtn" data-doc-zoom="-1" title="Zoom out  −">−</button>
+                <span class="chip" data-doc-zoom-level>100%</span>
+                <button class="hbtn" data-doc-zoom="1" title="Zoom in  +">+</button>
+                <button class="hbtn" data-doc-fit title="Fit the page's width  0">Fit</button>
+                <button class="hbtn" data-doc-close title="Close  Esc · q"><svg class="i"><use href="#i-close"/></svg></button>
+              </header>
+              <div class="scroll" data-doc-pages-box></div>
+            </div>
+          </div>
+
+          <div class="term-gutter" data-term-resize hidden></div>
+
+          <!-- Rendered from Event::Terminal. The core owns the pseudo-terminal
+               and the screen; this draws rows of runs and sends keys back. No
+               header, as in Zed: the two flags below only appear when there
+               is something to do — history to leave, or a shell to restart. -->
+          <section class="term-pane" data-term-pane aria-label="Terminal" hidden>
+            <div class="term-flags">
+              <!-- Only while looking at history. A terminal scrolled back
+                   looks exactly like one whose shell has stopped answering,
+                   so it has to say which it is — and offer the way out. -->
+              <button class="chip warn" data-term-back hidden title="Back to the live screen">↑ <span data-term-back-rows>0</span></button>
+              <!-- Only when the shell has gone. There is no button to start
+                   one: opening the pane does that, because that is what
+                   opening it means. -->
+              <button class="term-restart" data-term-restart hidden title="Start a new shell">Shell exited · restart</button>
+            </div>
+            <div class="scroll term" data-term-screen tabindex="0" aria-label="Terminal"></div>
+            <!-- What the keyboard types through while the shell has it. A
+                 paste only lands in something that takes text, and the screen
+                 is drawn, not edited — so this holds the focus instead, and
+                 hands what arrives in it to the shell. -->
+            <textarea class="term-input" data-term-input tabindex="-1" aria-label="Terminal input"
+                      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+          </section>
+        </div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane" id="codex-dock" data-showing="agent">
+        <!-- Zed's agent header: what you are looking at on the left, the
+             three things you do to it on the right. The panels that used to
+             be a row of tabs are the third of those — a menu, because one of
+             them is open at a time and the agent is the one that usually is. -->
+        <header class="dock-head">
+          <span class="dock-title" data-dock-title>New Thread</span>
+          <button class="hbtn" data-chat-new data-dock-only="agent" title="New thread" aria-label="New thread"><svg class="i"><use href="#i-plus"/></svg></button>
+          <button class="hbtn" data-chat-history data-dock-only="agent" title="Past threads" aria-label="Past threads" aria-haspopup="true" aria-expanded="false"><svg class="i"><use href="#i-clock"/></svg></button>
+          <button class="hbtn" data-mode-go="chat" data-dock-only="agent" title="Claude Code, in the Chat tab" aria-label="Open in Chat"><svg class="i"><use href="#i-expand"/></svg></button>
+          <button class="hbtn" data-dock-menu title="Panels" aria-label="Panels" aria-haspopup="true" aria-expanded="false"><svg class="i"><use href="#i-dots"/></svg><span class="dot" data-task-dot hidden></span></button>
+          <!-- This project's threads, newest first: each is a file in
+               .proton/chats/, and the one open comes back after a restart. -->
+          <div class="dock-threads" role="menu" aria-label="Past threads" data-chat-threads hidden>
+            <div class="dock-threads-head">Threads in this project</div>
+            <div class="dock-threads-list" data-chats></div>
+          </div>
+          <div class="dock-tabs" aria-label="Panels" hidden>
+            <button class="dock-tab on"  data-dockpanel="agent">Agent</button>
+            <button class="dock-tab"     data-dockpanel="tasks">Tasks <span class="chip accent" data-task-badge hidden></span></button>
+            <button class="dock-tab"     data-dockpanel="debug">Debug</button>
+            <button class="dock-tab"     data-dockpanel="visualizer">Visualizer</button>
+            <button class="dock-tab"     data-dockpanel="device">Device</button>
+            <button class="dock-tab"     data-dockpanel="git">Git</button>
+            <button class="dock-tab"     data-dockpanel="term">Terminal</button>
+          </div>
+        </header>
+
+        <!-- Agent -->
+        <div class="dock-panel on" data-panel="agent" style="display:flex;flex-direction:column;flex:1;min-height:0">
+          <div class="scroll" data-agent-thread></div>
+          <!-- Staged changes, from Event::Review. Pinned above the composer
+               rather than left inline with the message that proposed them: a
+               review that scrolls out of sight is one you forget you owe an
+               answer to. Empty until something is staged. -->
+          <div class="staged" data-staged hidden></div>
+
+          <div class="composer">
+            <div class="box">
+              <div class="txt" contenteditable="plaintext-only" role="textbox"
+                   aria-label="Ask Proton" data-agent-input
+                   data-placeholder="Message the Proton Agent, @selection to include context"></div>
+              <div class="foot">
+                <span class="select" data-mention="@selection" title="Send the selected text with the question">@selection</span>
+                <span class="select" data-mention="@dataframe" title="Send the selected cell's table with the question">@dataframe</span>
+                <span class="select scope-chip" data-scope-chip hidden></span>
+                <span class="grow"></span>
+                <span class="chip" data-agent-provider title="Which service is answering — change it in Settings > AI &amp; models"></span>
+                <select class="model-pick" data-model-pick title="Which model answers. Blank uses the provider's default."></select>
+                <span class="send" data-agent-send role="button" tabindex="0"
+                      aria-label="Send"><svg class="i"><use href="#i-send"/></svg></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tasks -->
+        <!-- Rendered from Event::Tasks. The core owns the queue: what is
+             running, what is behind it, and what each one left for you. -->
+        <div class="dock-panel" data-panel="tasks" style="display:none;flex-direction:column;flex:1;min-height:0">
+          <header>
+            <span class="chip" data-task-count>nothing queued</span>
+            <span class="grow"></span>
+            <button class="hbtn wide" data-tasks-clear title="Clear everything that has finished">Clear finished</button>
+          </header>
+          <div class="scroll" data-tasks></div>
+        </div>
+
+        <!-- Code Visualizer -->
+        <!-- Rendered from Event::Debug. The core owns where the debugger is,
+             what the stack looks like and what is in scope. -->
+        <div class="dock-panel" data-panel="debug" style="display:none;flex-direction:column;flex:1;min-height:0">
+          <header>
+            <span class="chip" data-debug-phase>idle</span>
+            <span class="grow"></span>
+            <button class="hbtn" data-debug="start" title="Start — ␣dr"><svg class="i"><use href="#i-play"/></svg></button>
+            <button class="hbtn" data-debug="resume" title="Continue — ␣dc"><svg class="i"><use href="#i-play"/></svg></button>
+            <button class="hbtn" data-debug="stepOver" title="Step over — ␣dn"><svg class="i"><use href="#i-step"/></svg></button>
+            <button class="hbtn" data-debug="stop" title="Stop — ␣dq"><svg class="i"><use href="#i-stop"/></svg></button>
+          </header>
+          <div class="scroll" style="flex:1;min-height:0">
+            <div class="group">Call stack</div>
+            <div class="tree" data-debug-frames></div>
+            <div class="group">Variables</div>
+            <div class="tree" data-debug-variables></div>
+            <div class="group">Output</div>
+            <div class="dbg-output" data-debug-output></div>
+          </div>
+        </div>
+        <div class="dock-panel" data-panel="visualizer" style="display:none;flex-direction:column;flex:1;min-height:0">
+          <div class="canvas-bar">
+            <span class="chip accent" data-trace-subject>no trace</span>
+            <span class="chip" data-trace-status>press ␣ct to trace this buffer</span>
+            <div class="seg" style="margin-left:auto">
+              <button class="on">Memory</button><button>Structure</button><button>Calls</button>
+            </div>
+          </div>
+          <div class="cv-canvas" id="cv-canvas">
+            <svg id="cv-edges" aria-hidden="true">
+              <defs>
+                <marker id="ah" markerWidth="7" markerHeight="7" refX="6.5" refY="3.5" orient="auto">
+                  <path d="M0 0 L7 3.5 L0 7 z" fill="var(--info)"/></marker>
+                <marker id="ahr" markerWidth="7" markerHeight="7" refX="6.5" refY="3.5" orient="auto">
+                  <path d="M0 0 L7 3.5 L0 7 z" fill="var(--err)"/></marker>
+              </defs>
+            </svg>
+            <div style="display:grid;grid-template-columns:minmax(120px,auto) 1fr;gap:46px;position:relative">
+              <div data-trace-stack></div>
+              <div data-trace-heap></div>
+            </div>
+          </div>
+          <pre class="cv-out" data-trace-stdout aria-label="Program output"></pre>
+          <div class="cv-scrub">
+            <span data-trace-nudge="-1000" title="First step"><svg class="i flip"><use href="#i-step"/></svg></span>
+            <span data-trace-nudge="-1" title="Back"><svg class="i flip"><use href="#i-play"/></svg></span>
+            <span data-trace-nudge="1" title="Forward"><svg class="i"><use href="#i-play"/></svg></span>
+            <span data-trace-nudge="1000" title="Last step"><svg class="i"><use href="#i-step"/></svg></span>
+            <input type="range" class="bar" min="0" max="0" value="0" data-trace-scrub
+                   aria-label="Trace step" disabled>
+            <span data-trace-step>—</span>
+          </div>
+        </div>
+
+        <!-- Device / mobile -->
+        <div class="dock-panel" data-panel="device" style="display:none;flex-direction:column;flex:1;min-height:0">
+          <div class="canvas-bar">
+            <span class="chip ok">Pixel 8 · API 35</span>
+            <div class="seg" style="margin-left:auto"><button class="on">Preview</button><button>Layout</button><button>Logcat</button></div>
+          </div>
+          <div class="device-stage">
+            <div class="phone">
+              <div class="screen">
+                <div class="notch"></div>
+                <div class="sbar"><span>9:41</span><span>▮▮▮ ⌁</span></div>
+                <div class="app-body">
+                  <div style="font:700 17px var(--sans);margin-bottom:12px">Fleet</div>
+                  <div class="p-card">
+                    <div class="inspect-box"></div>
+                    <div class="p-line" style="width:62%"></div>
+                    <div class="p-line" style="width:88%;opacity:.6"></div>
+                    <div style="height:26px;border-radius:6px;margin-top:8px;background:linear-gradient(90deg,rgba(255,92,121,.5),rgba(122,15,38,.5))"></div>
+                  </div>
+                  <div class="p-card"><div class="p-line" style="width:48%"></div><div class="p-line" style="width:76%;opacity:.6"></div></div>
+                  <div class="p-card"><div class="p-line" style="width:56%"></div><div class="p-line" style="width:70%;opacity:.6"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="flex:0 0 160px;border-top:1px solid var(--edge);display:flex;flex-direction:column;min-height:0">
+            <header style="padding:7px 11px;font:600 10.5px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--edge);display:flex;gap:8px;align-items:center">
+              Logcat <span class="chip warn">1 W</span> <span class="chip" style="margin-left:auto">com.proton.fleet</span>
+            </header>
+            <div class="scroll logcat">
+              <div class="lg"><span class="lv D">D</span><span class="tg">FleetActivity</span><span class="mg">onCreate savedInstanceState=null</span></div>
+              <div class="lg"><span class="lv I">I</span><span class="tg">TrajectoryJNI</span><span class="mg">loaded libtrajectory.so (arm64-v8a)</span></div>
+              <div class="lg"><span class="lv D">D</span><span class="tg">Telemetry</span><span class="mg">socket open · 40 sats</span></div>
+              <div class="lg"><span class="lv W">W</span><span class="tg">Choreographer</span><span class="mg">Skipped 31 frames — too much work on main thread</span></div>
+              <div class="lg"><span class="lv I">I</span><span class="tg">Proton</span><span class="mg">↳ same jank as the web target — one fix covers both</span></div>
+              <div class="lg"><span class="lv D">D</span><span class="tg">FleetAdapter</span><span class="mg">diffutil 40 → 40 (0 moved)</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- The terminal is not here any more. It sits beside the code in the
+             stage, where the agent no longer has to be hidden to see it. -->
+        <!-- Git -->
+        <!-- Rendered from Event::Repo. The core asks git each time rather than
+             remembering: the answer moves for reasons that never pass through
+             it — a commit in the terminal panel, a branch switched outside. -->
+        <div class="dock-panel" data-panel="git" style="display:none;flex-direction:column;flex:1;min-height:0">
+          <header>
+            <svg class="i" style="opacity:.6"><use href="#i-git"/></svg>
+            <span class="chip" data-git-branch>—</span>
+            <span class="grow"></span>
+            <span class="chip" data-git-count>0</span>
+          </header>
+          <div class="scroll tree" data-git-files></div>
+        </div>
+      </aside>
+
+    </section>
+
+    <!-- ══ DESIGN ════════════════════════════════════════════════ -->
+    <section class="workspace" data-ws="design" style="--col-l:246px; --col-r:268px; grid-template-columns: 66px var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <!-- Two, because two things exist. This rail had Style / Layout /
+           Inspect / Layers / Pagepilot, and four of the five lit up when
+           clicked and did nothing — the same claim-without-a-capability the
+           old fake layer tree was deleted for, sitting next to panels that
+           work. A button appears here when there is something behind it. -->
+      <nav class="builder-rail side">
+        <button class="on" data-design-panel="layers"><svg class="i"><use href="#i-layers"/></svg>Layers</button>
+        <button data-design-panel="style"><svg class="i"><use href="#i-sliders"/></svg>Style</button>
+      </nav>
+
+      <aside class="pane side">
+        <!-- Two documents, two structures, so two sections rather than a
+             chooser: a component's elements and a stylesheet's scopes are both
+             worth seeing while the other is being edited.
+
+             A layer tree used to sit here listing Container / Grid / Image for
+             a component nothing was bound to, and claiming a two-way binding
+             to a `Dashboard.tsx` that did not exist. It was deleted for that.
+             This one is read out of the file on the artboard: every row is an
+             element that is really there, and clicking one goes to the line
+             that wrote it. -->
+        <header data-design-side="layers">Layers <span class="grow"></span><span class="chip" data-layer-count></span></header>
+        <div class="scroll tree" data-design-side="layers" data-layers></div>
+
+        <header data-design-side="style" hidden>Palettes <span class="grow"></span><span class="chip" data-pal-count></span></header>
+        <div class="scroll tree" data-design-side="style" data-palettes hidden></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane">
+        <div class="canvas-bar">
+          <span class="chip accent" data-ab-file>no theme</span>
+          <!-- Which palette is being looked at. A theme declares the same
+               token once per scope, so "what does this look like" has no
+               answer until one is chosen. -->
+          <select class="seg-select" data-ab-scope title="Which palette to render"></select>
+          <span class="grow"></span>
+          <div class="seg" data-ab-size>
+            <button class="on" data-ab-width="0" title="Fill the pane"><svg class="i"><use href="#i-desktop"/></svg></button>
+            <button data-ab-width="768" title="768px"><svg class="i"><use href="#i-tablet"/></svg></button>
+            <button data-ab-width="375" title="375px"><svg class="i"><use href="#i-phone"/></svg></button>
+          </div>
+        </div>
+        <div class="canvas">
+          <!-- The theme, rendered. Every colour token as a swatch, and a
+               specimen built from them, with the palette applied as inline
+               custom properties so the cascade does the work. Change a token
+               in the inspector and this is where you see it. -->
+          <div class="artboard" data-artboard></div>
+        </div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane">
+        <!-- The selected layer, when there is one. Editing a box here splices
+             the component file: the bytes that one thing occupies are replaced
+             and nothing else in the file moves. Empty until a layer is picked,
+             because an inspector showing nothing in particular is a panel
+             taking up room. -->
+        <header data-layer-head hidden>Layer <span class="grow"></span><span class="chip" data-layer-tag></span></header>
+        <div class="setting" data-layer-form hidden>
+          <label class="st-field">Text
+            <input type="text" data-layer-text spellcheck="false" placeholder="—">
+          </label>
+          <label class="st-field">Id
+            <input type="text" data-layer-id spellcheck="false" placeholder="none">
+          </label>
+          <label class="st-field">Class
+            <input type="text" data-layer-class spellcheck="false" placeholder="none">
+          </label>
+          <p class="st-hint" data-layer-note></p>
+        </div>
+
+        <header>Tokens <span class="grow"></span><span class="chip" data-theme-name>no theme</span></header>
+        <!-- Slot::Inspector, from Event::Theme. Every custom property in the
+             project's stylesheet, grouped by the selector that declares it,
+             because a theme states the same token once per palette and they
+             are different tokens. Editing one writes that file. -->
+        <div class="scroll" data-tokens></div>
+      </aside>
+    </section>
+
+    <!-- ══ MODELING ══════════════════════════════════════════════ -->
+    <section class="workspace" data-ws="modeling" style="--col-l:226px; --col-r:268px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side">
+        <!-- Slot::Layers, from Event::Scene. Every row is an object really in
+             `scene.proton.json`; clicking one selects it and the inspector on
+             the right edits it, which writes the file.
+
+             What was here listed Satellite.001, a Key Light, some primitives
+             and two asset files for a scene that did not exist — the same
+             claim-without-a-capability as Design's old layer tree, and deleted
+             for the same reason. -->
+        <header>Outliner <span class="grow"></span><span class="chip" data-scene-count></span></header>
+        <div class="scroll tree" data-outliner></div>
+        <div class="pane-foot">
+          <button class="btn" data-add-node="mesh" title="Add a mesh under the selection">+ Mesh</button>
+          <button class="btn" data-add-node="light" title="Add a light under the selection">+ Light</button>
+          <button class="btn" data-add-node="empty" title="Add an empty under the selection">+ Empty</button>
+        </div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane">
+        <!-- Two facts, both from Event::Scene. What was here was an
+             Object/Edit/Sculpt/Shading switch for modes that do not exist, a
+             Cube/Sphere/Plane chip duplicating the buttons under the outliner,
+             "4.2k tris · 60 fps" for a scene with no triangles and no frame
+             loop, and a Generate button wired to nothing. -->
+        <div class="canvas-bar">
+          <span class="chip accent" data-scene-file>no scene</span>
+          <span class="grow"></span>
+          <span class="chip" data-scene-selected></span>
+        </div>
+        <div class="viewport">
+          <div class="grid-floor"></div>
+          <!-- The scene, drawn. Proxies rather than meshes — the format holds
+               transforms and kinds and no geometry — at each object's real
+               world transform, so the picture answers where things are, how
+               big, which way round and what is inside what. Drag to orbit,
+               shift-drag to pan, wheel to dolly, click to select.
+
+               What was here was a fixed SVG of a satellite. -->
+          <canvas data-viewport></canvas>
+          <div class="vp-overlay">
+            <div class="vp-badge" style="left:14px;top:14px">Perspective · 50mm</div>
+            <div class="vp-badge" style="left:14px;bottom:14px">Drag orbit · shift-drag pan · wheel dolly</div>
+            <div class="vp-badge" style="right:14px;bottom:14px" data-vp-count></div>
+            <div class="vp-badge" style="right:14px;top:14px">+Y up</div>
+          </div>
+        </div>
+        <div class="shader-pane">
+          <!-- The material of whichever object is selected, read out of
+               `scene.proton.json`. Every box is a node really in the file and
+               every wire a link; editing a value writes it, dragging a box
+               writes where it moved to.
+
+               What was here was four fixed boxes — a Noise Texture, a Color
+               Ramp, a Principled BSDF and a Material Output — wired to each
+               other with hand-drawn curves, for a material that did not
+               exist. -->
+          <svg class="graph-wires" data-graph-wires aria-hidden="true"></svg>
+          <div class="graph" data-graph></div>
+          <div class="vp-badge" style="right:12px;top:12px" data-graph-name>No material</div>
+        </div>
+        </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane">
+        <!-- One panel, so no tabs. Object was the only one of
+             Object/Modifiers/Physics/Agent with anything behind it, and three
+             tabs that change nothing when clicked are three claims. -->
+        <header>Object <span class="grow"></span><span class="chip" data-node-kind></span></header>
+        <div class="scroll">
+          <!-- The selected node, from Event::Scene. Typing here writes
+               `scene.proton.json` — there is no save, for the reason the theme
+               inspector has none: a scene with unsaved changes is a tree the
+               viewport disagrees with.
+
+               The modifier stack that sat below this listed a Subdivision, a
+               Bevel and an Array for an object that did not exist. It is gone
+               until there is a modifier to show. -->
+          <div data-node-empty class="empty">Nothing selected.</div>
+          <div data-node-form hidden>
+            <div class="sec-head">Object</div>
+            <label class="st-field">Name
+              <input type="text" data-node-name spellcheck="false">
+            </label>
+            <div class="sec-head">Transform</div>
+            <div class="prop-row"><span class="lbl">Position</span>
+              <input class="num" data-node-xyz="position" data-axis="0" inputmode="decimal">
+              <input class="num" data-node-xyz="position" data-axis="1" inputmode="decimal">
+              <input class="num" data-node-xyz="position" data-axis="2" inputmode="decimal">
+            </div>
+            <div class="prop-row"><span class="lbl">Rotation</span>
+              <input class="num" data-node-xyz="rotation" data-axis="0" inputmode="decimal">
+              <input class="num" data-node-xyz="rotation" data-axis="1" inputmode="decimal">
+              <input class="num" data-node-xyz="rotation" data-axis="2" inputmode="decimal">
+            </div>
+            <div class="prop-row"><span class="lbl">Scale</span>
+              <input class="num" data-node-xyz="scale" data-axis="0" inputmode="decimal">
+              <input class="num" data-node-xyz="scale" data-axis="1" inputmode="decimal">
+              <input class="num" data-node-xyz="scale" data-axis="2" inputmode="decimal">
+            </div>
+            <div class="prop-row" data-mesh-row hidden><span class="lbl">Mesh</span>
+              <!-- The path its geometry is in, relative to the scene. A path
+                   and not the vertices: a scene is a file somebody reads in a
+                   diff, and geometry is authored in Blender. -->
+              <input class="num" data-node-mesh spellcheck="false" style="text-align:left"
+                     placeholder="meshes/lamp.obj">
+            </div>
+            <p class="st-hint" data-mesh-note></p>
+            <!-- The modifier stack. Non-destructive: the `.obj` is read and
+                 never written, so these lines describe a change to a file
+                 they do not touch, and turning one off gets the original
+                 back exactly. Order is the point — mirror then array is two
+                 rows of paired objects, array then mirror is one row
+                 reflected into two. -->
+            <header class="sub" data-stack-head hidden>Modifiers
+              <span class="grow"></span>
+              <select class="rate" data-add-modifier title="Add a modifier to the end of the stack">
+                <option value="">+ add</option>
+                <option value="mirror">Mirror</option>
+                <option value="array">Array</option>
+                <option value="subdivide">Subdivide</option>
+              </select>
+            </header>
+            <div data-stack></div>
+            <p class="st-hint" data-node-note></p>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ══ GAME ══════════════════════════════════════════════════ -->
+    <!-- Proton's own engine (proton-game): a game's rooms drawn plane by
+         plane, edited and held until saved — on Codex's ground, laid out as
+         Canvas is. With no game open, the games the project holds and
+         a new one to make take the whole page (game.js). -->
+    <section class="workspace game-home" data-ws="game" style="--col-l:300px; --col-r:300px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side game-side">
+        <header class="game-side-tabs" role="tablist" aria-label="The game">
+          <button class="dock-tab on" role="tab" aria-selected="true" data-game-side="world">World</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-game-side="layers">Layers</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-game-side="entities">Entities</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-game-side="assets">Assets</button>
+        </header>
+        <div class="scroll game-side-body" data-game-side-body></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane game-main">
+        <div class="game-bar">
+          <button class="hbtn" data-game-leave title="Your games — the home page" aria-label="Your games"><svg class="i"><use href="#i-grid"/></svg></button>
+          <span class="game-name" data-game-name></span>
+          <div class="game-tabs" role="tablist" aria-label="Open rooms" data-game-tabs></div>
+          <span class="grow"></span>
+          <div class="game-seg" role="group" aria-label="Tool" data-game-tools>
+            <button data-game-tool="select" aria-pressed="true" title="Select and move  v" aria-label="Select">↖</button>
+            <button data-game-tool="pen" aria-pressed="false" title="Draw collision  p — click points, Enter or the first point to finish" aria-label="Draw collision">✎</button>
+            <button data-game-tool="light" aria-pressed="false" title="Place a light  l — on the play plane, where you click" aria-label="Place a light">✺</button>
+          </div>
+          <select class="game-pen-kind" data-game-pen-kind hidden aria-label="What the line drawn is">
+            <option value="solid">Solid</option>
+            <option value="oneway">One-way</option>
+            <option value="hazard">Hazard</option>
+            <option value="nowall">Not a wall</option>
+          </select>
+          <div class="game-seg" role="group" aria-label="Play" data-game-transport>
+            <button data-game-play title="Play from here" aria-label="Play" disabled><svg class="i"><use href="#i-play"/></svg></button>
+            <button data-game-pause title="Pause" aria-label="Pause" disabled><svg class="i"><use href="#i-pause"/></svg></button>
+            <button data-game-step title="One frame" aria-label="Step one frame" disabled><svg class="i"><use href="#i-step"/></svg></button>
+            <button data-game-stop title="Stop" aria-label="Stop" disabled><svg class="i"><use href="#i-stop"/></svg></button>
+          </div>
+          <button class="hbtn raster-toggle" data-game-post aria-pressed="false" title="Bloom, grade and vignette, as Play shows them  ⇧P" aria-label="Show the finish">✦</button>
+          <button class="hbtn" data-game-undo title="Undo  ⌘Z" aria-label="Undo" disabled><svg class="i"><use href="#i-undo"/></svg></button>
+          <button class="hbtn" data-game-redo title="Redo  ⇧⌘Z" aria-label="Redo" disabled><svg class="i"><use href="#i-redo"/></svg></button>
+          <button class="hbtn" data-game-save title="Save  ⌘S — every changed room and file of the game" disabled>Save</button>
+        </div>
+        <!-- What is asked before a game with changes is left. -->
+        <div class="game-ask" data-game-ask hidden></div>
+        <div class="game-stage" data-game-stage tabindex="0" aria-label="The room">
+          <canvas class="game-gl" data-game-gl></canvas>
+          <canvas class="game-overlay" data-game-overlay></canvas>
+          <div class="game-empty" data-game-stage-empty hidden></div>
+          <!-- The home page: the games here, and a new one. -->
+          <div class="game-open" data-game-open>
+            <div class="game-open-in" data-game-home></div>
+          </div>
+        </div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane game-pane" id="game-pane" data-showing="inspector">
+        <!-- What is selected, how a run starts, and the agent. -->
+        <header class="game-pane-head" role="tablist" aria-label="Inspector, run and the agent">
+          <button class="dock-tab on" role="tab" aria-selected="true" data-game-panel="inspector">Inspector</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-game-panel="run">Run</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-game-panel="agent">Agent <span class="dot" data-game-agent-dot hidden></span></button>
+        </header>
+        <div class="scroll game-pane-body" data-game-body="inspector" data-game-inspector></div>
+        <div class="scroll game-pane-body" data-game-body="run" data-game-run hidden></div>
+        <div class="game-agent" data-game-body="agent" hidden>
+          <div class="scroll" data-agent-thread></div>
+          <div class="composer">
+            <div class="box">
+              <div class="txt" contenteditable="plaintext-only" role="textbox"
+                   aria-label="Ask about this game" data-agent-input
+                   data-placeholder="Ask about this game"></div>
+              <div class="foot">
+                <span class="select" data-mention="@game" title="Send the game and the room on screen with the question">@game</span>
+                <span class="grow"></span>
+                <span class="chip" data-agent-provider title="Which service is answering — change it in Settings > AI &amp; models"></span>
+                <span class="send" data-agent-send role="button" tabindex="0"
+                      aria-label="Send"><svg class="i"><use href="#i-send"/></svg></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ══ CANVAS ════════════════════════════════════════════════ -->
+    <!-- Canvas mode ("raster" in the code): pixel art and painting, one
+         engine and two presets. Laid out as Game is: the layers, the picture,
+         and what is selected beside the agent. -->
+    <section class="workspace raster-home" data-ws="raster" style="--col-l:260px; --col-r:300px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side raster-side">
+        <header class="raster-side-tabs" role="tablist" aria-label="The canvas">
+          <button class="dock-tab on" role="tab" aria-selected="true" data-raster-side="layers">Layers</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-raster-side="palette">Palette</button>
+        </header>
+        <div class="scroll raster-side-body raster-palette" data-raster-palette hidden></div>
+        <div class="raster-layer-tools" data-raster-layer-tools>
+          <button class="hbtn" data-raster-layer-add title="A new layer above the one chosen" aria-label="New layer">＋</button>
+          <button class="hbtn" data-raster-layer-up title="Up a place" aria-label="Move the layer up">↑</button>
+          <button class="hbtn" data-raster-layer-down title="Down a place" aria-label="Move the layer down">↓</button>
+          <span class="grow"></span>
+          <button class="hbtn" data-raster-layer-remove title="Remove the layer" aria-label="Remove the layer">✕</button>
+        </div>
+        <div class="scroll raster-side-body" data-raster-layers></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane raster-main">
+        <div class="raster-bar">
+          <button class="hbtn" data-raster-leave title="Your canvases — the home page" aria-label="Your canvases"><svg class="i"><use href="#i-grid"/></svg></button>
+          <span class="raster-name" data-raster-name></span>
+          <span class="raster-dirty dot" data-raster-dirty title="Changes not saved" hidden></span>
+          <span class="raster-size" data-raster-size></span>
+          <span class="grow"></span>
+          <div class="raster-seg" role="group" aria-label="Tool" data-raster-tools>
+            <button data-raster-tool="pencil" aria-pressed="true" title="Pencil  b on a pixel canvas, n on a paint one — ⌥ picks a colour" aria-label="Pencil">✎</button>
+            <button data-raster-tool="brush" aria-pressed="false" title="Brush  b on a paint canvas, n on a pixel one — the pen's pressure sets its size and strength" aria-label="Brush">✒</button>
+            <button data-raster-tool="eraser" aria-pressed="false" title="Eraser  e" aria-label="Eraser">⌫</button>
+            <button data-raster-tool="fill" aria-pressed="false" title="Fill  g" aria-label="Fill">◪</button>
+            <button data-raster-tool="pick" aria-pressed="false" title="Pick a colour  i" aria-label="Pick a colour">⊙</button>
+            <button data-raster-tool="line" aria-pressed="false" title="Line  l — ⇧ to eighths of a turn" aria-label="Line">╱</button>
+            <button data-raster-tool="rect" aria-pressed="false" title="Rectangle  r — ⇧ square" aria-label="Rectangle">▭</button>
+            <button data-raster-tool="ellipse" aria-pressed="false" title="Ellipse  o — ⇧ circle" aria-label="Ellipse">◯</button>
+            <button data-raster-tool="select" aria-pressed="false" title="Select  s — again for an ellipse, a lasso; ⇧ adds, ⌥ takes away" aria-label="Select">⬚</button>
+            <button data-raster-tool="wand" aria-pressed="false" title="Magic wand  w" aria-label="Magic wand">⁂</button>
+            <button data-raster-tool="move" aria-pressed="false" title="Move  v — ⌘T scales and turns" aria-label="Move">✥</button>
+          </div>
+          <label class="raster-color" title="The colour drawn with"><input type="color" data-raster-color aria-label="The colour drawn with"><span class="raster-color-swatch" data-raster-color-swatch></span></label>
+          <button class="hbtn raster-toggle" data-raster-grid aria-pressed="false" title="The pixel grid  ⇧G" aria-label="Pixel grid">#</button>
+          <span class="raster-zoom" data-raster-zoom title="f fits it; 1 is 100 %"></span>
+          <button class="hbtn" data-raster-undo title="Undo  ⌘Z" aria-label="Undo" disabled><svg class="i"><use href="#i-undo"/></svg></button>
+          <button class="hbtn" data-raster-redo title="Redo  ⇧⌘Z" aria-label="Redo" disabled><svg class="i"><use href="#i-redo"/></svg></button>
+          <button class="hbtn" data-raster-save title="Save  ⌘S" disabled>Save</button>
+        </div>
+        <!-- What is asked before a canvas with changes is left. -->
+        <div class="raster-ask" data-raster-ask hidden></div>
+        <div class="raster-stage" data-raster-stage tabindex="0" aria-label="The canvas">
+          <canvas class="raster-gl" data-raster-gl></canvas>
+          <canvas class="raster-overlay" data-raster-overlay></canvas>
+          <div class="raster-empty" data-raster-stage-empty hidden></div>
+          <!-- The home page: the canvases here, and a new one. -->
+          <div class="raster-open" data-raster-open>
+            <div class="raster-open-in" data-raster-home></div>
+          </div>
+        </div>
+        <!-- The frames: shown small, played, added, copied, moved. -->
+        <div class="raster-timeline" data-raster-timeline hidden></div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane raster-pane" id="raster-pane" data-showing="inspector">
+        <header class="raster-pane-head" role="tablist" aria-label="Inspector and the agent">
+          <button class="dock-tab on" role="tab" aria-selected="true" data-raster-panel="inspector">Inspector</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-raster-panel="make" title="Make: sprites, noise and caves from a seed; outlines, shadows, fewer colours">Make</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-raster-panel="agent">Agent <span class="dot" data-raster-agent-dot hidden></span></button>
+        </header>
+        <div class="scroll raster-pane-body" data-raster-body="inspector" data-raster-inspector></div>
+        <div class="scroll raster-pane-body" data-raster-body="make" data-raster-make hidden></div>
+        <div class="raster-agent" data-raster-body="agent" hidden>
+          <div class="scroll" data-agent-thread></div>
+          <div class="composer">
+            <div class="box">
+              <div class="txt" contenteditable="plaintext-only" role="textbox"
+                   aria-label="Ask about this canvas" data-agent-input
+                   data-placeholder="Ask about this canvas"></div>
+              <div class="foot">
+                <span class="select" data-mention="@canvas" title="Send the canvas — its layers, palette and selection, and small pixel art's pixels — with the question">@canvas</span>
+                <span class="grow"></span>
+                <span class="chip" data-agent-provider title="Which service is answering — change it in Settings > AI &amp; models"></span>
+                <span class="send" data-agent-send role="button" tabindex="0"
+                      aria-label="Send"><svg class="i"><use href="#i-send"/></svg></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Diffuse: image generation by node graph, a small ComfyUI. The graphs
+         are built here and run whole on Nexus's image server on forge; the
+         screens are the "Diffuse UI" mockups. -->
+    <section class="workspace" data-ws="diffuse" style="--col-l:260px; --col-r:300px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side df-side">
+        <header class="df-side-tabs" role="tablist" aria-label="Flows, nodes and models">
+          <button class="dock-tab on" role="tab" aria-selected="true" data-df-side="flows">Flows</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-df-side="nodes">Nodes</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-df-side="models">Models</button>
+        </header>
+        <div class="scroll df-side-body" data-df-side-body></div>
+        <footer class="df-forge" data-df-forge></footer>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane df-main">
+        <div class="df-bar">
+          <div class="df-tabs" role="tablist" aria-label="Flows open" data-df-tabs></div>
+          <div class="df-seg" role="group" aria-label="View">
+            <button aria-pressed="true" data-df-view="graph">Graph</button>
+            <button aria-pressed="false" data-df-view="gallery" title="The project's outputs">Gallery</button>
+          </div>
+          <span class="grow"></span>
+          <button class="df-chip" data-df-chip title="How forge is — the Server tab says more"></button>
+          <button class="hbtn" data-df-undo title="Undo  ⌘Z" aria-label="Undo" disabled><svg class="i"><use href="#i-undo"/></svg></button>
+          <button class="hbtn" data-df-redo title="Redo  ⇧⌘Z" aria-label="Redo" disabled><svg class="i"><use href="#i-redo"/></svg></button>
+          <button class="hbtn" data-df-save title="Save  ⌘S" disabled>Save</button>
+          <button class="hbtn df-stop" data-df-stop hidden title="Stop the run  ⌘.">■ Stop</button>
+          <button class="cc-primary df-run" data-df-run disabled>▶ <span data-df-run-label>Run</span> <span class="df-count" data-df-count title="Runs not finished" hidden></span><kbd>⌘↩</kbd></button>
+        </div>
+        <div class="df-ask" data-df-ask hidden></div>
+        <div class="df-banner" data-df-banner role="status" hidden></div>
+        <div class="df-stage" data-df-stage tabindex="0" aria-label="The graph">
+          <div class="df-world" data-df-world>
+            <svg class="df-wires" data-df-wires aria-hidden="true"></svg>
+            <div class="df-nodes" data-df-nodes></div>
+          </div>
+          <div class="df-empty" data-df-empty hidden></div>
+          <div class="scroll df-gallery" data-df-gallery hidden></div>
+          <div class="df-search" data-df-search role="dialog" aria-label="Add a node" hidden></div>
+        </div>
+        <div class="df-foot" data-df-foot></div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane df-pane" id="diffuse-pane" data-showing="inspector">
+        <header class="df-pane-head" role="tablist" aria-label="Inspector, server and the agent">
+          <button class="dock-tab on" role="tab" aria-selected="true" data-df-panel="inspector">Inspector</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-df-panel="queue">Queue</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-df-panel="server">Server</button>
+          <button class="dock-tab" role="tab" aria-selected="false" data-df-panel="agent">Agent <span class="dot" data-diffuse-agent-dot hidden></span></button>
+        </header>
+        <div class="scroll df-pane-body" data-df-body="inspector" data-df-inspector></div>
+        <div class="scroll df-pane-body" data-df-body="queue" data-df-queue hidden></div>
+        <div class="scroll df-pane-body" data-df-body="server" data-df-server hidden></div>
+        <div class="df-agent" data-df-body="agent" hidden>
+          <div class="scroll" data-agent-thread></div>
+          <div class="composer">
+            <div class="box">
+              <div class="txt" contenteditable="plaintext-only" role="textbox"
+                   aria-label="Ask about this flow" data-agent-input
+                   data-placeholder="Ask about this flow"></div>
+              <div class="foot">
+                <span class="select" data-mention="@flow" title="Send the flow on screen — its nodes, values and links, and what stops it running — with the question">@flow</span>
+                <span class="grow"></span>
+                <span class="chip" data-agent-provider title="Which service is answering — change it in Settings > AI &amp; models"></span>
+                <span class="send" data-agent-send role="button" tabindex="0"
+                      aria-label="Send"><svg class="i"><use href="#i-send"/></svg></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+      <!-- Over the whole mode while Diffuse is sealed and not unlocked: laid
+           over it, so it takes no column of its own. -->
+      <div class="df-lock" data-df-lock data-shares-column hidden></div>
+    </section>
+
+    <!-- ══ VIDEO ═════════════════════════════════════════════════ -->
+    <section class="workspace" data-ws="video" style="--col-l:226px; --col-r:300px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side">
+        <!-- Slot::Explorer, from Event::Cut. Every row is a source the cut
+             actually refers to, and the chip says whether the file is really
+             there — which is the one thing about the media this can know
+             without decoding any of it.
+
+             What was here listed nine files for a cut that did not exist,
+             including a `b_roll_orbit.mp4` marked "gen" that nothing had
+             generated. -->
+        <header>Media bin <span class="grow"></span><span class="chip" data-media-count></span></header>
+        <div class="scroll tree" data-media></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane">
+        <!-- No program monitor, no Render button, no Edit/Color/Audio/Deliver
+             tabs. A frame of the programme is a decoded frame of video, and
+             decoding needs ffmpeg in a process of its own — which the process
+             model already accounts for and which is not installed here.
+
+             What was here drew a rocket with an SVG ellipse for a trajectory,
+             captioned it "Orbital insertion — T+00:14", and put a line of
+             dialogue under it that no transcription had produced.
+
+             The timeline below is real: every clip is an event in the `.edl`,
+             positioned by its record timecode. -->
+        <div class="canvas-bar">
+          <span class="chip accent" data-cut-file>no cut</span>
+          <span class="chip" data-cut-title></span>
+          <span class="grow"></span>
+          <span class="chip" data-cut-length></span>
+          <!-- The rate is an assumption. An EDL does not record the rate its
+               timecodes are counted at, so this is shown rather than hidden,
+               and changing it re-reads the list without writing a byte. -->
+          <select class="rate" data-cut-rate title="An EDL does not record its frame rate. This is the rate its timecodes are being read at."></select>
+        </div>
+        <div class="tl" data-timeline></div>
+        <div class="scroll" data-cut-source></div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane">
+        <!-- The selected event's fields, as the list wrote them. Typing here
+             splices the `.edl`: the bytes one timecode occupies are replaced
+             and no column is re-aligned.
+
+             The Agent/Effects/Color tabs are gone — only one had anything
+             behind it — along with a tool transcript describing a scene
+             detection, a transcription, a rough cut and a b-roll generation
+             that never ran. -->
+        <header>Event <span class="grow"></span><span class="chip" data-cut-selected></span></header>
+        <div class="scroll">
+          <div data-cut-empty class="empty">Nothing selected.</div>
+          <div data-cut-props hidden></div>
+          <header class="sub" data-captions-head hidden>Captions <span class="grow"></span><span class="chip" data-captions-file></span></header>
+          <div data-captions></div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ══ DATA ══════════════════════════════════════════════════ -->
+    <section class="workspace" data-ws="data" style="--col-l:226px; --col-r:300px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side">
+        <header>Sources <span class="grow"></span>
+          <button class="hbtn" data-reveal title="Reveal the file you are in — ␣e"><svg class="i"><use href="#i-target"/></svg></button>
+        </header>
+        <button class="find" data-open="telescope"><svg class="i" width="13" height="13" style="opacity:.6"><use href="#i-search"/></svg> Find files… <kbd>␣ f f</kbd></button>
+        <!-- The same Event::Tree that Codex draws. Data's explorer is the
+             project's files, because a notebook's inputs are files in it —
+             the mock schema that used to sit here described a warehouse
+             nobody had connected. -->
+        <div class="scroll tree" data-tree></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+      <main class="pane">
+        <div class="canvas-bar">
+          <!-- Rendered from Event::Notebook. Empty until a .ipynb is opened,
+               which is a mode switch as much as a file open. -->
+          <span class="chip accent" data-nb-name>no notebook</span>
+          <span class="chip" data-nb-kernel hidden></span>
+          <span class="grow"></span>
+          <button class="btn" data-nb-runall title="Run every code cell, top to bottom">Run all</button>
+          <button class="btn" data-nb-add title="Add a code cell">+ Cell</button>
+          <button class="btn" data-nb-save title="Write the notebook back">Save</button>
+        </div>
+        <div class="splits" id="data-splits"></div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+      <aside class="pane data-side" data-showing="table">
+        <!-- Two panels in one place: the table under the cell you are on, and
+             the agent, which works in this notebook — reads it, runs its cells
+             in your kernel, and proposes changes you accept on the cells. -->
+        <header class="data-side-head">
+          <button class="dock-tab on" data-data-panel="table">Table</button>
+          <button class="dock-tab" data-data-panel="agent">Agent <span class="dot" data-data-agent-dot hidden></span></button>
+          <span class="grow"></span><span class="chip" data-df-shape hidden></span>
+        </header>
+        <!-- Slot::Table. The dataframe of whichever cell the focused pane is
+             on, drawn from that cell's own output rather than from anything
+             this panel works out for itself. What used to be here was a
+             profile of a column in a database nobody had opened. -->
+        <div class="scroll" data-df-dock data-data-body="table"></div>
+        <div class="data-agent" data-data-body="agent" hidden>
+          <div class="scroll" data-agent-thread></div>
+          <!-- What the agent proposed to this notebook, also drawn on each
+               cell. Pinned above the composer for the same reason the
+               Codex dock pins its staged changes. -->
+          <div class="staged" data-proposals hidden></div>
+          <div class="composer">
+            <div class="box">
+              <div class="txt" contenteditable="plaintext-only" role="textbox"
+                   aria-label="Ask about this notebook" data-agent-input
+                   data-placeholder="Ask about this notebook, @dataframe to include the table"></div>
+              <div class="foot">
+                <span class="select" data-mention="@dataframe" title="Send the selected cell's table with the question">@dataframe</span>
+                <span class="grow"></span>
+                <span class="chip" data-agent-provider title="Which service is answering — change it in Settings > AI &amp; models"></span>
+                <span class="send" data-agent-send role="button" tabindex="0"
+                      aria-label="Send"><svg class="i"><use href="#i-send"/></svg></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ══ RESEARCH ══════════════════════════════════════════════ -->
+    <!-- Investigations: a question put to Claude Code, Codex and Antigravity
+         together, as Google's co-scientist puts one — hypotheses proposed,
+         reviewed by the others, ranked by a tournament judged blind, evolved
+         — with the Lab to run what is worth running. Each is a folder under
+         the project's research/, and this draws what the core reads from it
+         (ui/research.js). Drawn as Chat is: Codex's ground and type. -->
+    <section class="workspace cc rs" data-ws="research"
+             style="--col-l:240px; --col-r:320px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side cc-side rs-side">
+        <div class="cc-side-head">
+          <button class="cc-new" data-research-new title="New investigation"><svg class="i"><use href="#i-plus"/></svg>New investigation</button>
+        </div>
+        <!-- From Event::ResearchList: the project's investigations, newest first. -->
+        <div class="scroll cc-sessions" data-research-list></div>
+        <!-- Where they are kept — research/ in the project, or a folder of
+             their own for every project — and a way to keep them elsewhere. -->
+        <div class="rs-where" data-research-where></div>
+        <!-- From Event::ResearchRound: who sits at the open investigation's
+             table, in which role, and whether each can. -->
+        <div class="rs-seats-box" data-research-seats-box hidden>
+          <header>Table</header>
+          <div data-research-seats></div>
+        </div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+
+      <main class="pane cc-main rs-main">
+        <header class="cc-head rs-head">
+          <div class="cc-title" data-research-title>Research</div>
+          <span class="rs-chip" data-research-discipline hidden></span>
+          <span class="grow"></span>
+        </header>
+        <div class="rs-strip" data-research-tabs hidden>
+          <div class="rs-tabs" role="tablist" aria-label="Board">
+            <button class="rs-tab on" role="tab" aria-selected="true" data-research-tab="overview">Overview</button>
+            <button class="rs-tab" role="tab" aria-selected="false" data-research-tab="hypotheses">Hypotheses<span class="rs-count" data-research-count></span></button>
+            <button class="rs-tab" role="tab" aria-selected="false" data-research-tab="literature">Literature<span class="rs-count" data-research-papers></span></button>
+            <button class="rs-tab" role="tab" aria-selected="false" data-research-tab="activity">Activity<span class="rs-count live" data-research-busy></span></button>
+          </div>
+          <!-- The round: where it stands, what it has spent, and its controls. -->
+          <div class="rs-run" data-research-run hidden>
+            <span class="rs-status" data-research-status></span>
+            <span class="rs-meter" data-research-meter><i></i></span>
+            <button class="cc-quiet" data-research-pause hidden>Pause</button>
+            <button class="cc-quiet" data-research-stop hidden>Stop</button>
+            <button class="cc-primary" data-research-go>Run round</button>
+          </div>
+        </div>
+        <!-- From Event::ResearchBoard, ResearchHypothesis, ResearchLiterature, ResearchPaper,
+             ResearchResults, ResearchRound and ResearchTranscript. -->
+        <div class="scroll rs-board" data-research-board></div>
+        <!-- What the scientist tells the team, and hypotheses of their own. -->
+        <div class="rs-dock" data-research-dock hidden>
+          <div class="cc-composer rs-composer">
+            <textarea class="cc-input" data-research-input rows="1" spellcheck="true" aria-label="Tell the team"
+                      placeholder="Tell the team something — /h Title: statement adds a hypothesis of your own, /p and a DOI a paper"></textarea>
+            <div class="cc-foot">
+              <span class="rs-hint" data-research-hint>⏎ tells the team · ⇧⏎ a new line</span>
+              <span class="grow"></span>
+              <button class="cc-send" data-research-send title="Send  ⏎" aria-label="Send" disabled><svg class="i"><use href="#i-arrow-up"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+
+      <!-- The Lab: where an investigation's code runs, in a sandbox, after
+           you have read it. -->
+      <aside class="pane rs-lab" data-research-lab>
+        <header class="cc-head rs-lab-head"><div class="cc-title">Lab</div></header>
+        <div class="scroll rs-lab-body" data-research-lab-body>
+          <!-- From Event::LabEnv: the Lab's Python, made with your say-so twice (ui/lab.js). -->
+          <section class="lab-env" data-lab-env></section>
+          <!-- From Event::LeanEnv: Lean and Mathlib, for mathematics, made the same way (ui/lean.js). -->
+          <section class="lab-env lean-env" data-lean-env hidden></section>
+          <!-- From Event::ResearchLab and ResearchRun: what waits for you to read,
+               and what has run. -->
+          <section class="lab-work" data-lab-work></section>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Notebook: notebooks of your own sources, to study from. The sources,
+         ticked for the tutor; the tutor, which answers from them and cites
+         them; and the studio, which makes guides, cards, quizzes and exams of
+         them. Each notebook is a folder of its own in ~/Github/Notebooks/, and
+         this draws what the core reads from it (ui/study.js). Drawn as Chat
+         is: Codex's ground and type. -->
+    <section class="workspace cc st" data-ws="study"
+             style="--col-l:280px; --col-r:300px; grid-template-columns: var(--col-l) 1px minmax(0,1fr) 1px var(--col-r);">
+      <aside class="pane side cc-side st-side">
+        <div class="cc-side-head">
+          <button class="cc-new" data-study-new title="New notebook"><svg class="i"><use href="#i-plus"/></svg>New notebook</button>
+        </div>
+        <!-- From Event::StudyList: the notebooks, the last opened first. -->
+        <div class="scroll cc-sessions st-list" data-study-list></div>
+        <!-- From Event::StudyNotebook: the open notebook's sources, ticked
+             for the tutor to use, and its notes. -->
+        <div class="st-sources" data-study-sources hidden></div>
+        <!-- Where notebooks are kept, and what they are drawn from. -->
+        <div class="rs-where st-where" data-study-where></div>
+      </aside>
+
+      <div class="gutter" data-resize="--col-l" title="Drag to resize · double-click to reset"></div>
+
+      <main class="pane cc-main st-main">
+        <header class="cc-head st-head">
+          <div class="cc-title" data-study-title>Notebook</div>
+          <span class="grow"></span>
+        </header>
+        <!-- The tutor, and what is open beside it: a source, a note, something the studio made. -->
+        <div class="scroll st-stage" data-study-stage></div>
+      </main>
+
+      <div class="gutter" data-resize="--col-r" title="Drag to resize · double-click to reset"></div>
+
+      <!-- The studio: what can be made of the sources, and what has been. -->
+      <aside class="pane st-studio" data-study-studio>
+        <header class="cc-head st-studio-head"><div class="cc-title">Studio</div></header>
+        <div class="scroll st-studio-body" data-study-studio-body></div>
+      </aside>
+    </section>
+  </div>
+
+  <!-- ══ title bar — Codex only ═══════════════════════════════════
+       Codex is drawn after a Zed setup: no rails, no tabs, no statusline,
+       one ground from edge to edge. The title bar it does keep stands on its
+       end down the right edge, so the code has the window's full height. It
+       holds what the rails held that Codex still needs: the window controls,
+       the modes — so the window can be left by mouse as well as by ⌃1–9, ⌃0 and ⌃- —
+       and the panel toggles a hidden statusline would otherwise take with
+       it. The empty stretch between them is the window's drag surface.
+       After the body in the source because it is after it on screen, so Tab
+       reaches it last. -->
+  <header class="titlebar" aria-label="Window">
+    <div class="lights" aria-label="Window controls">
+      <i title="Close"></i><i title="Minimise"></i><i title="Maximise"></i>
+    </div>
+    <!-- The projects that are open, as the chrome rail draws them, and the
+         way to open another: the same picker as ⌘O, ␣fp and :cd. -->
+    <div class="tb-projects" role="tablist" aria-label="Project" aria-orientation="vertical" data-workspaces></div>
+    <button class="tb-btn" data-open-workspace title="Open a folder  ⌘O · ␣fp · :cd" aria-label="Open a folder"><svg class="i"><use href="#i-plus"/></svg></button>
+    <div class="tb-modes" role="tablist" aria-label="Mode" aria-orientation="vertical">
+      <button class="mode" role="tab" aria-selected="false" data-mode="chat" title="Chat  ⌃1"><span>Chat</span></button>
+      <button class="mode" role="tab" aria-selected="true"  data-mode="codex" title="Codex  ⌃2"><span>Codex</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="data" title="Data  ⌃3"><span>Data</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="research" title="Research  ⌃4"><span>Research</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="study" title="Notebook  ⌃5"><span>Notebook</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="design" title="Design  ⌃6"><span>Design</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="modeling" title="Model  ⌃7"><span>Model</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="game" title="Game  ⌃8"><span>Game</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="raster" title="Canvas  ⌃0"><span>Canvas</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="diffuse" title="Diffuse  ⌃-"><span>Diffuse</span></button>
+      <button class="mode" role="tab" aria-selected="false" data-mode="video" title="Video  ⌃9"><span>Video</span></button>
+    </div>
+    <span class="tb-drag" aria-hidden="true"></span>
+    <div class="tb-actions">
+      <button class="tb-btn" data-panel-toggle="left" title="Hide sidebar" aria-label="Hide sidebar" aria-expanded="true"><svg class="i"><use href="#i-panel-left"/></svg></button>
+      <button class="tb-btn" data-term-toggle title="Terminal  ⌃`" aria-label="Terminal" aria-pressed="false"><svg class="i"><use href="#i-term"/></svg></button>
+      <button class="tb-btn" data-panel-toggle="right" title="Hide right panel" aria-label="Hide right panel" aria-expanded="true"><svg class="i"><use href="#i-panel-right"/></svg></button>
+      <button class="tb-btn" data-open="settings" title="Settings  ⌘," aria-label="Settings"><svg class="i"><use href="#i-gear"/></svg></button>
+    </div>
+  </header>
+
+  <!-- ══ statusline ══════════════════════════════════════════════ -->
+  <footer class="statusline">
+    <div class="sl sl-mode" id="sl-mode">NORMAL</div>
+    <div class="sl project" id="sl-project">—</div>
+    <div class="sl git" id="sl-git" hidden></div>
+    <div class="sl" id="sl-path">—</div>
+    <div class="sl" id="sl-filetype"></div>
+    <div class="sl grow" id="sl-status" role="status" aria-live="polite"></div>
+    <div class="sl" id="sl-agent"><svg class="i ft-ai"><use href="#i-spark"/></svg> Agent</div>
+    <div class="sl" id="sl-diagnostics"></div>
+    <div class="sl" id="sl-servers"></div>
+    <div class="sl right" id="sl-position">ln 1, col 1</div>
+    <div class="sl" id="sl-progress"></div>
+  </footer>
+</div>
+
+<!-- ══ overlays ══════════════════════════════════════════════════ -->
+<div class="scrim" id="scrim"></div>
+
+<!-- The completion popup. Not an overlay: it has no scrim and does not take
+     the keyboard, because you are still in insert mode while it is up. -->
+<div class="cmp float" id="completion" hidden>
+  <div class="cmp-list" data-completion-list></div>
+  <div class="cmp-foot"><span>⇥ / ⌃n</span><span>⏎ accept</span><span>⎋ dismiss</span></div>
+</div>
+
+<!-- What `K` asked the server. Like the completion popup it takes no keyboard
+     and has no scrim: it is an annotation on the buffer, not a mode. -->
+<div class="hov float" id="hover" hidden>
+  <div class="hov-body" data-hover-text></div>
+</div>
+
+<div class="overlay float" id="telescope" role="dialog" aria-modal="true" aria-label="Find files" tabindex="-1">
+  <div class="prompt"><span class="caret">❯</span> <input data-picker-query type="search" aria-label="Search files" autocomplete="off" spellcheck="false" placeholder="Search files…"><span class="chip" style="margin-left:auto" data-picker-title>find_files</span><span class="chip scope-chip" data-picker-scope hidden></span><span class="chip" data-picker-count></span></div>
+  <div class="cols">
+    <div class="results" data-picker-results></div>
+    <div class="preview"><div class="pv-empty">Choose a file to open.</div></div>
+  </div>
+</div>
+
+<!-- which-key. Drawn for whichever prefix is pending, from the keymap the
+     core resolves (see `LEADER` in app.js): every row is a key that does
+     something. The list that used to be here offered ␣a, ␣b, ␣m, ␣/, ␣? and
+     ␣␣, none of which were bound to anything. -->
+<div class="overlay float" id="whichkey">
+  <div class="wk-head" data-wk-head><span style="color:var(--accent)">␣</span> <span style="color:var(--ink-4)">— leader</span></div>
+  <div class="wk-grid" data-wk-grid></div>
+</div>
+
+<div class="overlay float" id="cmdline">
+  <span class="caret" id="cmdline-prompt">:</span><span id="cmdline-text"></span><span class="cursor"></span>
+  <span class="chip" style="margin-left:auto">:w · :e · :cd · :vs · :q</span>
+</div>
+
+<div class="overlay float" id="settings" role="dialog" aria-modal="true" aria-label="Settings" tabindex="-1">
+  <header style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--edge)">
+    <div class="brand"><svg class="i"><use href="#i-proton"/></svg> PROTON</div>
+    <span style="color:var(--ink-3)">Settings</span>
+    <span class="grow" style="flex:1"></span>
+    <button class="btn" data-close="settings">Close ⎋</button>
+  </header>
+  <div class="st-body">
+    <!-- Five sections, each of which is a panel that does something. What was
+         here listed fourteen — Members, Integrations, Cloud & sync, Audit log,
+         Access control — none of which had anything behind them. A settings
+         page that lies about what it can change is worse than a short one. -->
+    <div class="st-nav tree">
+      <div class="group">Editor</div>
+      <button class="row sel" data-st-nav="appearance"><span class="ic"><svg class="i"><use href="#i-palette"/></svg></span>Appearance</button>
+      <button class="row" data-st-nav="editing"><span class="ic">&#10216;&#10217;</span>Editing</button>
+      <button class="row" data-st-nav="plugins"><span class="ic"><svg class="i"><use href="#i-ext"/></svg></span>Plugins</button>
+      <div class="group">Agent</div>
+      <button class="row" data-st-nav="models"><span class="ic"><svg class="i ft-ai"><use href="#i-spark"/></svg></span>AI &amp; models</button>
+      <button class="row" data-st-nav="library"><span class="ic"><svg class="i"><use href="#i-book"/></svg></span>Library</button>
+      <div class="group">About</div>
+      <button class="row" data-st-nav="about"><span class="ic"><svg class="i"><use href="#i-gear"/></svg></span>Configuration</button>
+    </div>
+    <div class="st-main">
+      <div data-st-panel="appearance">
+      <div style="font:600 10.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px">Appearance</div>
+      <div class="setting">
+        <h4>Workspace theme</h4>
+        <p>Choose the colors used throughout Proton.</p>
+        <div class="themes">
+          <button class="theme-card on" data-theme-set="aura-dark">
+            <span class="sw"><i style="background:#15141b"></i><i style="background:#a277ff"></i><i style="background:#ebdbb2"></i><i style="background:#b8bb25"></i><i style="background:#fb4833"></i></span>
+            <span class="nm">Aura Dark</span>
+          </button>
+          <button class="theme-card" data-theme-set="tokyo-night">
+            <span class="sw"><i style="background:#16161e"></i><i style="background:#7aa2f7"></i><i style="background:#bb9af7"></i><i style="background:#9ece6a"></i><i style="background:#e0af68"></i></span>
+            <span class="nm">Tokyo Night</span>
+          </button>
+          <button class="theme-card" data-theme-set="one-dark">
+            <span class="sw"><i style="background:#282c34"></i><i style="background:#61afef"></i><i style="background:#c678dd"></i><i style="background:#98c379"></i><i style="background:#e5c07b"></i></span>
+            <span class="nm">One Dark</span>
+          </button>
+          <button class="theme-card" data-theme-set="catppuccin">
+            <span class="sw"><i style="background:#1e1e2e"></i><i style="background:#89b4fa"></i><i style="background:#cba6f7"></i><i style="background:#a6e3a1"></i><i style="background:#f9e2af"></i></span>
+            <span class="nm">Catppuccin Mocha</span>
+          </button>
+          <button class="theme-card" data-theme-set="nord">
+            <span class="sw"><i style="background:#2e3440"></i><i style="background:#88c0d0"></i><i style="background:#b48ead"></i><i style="background:#a3be8c"></i><i style="background:#ebcb8b"></i></span>
+            <span class="nm">Nord</span>
+          </button>
+          <button class="theme-card" data-theme-set="gruvbox-dark">
+            <span class="sw"><i style="background:#282828"></i><i style="background:#83a598"></i><i style="background:#d3869b"></i><i style="background:#b8bb26"></i><i style="background:#fabd2f"></i></span>
+            <span class="nm">Gruvbox Dark</span>
+          </button>
+          <!-- Palettes plugins brought, from Event::Plugins. Appended to the
+               same strip because a theme from a plugin is a theme. -->
+
+        </div>
+      </div>
+
+      <!-- What is installed, from Event::Plugins. -->
+      <div class="setting" data-plugins-setting hidden>
+        <h4>Plugins</h4>
+        <p>Wasm components, sandboxed and on a deadline. A plugin that will not finish a call is stopped rather than allowed to take the window with it. They live beside your session, not in a project — a repository cannot bring code with it.</p>
+        <div data-plugins></div>
+      </div>
+      <div class="setting">
+        <h4>Window background</h4>
+        <p data-backdrop-description>Mica takes its colour from your wallpaper — the compositor samples it, so the whole window tints as you move it across the desktop. Acrylic blurs whatever is actually behind the window, live, and costs more. Content surfaces stay opaque either way: code is never at the mercy of a wallpaper.</p>
+        <div class="seg" style="width:max-content" id="backdrop-picker">
+          <button data-backdrop-set="vibrancy" hidden>Vibrancy</button>
+          <button class="on" data-backdrop-set="mica">Mica</button>
+          <button data-backdrop-set="mica-alt">Mica Alt</button>
+          <button data-backdrop-set="acrylic">Acrylic</button>
+          <button data-backdrop-set="solid">Solid</button>
+        </div>
+        <p style="margin:9px 0 0;font-size:11.5px" id="backdrop-note"></p>
+      </div>
+      <div class="setting">
+        <h4>Translucency</h4>
+        <p>Choose how much of the window background shows through. Subtle gives text the strongest contrast.</p>
+        <div class="seg" style="width:max-content" id="translucency-picker">
+          <button data-translucency-set="subtle">Subtle</button>
+          <button class="on" data-translucency-set="medium">Medium</button>
+          <button data-translucency-set="heavy">Heavy</button>
+        </div>
+      </div>
+      <div class="setting">
+        <h4>Interface text</h4>
+        <p>Make labels, menus, and messages easier to read. Editor text has its own size below.</p>
+        <label class="setting-control">Text size <select data-display-setting="ui.textScale" aria-label="Interface text size"><option value="1">100%</option><option value="1.1">110%</option><option value="1.25">125%</option></select></label>
+      </div>
+      <div class="setting">
+        <h4>Density</h4>
+        <p>Choose more breathing room or fit more rows on screen.</p>
+        <label class="setting-control">Row spacing <select data-display-setting="ui.density" aria-label="Interface density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+      </div>
+      <div class="setting">
+        <h4>Surface blur</h4>
+        <p>Soften the content behind floating panels, including this window.</p>
+        <label class="setting-control">Blur <select data-display-setting="ui.blur" aria-label="Surface blur"><option value="46">Soft</option><option value="20">Light</option><option value="0">Off</option></select></label>
+      </div>
+      <div class="setting">
+        <h4>Editor text</h4>
+        <p>Codex uses JetBrainsMono Nerd Font when it is installed, and the terminal follows the editor's size. The other modes use CaskaydiaMono, with your system monospace font as a fallback.</p>
+        <label class="setting-control">Font size <select data-display-setting="editor.fontSize" aria-label="Editor font size"><option value="12">12 px</option><option value="13">13 px</option><option value="14">14 px</option><option value="15">15 px</option><option value="16" selected>16 px</option><option value="18">18 px</option><option value="20">20 px</option></select></label>
+      </div>
+      <div class="setting">
+        <h4>File tabs</h4>
+        <p>Codex shows the open file's path above the code instead of a row of tabs. <kbd>␣</kbd><kbd>f</kbd><kbd>b</kbd> lists the open buffers either way.</p>
+        <label class="setting-control">Tabs <select data-display-setting="editor.tabs" aria-label="File tabs"><option value="hidden" selected>Hidden</option><option value="shown">Shown</option></select></label>
+      </div>
+      <div class="setting">
+        <h4>Terminal</h4>
+        <p>The GPU draws the terminal the way Zed does: each character is drawn once, and a busy screen is redrawn without laying out any text. It is new, so text stays the default. Selecting and copying work the same with either.</p>
+        <label class="setting-control">Drawn with <select data-display-setting="terminal.renderer" aria-label="Terminal renderer"><option value="text" selected>Text</option><option value="gpu">GPU</option></select></label>
+      </div>
+      </div><!-- /appearance -->
+
+      <div data-st-panel="editing" hidden>
+        <div class="st-head">Editing</div>
+        <div class="setting"><h4>Keyboard navigation</h4><p>In the file tabs, use <kbd>←</kbd> / <kbd>→</kbd> or <kbd>Home</kbd> / <kbd>End</kbd> to move focus, <kbd>Enter</kbd> to open, and <kbd>Delete</kbd> to close. Unsaved files stay open. Tab to a split divider and use arrow keys to resize, <kbd>Shift</kbd> for larger steps, or <kbd>Home</kbd> to make the two panes equal. <kbd>Esc</kbd> returns to the editor.</p></div>
+        <div class="setting"><h4>Modal editing</h4><p>Proton uses Vim-style editing in every mode. Press <kbd>i</kbd> to insert, <kbd>Esc</kbd> to return to Normal mode, and <kbd>Space</kbd> for the leader menu. A non-modal editing mode is not available yet.</p></div>
+        <div class="setting"><h4>Undo and redo</h4><p>In Codex, use the pane’s Undo and Redo buttons, or <kbd>⌘Z</kbd> and <kbd>⇧⌘Z</kbd> on Mac (<kbd>Ctrl+Z</kbd> and <kbd>Ctrl+Shift+Z</kbd> or <kbd>Ctrl+Y</kbd> on Windows/Linux). In Normal mode, <kbd>u</kbd> undoes and <kbd>Ctrl+R</kbd> redoes. Continuous typing is one undo step; moving the cursor or saving starts a new step.</p></div>
+        <div class="setting">
+          <h4>Format on save</h4>
+          <p>`:w` writes the file and then asks the language server to format it, writing again if anything changed. Turn this off for a project whose formatter disagrees with its own history.</p>
+          <label class="st-toggle"><input type="checkbox" data-set-bool="editor.formatOnSave" checked> Format the buffer when it is written</label>
+          <label class="st-toggle"><input type="checkbox" data-set-bool="editor.formatC"> Format C and C++ too (clangd, or clang-format with the project's <code>.clang-format</code>)</label>
+        </div>
+      </div>
+
+      <div data-st-panel="models" hidden>
+        <div class="st-head">AI &amp; models</div>
+        <div class="setting">
+          <h4>Provider</h4>
+          <p>Which service the agent pane talks to. The key to reach it with is never stored here — it comes from the environment, or from that provider's own CLI login.</p>
+          <div class="seg" data-set-choice="agent.provider">
+            <button data-value="claude">Claude</button>
+            <button data-value="gemini">Gemini</button>
+            <button data-value="codex">Codex</button>
+            <button data-value="antigravity">Antigravity</button>
+          </div>
+        </div>
+        <div class="setting">
+          <h4>Model</h4>
+          <p>Left blank, each provider uses its own default — the careful model for agent work, a small fast one for completion.</p>
+          <label class="st-field">Agent
+            <input type="text" data-set-text="agent.model" spellcheck="false" placeholder="provider default">
+          </label>
+        </div>
+        <div class="setting">
+          <h4>Credential</h4>
+          <p data-agent-auth>Checking…</p>
+          <p>Codex uses your existing Codex sign-in. Sign in through the Codex app or run <code>codex login</code>, then send a message here. GPT-6 Astra is the default for Codex.</p>
+          <p>Antigravity uses your Google sign-in through its <code>agy</code> command, so a Gemini subscription works without an API key. Run <code>agy</code> once in a terminal to sign in. Gemini 4 Argon (High) is the default; <code>agy models</code> lists the rest.</p>
+        </div>
+        <div class="setting">
+          <h4>Antigravity in the project</h4>
+          <p>Antigravity works in the open project with its own tools, and its steps appear in the agent pane. It can always read files. Writing them is off until you allow it, and it never runs commands from here. Files it changes are re-read when it finishes, unless you have unsaved changes in them.</p>
+          <label class="st-toggle"><input type="checkbox" data-set-bool="agent.antigravityEdits"> Let Antigravity edit files</label>
+        </div>
+      </div>
+
+      <div data-st-panel="library" hidden>
+        <div class="st-head">Library</div>
+        <div class="setting">
+          <h4>Roots</h4>
+          <p>Directories of your own writing — a vault, course notes, a papers folder — that the agent may search and cite. Nothing is read until you list it here, and nothing outside a listed directory is ever read: no symlink is followed out of one, and hidden folders and anything <code>.gitignore</code> excludes are skipped.</p>
+          <div data-library-roots></div>
+          <div class="lib-add">
+            <input type="text" data-library-new spellcheck="false" placeholder="C:\Users\you\Vault  or  ~/Vault">
+            <button class="btn" data-library-add>Add</button>
+          </div>
+        </div>
+        <div class="setting">
+          <h4>Sources</h4>
+          <p>Which parts of the library a question may draw on. Nothing ticked means all of it. Narrowing is worth doing when a question belongs to one subject: matching is by word rather than by topic, so the same term reaches every field that uses it — <em>convergence</em> finds optimisation, training and numerical methods at once.</p>
+          <div data-library-sources></div>
+          <button class="btn" data-library-all>Use everything</button>
+        </div>
+        <div class="setting">
+          <h4>PDFs</h4>
+          <p>Papers, slide decks and textbooks, read a page at a time and cited by page — clicking one opens it in Proton's viewer at that page. Getting the text out is slow: 240 documents took three and a half minutes the first time. It is kept afterwards, so only a new or edited document costs anything. A scan with no text layer is skipped rather than indexed as noise.</p>
+          <label class="st-toggle"><input type="checkbox" data-set-bool="library.pdfs" checked> Read PDFs as well as notes</label>
+        </div>
+        <div class="setting">
+          <h4>What has been read</h4>
+          <p>Notes are searchable as soon as they are read; the PDFs land after. The roots are checked for changes every twenty seconds — a stat-only look that costs about 180&nbsp;ms over 36,000 files — and re-read when something moved. What is already indexed stays searchable throughout.</p>
+          <p data-library-status>No roots listed.</p>
+          <label class="st-toggle"><input type="checkbox" data-set-bool="library.watch" checked> Notice changes while Proton is open</label>
+          <button class="btn" data-library-refresh style="margin-top:10px">Re-read now</button>
+        </div>
+        <div class="setting">
+          <h4>Meaning</h4>
+          <p>Matching by word finds a passage only when it uses the words you did. <em>Why is my loop slow when the array is big</em> shares no term with a section on cache blocking, so it cannot reach it — no amount of tuning changes that. Naming a local embedding model here adds a second ranking by meaning and fuses the two, which does reach it.</p>
+          <p>It runs on your machine through <code>ollama</code>, so nothing leaves it and nothing is billed. The cost is time: it embeds about 60 passages a second, so a vault of 16,000 takes four or five minutes the first time. What it makes is kept, and keyed on the text of the passage rather than on where it lives — so re-reading a file, or moving one, costs nothing. Leave it empty for words only, which is a complete answer and a narrower one.</p>
+          <label class="st-field">Embedding model
+            <input type="text" data-set-text="library.embeddings" placeholder="empty — words only" spellcheck="false">
+          </label>
+          <p class="st-hint"><code>ollama pull embeddinggemma</code> gets one. A question is embedded when the agent searches, which adds about two seconds to that one call; the <code>␣fl</code> picker stays on words, because two seconds a keystroke is not a picker.</p>
+        </div>
+        <div class="setting">
+          <h4>Citing</h4>
+          <p>Answers quote a passage's citation in double brackets — <code>[[Attention.md § Sparse patterns L42-58]]</code> — which is clickable in the agent pane and is a working link if you paste the answer back into Obsidian.</p>
+        </div>
+      </div>
+
+      <div data-st-panel="plugins" hidden>
+        <div class="st-head">Plugins</div>
+        <div class="setting">
+          <h4>Installed</h4>
+          <p>Loaded from the project when the session starts. Installing one needs a restart, so this is what is running now rather than what is on disk.</p>
+          <div data-plugins-list></div>
+        </div>
+      </div>
+
+      <div data-st-panel="about" hidden>
+        <div class="st-head">Configuration</div>
+        <div class="setting">
+          <h4>Where settings live</h4>
+          <p>A file in the project, beside <code>.proton/debug.json</code>, so it diffs and can be committed if the team wants the same editor. Keys this build does not recognise are left alone.</p>
+          <p><code data-settings-path></code></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint" id="hint">
+  <button class="hint-toggle" title="Keyboard hints"><svg class="i"><use href="#i-keyboard"/></svg></button>
+  <div class="hint-keys">
+  <span>Try</span>
+  <kbd>⌃1</kbd><kbd>…</kbd><kbd>⌃0</kbd><kbd>⌃-</kbd><span style="color:var(--ink-3)">modes</span>
+  <kbd>␣</kbd><span style="color:var(--ink-3)">leader</span>
+  <kbd>⌘K</kbd><span style="color:var(--ink-3)">telescope</span>
+  <kbd>:</kbd><span style="color:var(--ink-3)">cmd</span>
+  <kbd>i</kbd><kbd>v</kbd><kbd>⎋</kbd><span style="color:var(--ink-3)">vim modes</span>
+  <kbd>␣w</kbd><span style="color:var(--ink-3)">splits</span>
+  </div>
+</div>
+
+<script type="module" src="app.js"></script>
+  <!-- The editor's text is drawn, not edited in place, and a paste only
+       lands in something that takes text: ⌘V hands the focus here for the
+       moment the paste arrives, and its text goes to the core. Outside the
+       layout, which places its panes by their order. -->
+  <textarea class="term-input editor-paste" data-editor-paste tabindex="-1" aria-hidden="true"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+</body>
+</html>

@@ -12,6 +12,8 @@
 //   ModelUI           the Model workspace: the Metal viewport, the outliner, the inspector, Edit mode
 //   GameCore          a game open for editing (proton-game via the bridge), a run of it, its parallax arithmetic
 //   GameUI            the Game workspace: the room stage, rooms and entities, Play
+//   DesignCore        a design open for editing (aether-design and proton-design via the bridge), its tokens resolved, its pages laid out
+//   DesignUI          the Design workspace: the artboards, layers and tokens, the inspector, the code drawer
 //   AetherGraph       the project: one graph of assets and links, transactions, undo, the package
 //   AetherDesign      Velvet Obsidian: tokens, glass, controls
 //   DiffuseUI         the Diffuse workspace: the flow canvas, node library, inspector
@@ -62,12 +64,15 @@ let package = Package(
         .target(name: "ModelUI", dependencies: ["ModelCore", "AetherDesign", "AetherGraph"]),
         .target(name: "GameCore", dependencies: ["DiffuseBridge"]),
         .target(name: "GameUI", dependencies: ["GameCore", "AetherDesign", "AetherGraph"]),
+        .target(name: "DesignCore", dependencies: ["DiffuseBridge"]),
+        .target(name: "DesignUI", dependencies: ["DesignCore", "AetherDesign"]),
         .target(name: "CanvasUI", dependencies: ["CanvasCore", "DiffuseBridge", "AetherDesign", "AetherGraph"]),
         .target(name: "AetherDesign"),
         .target(name: "DiffuseUI", dependencies: ["DiffuseBridge", "DiffuseCore", "DiffuseLocal", "AetherDesign", "AetherGraph"]),
-        .target(name: "AetherShell", dependencies: ["AetherDesign", "AetherGraph", "CanvasCore", "CanvasUI", "DiffuseBridge", "DiffuseCore", "DiffuseUI", "GameCore", "GameUI", "ModelCore", "ModelUI"]),
+        .target(name: "AetherShell", dependencies: ["AetherDesign", "AetherGraph", "CanvasCore", "CanvasUI", "DiffuseBridge", "DiffuseCore", "DiffuseUI", "DesignCore", "DesignUI", "GameCore", "GameUI", "ModelCore", "ModelUI"]),
         .testTarget(name: "ModelCoreTests", dependencies: ["ModelCore", "ModelUI", "AetherGraph"]),
         .testTarget(name: "AetherGraphTests", dependencies: ["AetherGraph"]),
+        .testTarget(name: "DesignCoreTests", dependencies: ["DesignCore", "DesignUI"]),
         .testTarget(name: "GameCoreTests", dependencies: ["GameCore", "GameUI", "CanvasCore"]),
         .testTarget(
             name: "DiffuseLocalTests",

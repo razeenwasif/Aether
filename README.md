@@ -2,7 +2,7 @@
 
 A native macOS creative studio: Proton's Design, Model, Game, Canvas, Diffuse and Video modes as one app, in Swift, SwiftUI and Metal. The plan is [RESEARCH_PLAN.md](RESEARCH_PLAN.md); the design is the [canvas](https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv) and the [Status & Plan](https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7) page.
 
-**Diffuse and Canvas are built, and the project graph links them (M1). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, and an Edit mode Proton never had.** The other three are designed and show a placeholder until their milestones.
+**Diffuse and Canvas are built, and the project graph links them (M1). Model is built in part: Proton's scenes, the outliner and the modifier stack on a Metal viewport, and an Edit mode Proton never had. Game is built for side-on games, and Design's first slice is in: pages of layers bound to a `theme.css` of tokens, drawn natively.** Video is designed and shows a placeholder until its milestone.
 
 ## Building
 
@@ -30,10 +30,12 @@ swift test --package-path Packages/AetherKit       # the graph, flows, canvases,
 |---|---|
 | `cores/aether-diffuse` | UniFFI bridge over `proton-diffuse` and `proton-raster`: flows, edits and undo, checks, sealed files, pictures, the Nexus client, `CanvasEditor` (a canvas painted and composited live), `SceneEditor` (a scene edited, and each object's triangles with its modifiers applied), and `MeshEditor` (a mesh in Edit mode) |
 | `cores/aether-poly` | Aether's own: a mesh kept as polygons, read from and written to `.obj`, and Edit mode's extrude, inset, loop cut, bevel and delete |
+| `cores/aether-design` | Aether's own: Design's document. A design's folder (`design.json`, `theme.css`, a file a page), its pages edited by Game's ops with undo, the theme by `proton-design`'s splices with undo, and a page written as HTML and CSS |
+| `cores/proton-design` | Proton's Design core: tokens read out of a `theme.css` and one value spliced back without moving anything else, and a component's markup as a layer tree. Brought from Proton at `9111812^`, without its TypeScript bindings |
 | `cores/aether-layers` | Aether's own: material layers, a base surface and a short stack over it, written as an ordinary Proton material graph and read back from one |
 | `cores/proton-diffuse`, `cores/proton-raster`, `cores/proton-scene`, `cores/proton-mesh` | Proton's Diffuse core, raster engine, scene format and mesh maths (`.obj`, mirror, array, subdivide), brought from Proton at `1e1aeb7`, without their TypeScript bindings. The file formats stay Proton's |
 | `docs/DIFFUSE.md` | Proton's Diffuse design and the `/img/v1` contract, which `proton-diffuse` cites and tests against |
-| `Packages/AetherKit` | Everything Swift: `AetherGraph` (the project: assets, links, transactions, one history, the package), `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `CanvasCore` (a canvas open for editing, its tiles), `CanvasUI` (the Canvas workspace), `ModelCore` (a scene open for editing, a mesh in Edit mode, the camera and picking maths, the Metal shader source), `ModelUI` (the Model workspace and its Metal viewport), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands, the omnibar) |
+| `Packages/AetherKit` | Everything Swift: `AetherGraph` (the project: assets, links, transactions, one history, the package), `DiffuseCore` (model, backends, run queue), `DiffuseUI` (canvas, nodes, inspector, library), `CanvasCore` (a canvas open for editing, its tiles), `CanvasUI` (the Canvas workspace), `ModelCore` (a scene open for editing, a mesh in Edit mode, the camera and picking maths, the Metal shader source), `ModelUI` (the Model workspace and its Metal viewport), `DesignCore` (a design open for editing, its tokens resolved, its pages laid out as flexbox does), `DesignUI` (the Design workspace), `AetherDesign` (Velvet Obsidian), `AetherShell` (window, rail, commands, the omnibar) |
 | `App/` | The app's entry point and icon |
 | `scripts/` | Build scripts, the icon renderer, and a stand-in image gateway |
 
@@ -139,6 +141,20 @@ Proton's own engine, made for a few kinds of game: hand-drawn Metroidvanias like
 - **Play** (the rail's Play, or ⌘↩) runs the game as it is, unsaved edits and all, from its start, in the same stage, with no load step. Arrows or WASD move, Z or Space jumps, X swings, C or Shift dashes. Esc stops, and the run is replayed on a fresh copy of the world to check that it ends in the same state. The simulation is Proton's, in whole numbers: Proton's recorded replays end in the same hashes here.
 
 Animations play by their frames in Play, and skeletons by their clips: each bone posed and eased as DragonBones eases, each part's points carried by up to four bones. The player stretches into a jump and squashes on landing, about its feet; a hurt, a death, a blow landed and a thing beaten shake the screen. Each event and cue plays its sound (at most four of one at once; a death's over the hurt's), and an area's music loops, crossfading as rooms change areas. Play is lit, and finished as `game.json`'s `post` says (bloom, a grade from a lookup table n² wide and n tall, vignette), in the game's view letterboxed on the stage. A game whose view `filter` is `nearest` is pixel art: in Play it's drawn at the game's own resolution, on its pixel grid, and scaled up by whole numbers, sharp. Not yet: the isometric and low-poly cameras.
+
+## Design
+
+The web builder. A design is a folder a diff can read: `design.json` (its name and its pages), a `theme.css` of tokens in Proton's format, and `pages/<id>.page.json` for each page, its layers (frames, text and shapes) a flat list, each frame naming its children. Designs live in the project's `Designs/`. Proton drew an HTML component in a web view; Aether has none, so a page is its own tree, laid out as flexbox lays it out and drawn natively, and written out as HTML and CSS for the code and the browser.
+
+- **New design** makes Lumen's landing page from the design board: a nav, a hero, two buttons and three feature cards, every colour, space and font a token.
+- **The canvas** draws the page at each breakpoint side by side (Desktop 1280, Mobile 390). A row that wraps puts the cards one above another on the phone. Click a layer to choose it (in every artboard at once), double-click text to type into it, Esc chooses the frame it's in. A, T and R add a frame, text or a shape inside the chosen frame. Drag the empty canvas or use two fingers to move; pinch or ⌘-scroll to zoom; `f` shows it all.
+- **Layers** (the navigator) is the page's tree. Its menu moves a layer up or down, puts it in a frame, or removes it with everything in it. **Tokens** lists `theme.css`'s custom properties by scope, each value edited in place, a colour with a well too. A colour dragged through many values is one undo step.
+- **The inspector** shows what the layer is and the frame it's in, then only what applies: its text, font, colour and alignment; its width and height (Hug, Fill or Fixed, and for a card in a wrapping row, how narrow it gets before it wraps); a frame's direction, wrap, gap, padding, align and justify; a fill, a stroke and a radius. Tokens come first in every menu, then a value as written. A token `theme.css` doesn't have shows in red, and the page says which.
+- **The code** (`⌘/`, or the dock's `</>`) shows the chosen layer as HTML and CSS, its tokens as `var()`s of the theme.
+- **Edits** are made by the core whole or not at all (a layer can't end up in two frames or none), each an undo step, `⌘Z` the newest wherever it was made, page or theme. They're held until `⌘S`. A token edit splices one value into `theme.css` and moves nothing else.
+- **Preview** (the rail's Preview, or `⌘↩`) writes the page as it is, unsaved edits and all, beside its theme in a folder of its own, and opens it in the browser.
+
+Not yet: components and variants, a breakpoint's own values, images from Diffuse and Canvas, two-way sync with a project's `src/components`, the dark palette drawn, and Pagepilot's review.
 
 ## Canvas
 

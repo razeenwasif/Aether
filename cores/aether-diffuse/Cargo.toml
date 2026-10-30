@@ -3,7 +3,7 @@ name = "aether-diffuse"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
-description = "Aether's bridge to Proton's cores — flows and the Nexus client, canvases, scenes and meshes — for Swift through UniFFI."
+description = "Aether's bridge to its cores — flows and the Nexus client, canvases, scenes and meshes, games, designs — for Swift through UniFFI."
 
 [lib]
 name = "aether_diffuse"
@@ -22,6 +22,8 @@ aether-poly = { path = "../aether-poly" }
 aether-layers = { path = "../aether-layers" }
 # Game: games, edited and run.
 proton-game = { path = "../proton-game" }
+# Design: designs, their pages and their theme.
+aether-design = { path = "../aether-design" }
 serde = "1"
 serde_json = "1"
 uniffi = "0.32"

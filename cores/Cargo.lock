@@ -44,9 +44,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-design"
+version = "0.1.0"
+dependencies = [
+ "proton-design",
+ "proton-game",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aether-diffuse"
 version = "0.1.0"
 dependencies = [
+ "aether-design",
  "aether-layers",
  "aether-poly",
  "proton-diffuse",
@@ -880,6 +891,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proton-design"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
