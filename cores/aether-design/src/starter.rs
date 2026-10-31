@@ -6,7 +6,8 @@
 //! new design shows is the binding: change `--color-lantern-500` and every
 //! layer that uses it follows. On the phone the title is set smaller and the
 //! hero's padding is less, as the Mobile breakpoint says. Its two buttons are
-//! instances of one component, `button`, a primary and a secondary. What nobody has
+//! instances of one component, `button`, a primary and a secondary, which
+//! dims as it's hovered and pressed, and most when it's disabled. What nobody has
 //! decided yet — the platforms, the release window — is a placeholder, not
 //! an invented fact.
 
@@ -118,14 +119,20 @@ fn row(gap: &str) -> Layout {
 /// colour, or outlined as the secondary.
 fn button() -> Component {
     let secondary = |style: Style| BTreeMap::from([("variant=secondary".to_string(), Override { style, ..Override::default() })]);
+    let dims = |key: &str, opacity: f64| (key.to_string(), Override { style: Style { opacity: Some(opacity), ..Style::default() }, ..Override::default() });
     Component {
         id: "button".into(),
         name: "Button".into(),
         props: vec![Prop { name: "variant".into(), options: vec!["primary".into(), "secondary".into()] }],
+        states: vec!["hover".into(), "pressed".into(), "disabled".into()],
         root: "button".into(),
         layers: vec![
             Layer {
-                when: secondary(Style { fill: Some("transparent".into()), stroke: Some("--color-line".into()), ..Style::default() }),
+                when: {
+                    let mut when = secondary(Style { fill: Some("transparent".into()), stroke: Some("--color-line".into()), ..Style::default() });
+                    when.extend([dims("state=hover", 0.85), dims("state=pressed", 0.7), dims("state=disabled", 0.4)]);
+                    when
+                },
                 ..frame(
                     "button",
                     "Button",

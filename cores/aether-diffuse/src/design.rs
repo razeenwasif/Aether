@@ -117,6 +117,12 @@ impl DesignEditor {
         lock(&self.held).make_component(&page, &layer, &id, &name).map_err(failed)
     }
 
+    /// Instance `layer` of page `page` made plain layers again: one step of
+    /// the page.
+    pub fn detach(&self, page: String, layer: String) -> Result<(), DiffuseError> {
+        lock(&self.held).detach(&page, &layer).map_err(failed)
+    }
+
     /// A batch of ops (JSON, Game's ops) on `design`, `page:<id>` or
     /// `component:<id>`, whole or not at all. Whether it changed anything.
     pub fn apply(&self, target_name: String, ops: String) -> Result<bool, DiffuseError> {

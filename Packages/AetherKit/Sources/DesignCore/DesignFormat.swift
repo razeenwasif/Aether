@@ -375,15 +375,23 @@ public struct DesignComponent: Decodable, Hashable, Sendable, Identifiable {
     public var id: String
     public var name: String
     public var props: [DesignProp]
+    /// Which of `allStates` it has a look for.
+    public var states: [String]
     public var root: String
     public var layers: [DesignLayer]
 
-    enum CodingKeys: String, CodingKey { case id, name, props, root, layers }
+    /// The states a component can have a look for, in the CSS's order:
+    /// hover, focus and pressed are how someone uses the page; a page can
+    /// make one disabled.
+    public static let allStates = ["hover", "focus", "pressed", "disabled"]
+
+    enum CodingKeys: String, CodingKey { case id, name, props, states, root, layers }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
         name = try c.value(.name, "")
         props = try c.value(.props, [])
+        states = try c.value(.states, [])
         root = try c.value(.root, "")
         layers = try c.value(.layers, [])
     }
@@ -395,9 +403,12 @@ public struct DesignComponent: Decodable, Hashable, Sendable, Identifiable {
         return DesignPage(id: id, name: name, breakpoints: [], root: root, layers: layers)
     }
 
-    /// Each option there is to show: `prop=option`, with a name for it.
+    /// Each option there is to show, then each state: `prop=option` or
+    /// `state=hover`, with a name for it.
     public var options: [(key: String, name: String)] {
-        props.flatMap { prop in prop.options.map { ("\(prop.name)=\($0)", "\($0.prefix(1).uppercased() + $0.dropFirst())") } }
+        let title = { (word: String) in word.prefix(1).uppercased() + word.dropFirst() }
+        return props.flatMap { prop in prop.options.map { ("\(prop.name)=\($0)", title($0)) } }
+            + Self.allStates.filter(states.contains).map { ("state=\($0)", title($0)) }
     }
 
     /// The text layers an instance can give words to.

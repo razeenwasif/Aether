@@ -512,6 +512,31 @@ public final class DesignWorkspaceModel {
         apply([words.isEmpty ? .remove(key) : .set(key, words)], label: "Words of \(layer.label)")
     }
 
+    /// An instance disabled, or not; the component's look for it.
+    public func setDisabled(_ id: String, _ disabled: Bool) {
+        setProp(id, "state", to: disabled ? "disabled" : nil)
+    }
+
+    /// The component being edited's states: which it has a look for.
+    public func setStates(_ states: [String]) {
+        guard let component else { return }
+        let ordered = DesignComponent.allStates.filter(states.contains)
+        apply([.set(["states"], ordered)], label: "States of \(component.name)")
+    }
+
+    /// The chosen instance made plain layers again: its component's, as it
+    /// picks them. One step.
+    public func detachSelected() {
+        guard let document, let pageID, componentID == nil, let id = selection, let layer = page?.layer(id), layer.kind == .instance else { return }
+        let label = "Detach \(layer.label)"
+        let before = document.steps
+        if document.detach(id, on: pageID, label: label) {
+            if document.steps > before { stepped(label) }
+        } else if let refusal = document.refusal {
+            notice = refusal
+        }
+    }
+
     /// The component being edited renamed.
     public func renameComponent(_ name: String) {
         guard let component, !name.trimmingCharacters(in: .whitespaces).isEmpty, name != component.name else { return }

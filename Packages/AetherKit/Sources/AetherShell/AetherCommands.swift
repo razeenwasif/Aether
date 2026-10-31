@@ -278,6 +278,8 @@ public struct AetherCommands: Commands {
                 .disabled(!onDesign || design.component != nil || design.chosen?.kind != .frame)
             Button("Edit the Component") { if let id = design.chosen?.component { design.editComponent(id) } }
                 .disabled(!onDesign || design.chosen?.kind != .instance)
+            Button("Detach the Instance") { design.detachSelected() }
+                .disabled(!onDesign || design.component != nil || design.chosen?.kind != .instance)
             Button("Back to the Page") { design.closeComponent() }
                 .disabled(!onDesign || design.component == nil)
             Divider()

@@ -240,6 +240,9 @@ final class DesignCanvasView: NSView {
         let style = layer.style
         let faded = (style.opacity ?? 1) < 1
         if faded {
+            // Its own state, so the alpha ends with it rather than fading
+            // every layer drawn after.
+            cg.saveGState()
             cg.setAlpha(max(0, style.opacity ?? 1))
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
             cg.setAlpha(1)
@@ -266,7 +269,10 @@ final class DesignCanvasView: NSView {
         for child in layer.children.compactMap(page.layer) {
             drawLayer(child, in: laid, page: page, cg: cg, seen: seen.union([layer.id]))
         }
-        if faded { cg.endTransparencyLayer() }
+        if faded {
+            cg.endTransparencyLayer()
+            cg.restoreGState()
+        }
     }
 
     /// A picture filling its layer as `fit` says, its corners rounded; a

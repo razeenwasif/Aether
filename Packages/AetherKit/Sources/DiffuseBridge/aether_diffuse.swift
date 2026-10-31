@@ -1409,6 +1409,12 @@ public protocol DesignEditorProtocol: AnyObject, Sendable {
     func componentCode(id: String)  -> String?
     
     /**
+     * Instance `layer` of page `page` made plain layers again: one step of
+     * the page.
+     */
+    func detach(page: String, layer: String) throws 
+    
+    /**
      * Page `id` with its instances expanded into their components' layers,
      * as JSON.
      */
@@ -1580,6 +1586,20 @@ open func componentCode(id: String) -> String?  {
         FfiConverterString.lower(id),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Instance `layer` of page `page` made plain layers again: one step of
+     * the page.
+     */
+open func detach(page: String, layer: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_detach(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(page),
+        FfiConverterString.lower(layer),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -5834,6 +5854,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_component_code() != 36551) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_detach() != 2494) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_expanded() != 36269) {

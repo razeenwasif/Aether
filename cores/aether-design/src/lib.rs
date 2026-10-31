@@ -329,6 +329,60 @@ impl Design {
         Ok(())
     }
 
+    /// Instance `layer` of page `page` made plain layers again: its
+    /// component's, as its options and words make them, with ids of their
+    /// own (`wishlist.label` becomes `wishlist-label`). One step of the page.
+    pub fn detach(&mut self, page: &str, layer: &str) -> Result<(), String> {
+        let doc = self.page(page).ok_or_else(|| format!("there is no page {page}"))?;
+        let p = doc.get();
+        let instance = p.layer(layer).ok_or_else(|| format!("there is no {layer}"))?;
+        if instance.kind != Kind::Instance {
+            return Err(format!("{} isn't an instance", instance.label()));
+        }
+        if self.component(&instance.component).is_none() {
+            return Err(format!("{} isn't one of the design's components", instance.component));
+        }
+        let expanded = format::expand(p, &self.component_map());
+        let mut taken: std::collections::BTreeSet<String> = p.layers.iter().map(|l| l.id.clone()).collect();
+        let mut names: BTreeMap<String, String> = BTreeMap::new();
+        let inside: Vec<Layer> = expanded.subtree(layer).into_iter().cloned().collect();
+        for l in &inside {
+            if l.id == layer {
+                names.insert(l.id.clone(), l.id.clone());
+                continue;
+            }
+            let stem = l.id.replace('.', "-");
+            let mut name = stem.clone();
+            let mut n = 2;
+            while taken.contains(&name) {
+                name = format!("{stem}-{n}");
+                n += 1;
+            }
+            taken.insert(name.clone());
+            names.insert(l.id.clone(), name);
+        }
+        let plain: Vec<Layer> = inside
+            .into_iter()
+            .map(|mut l| {
+                l.id = names[&l.id].clone();
+                l.children = l.children.iter().map(|c| names.get(c).cloned().unwrap_or_else(|| c.clone())).collect();
+                l.component.clear();
+                l.props.clear();
+                l.texts.clear();
+                l
+            })
+            .collect();
+        let mut next = p.clone();
+        let place = next.layers.iter().position(|l| l.id == layer).unwrap_or(next.layers.len());
+        next.layers.splice(place..=place, plain);
+        let problems = proton_game::Document::problems(&next);
+        if !problems.is_empty() {
+            return Err(problems.join("; "));
+        }
+        self.page_mut(page)?.replace(next);
+        Ok(())
+    }
+
     pub fn undo(&mut self, target: &Target) -> Result<bool, String> {
         Ok(match target {
             Target::Design => self.design.undo(),

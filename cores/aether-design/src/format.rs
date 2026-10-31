@@ -46,6 +46,11 @@
 //! drawn or written ([`expand`]), so changing the component changes every
 //! page that uses it.
 //!
+//! A component's `states` — hover, pressed, focus, disabled — are said the
+//! same way, as `state=hover` in a layer's `when`. The first three happen
+//! when someone uses the page, so they're CSS's `:hover`, `:active` and
+//! `:focus-visible`, and no page picks them; a page can pick `disabled`.
+//!
 //! Every struct defaults field by field and the writer leaves out what is
 //! empty, as Game's files do, so a hand-written layer needs only what it
 //! means.
@@ -171,15 +176,25 @@ pub struct Component {
     pub id: String,
     pub name: String,
     pub props: Vec<Prop>,
+    /// Which of [`STATES`] it has a look for.
+    pub states: Vec<String>,
     pub root: String,
     pub layers: Vec<Layer>,
 }
 
 impl Default for Component {
     fn default() -> Component {
-        Component { format: FORMAT, id: String::new(), name: String::new(), props: Vec::new(), root: String::new(), layers: Vec::new() }
+        Component { format: FORMAT, id: String::new(), name: String::new(), props: Vec::new(), states: Vec::new(), root: String::new(), layers: Vec::new() }
     }
 }
+
+/// The states a component can have a look for, in the order the CSS
+/// writes them: a later one wins where two hold at once.
+pub const STATES: [&str; 4] = ["hover", "focus", "pressed", "disabled"];
+
+/// What says a state is the page's, not the instance's: the prop name a
+/// state is keyed by in `when`.
+pub const STATE: &str = "state";
 
 /// One of a component's props: `variant`, and its options, the first the
 /// default.
@@ -198,10 +213,16 @@ impl Component {
     /// The option each prop takes for `chosen`: what it says, else the
     /// default, in the props' order.
     pub fn options(&self, chosen: &BTreeMap<String, String>) -> Vec<(String, String)> {
-        self.props
+        let mut out: Vec<(String, String)> = self
+            .props
             .iter()
             .map(|p| (p.name.clone(), chosen.get(&p.name).cloned().or_else(|| p.options.first().cloned()).unwrap_or_default()))
-            .collect()
+            .collect();
+        // Disabled, when the page says so; the others are the browser's.
+        if let Some(state) = chosen.get(STATE) {
+            out.push((STATE.to_string(), state.clone()));
+        }
+        out
     }
 
     /// The component's layers with what `options` change laid over them,
@@ -232,6 +253,14 @@ impl Component {
     pub fn misfits(&self, instance: &Layer) -> Vec<String> {
         let mut out = Vec::new();
         for (prop, option) in &instance.props {
+            if prop == STATE {
+                if option != "disabled" {
+                    out.push(format!("{} picks {prop}={option}: a page picks only disabled; the rest are how someone uses it", instance.id));
+                } else if !self.states.iter().any(|s| s == "disabled") {
+                    out.push(format!("{} picks disabled, which {} has no look for", instance.id, self.id));
+                }
+                continue;
+            }
             match self.props.iter().find(|p| &p.name == prop) {
                 None => out.push(format!("{} picks {prop}, which {} doesn't have", instance.id, self.id)),
                 Some(p) if !p.options.contains(option) => out.push(format!("{} picks {prop}={option}, which {} doesn't have", instance.id, self.id)),
@@ -254,6 +283,17 @@ impl proton_game::Document for Component {
             out.push(format!("the component is called {:?}: an id is letters, digits, - and _", self.id));
         }
         out.extend(ids("prop", self.props.iter().map(|p| p.name.as_str())));
+        if self.props.iter().any(|p| p.name == STATE) {
+            out.push(format!("a prop can't be called {STATE}: states are the component's own"));
+        }
+        for state in &self.states {
+            if !STATES.contains(&state.as_str()) {
+                out.push(format!("{state:?} isn't a state: {}", STATES.join(", ")));
+            }
+        }
+        if self.states.iter().collect::<BTreeSet<_>>().len() != self.states.len() {
+            out.push("a state is listed twice".into());
+        }
         for prop in &self.props {
             if prop.options.is_empty() {
                 out.push(format!("{} has no options", prop.name));
@@ -269,7 +309,10 @@ impl proton_game::Document for Component {
                 out.push(format!("{} is an instance: a component doesn't hold other components yet", layer.id));
             }
             for (key, over) in &layer.when {
-                let fits = key.split_once('=').is_some_and(|(prop, option)| self.props.iter().any(|p| p.name == prop && p.options.iter().any(|o| o == option)));
+                let fits = key.split_once('=').is_some_and(|(prop, option)| match prop == STATE {
+                    true => self.states.iter().any(|s| s == option),
+                    false => self.props.iter().any(|p| p.name == prop && p.options.iter().any(|o| o == option)),
+                });
                 if !fits {
                     out.push(format!("{} says what {key} changes, which isn't one of the component's options", layer.id));
                 } else {

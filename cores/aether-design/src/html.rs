@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use crate::format::{expand, Component, Kind, Layer, Page, Val};
+use crate::format::{expand, Component, Kind, Layer, Page, Val, STATE, STATES};
 
 /// The whole page as a document, its instances expanded, its tokens from
 /// the stylesheet at `theme_href` and its pictures' `images/` under `base`.
@@ -89,7 +89,9 @@ pub fn css(page: &Page, components: &BTreeMap<String, Component>, id: &str) -> S
 /// option of each prop, `.button--variant-secondary` and
 /// `.button--variant-secondary .button__label` holding only what it
 /// changes. Where an instance sits and how big it is are its page's, on the
-/// instance's own class.
+/// instance's own class. Its states follow, each holding what it changes:
+/// `:hover`, `:focus-visible` and `:active` (not while it's disabled), and
+/// `.button--state-disabled`, later winning over earlier.
 pub fn component_css(c: &Component) -> String {
     let base = c.as_page(c.with(&[]));
     let class = |id: &str| match id == c.root {
@@ -116,6 +118,24 @@ pub fn component_css(c: &Component) -> String {
                 };
                 block(&mut out, "", &selector, &changes(&had, &part(&now, layer), layer.hidden));
             }
+        }
+    }
+    for state in STATES.iter().filter(|s| c.states.iter().any(|x| x == *s)) {
+        let now = c.as_page(c.with(&[(STATE.to_string(), state.to_string())]));
+        let disabled = format!("{}--{STATE}-disabled", c.id);
+        let root = match *state {
+            "hover" => format!("{}:hover:not(.{disabled})", c.id),
+            "focus" => format!("{}:focus-visible", c.id),
+            "pressed" => format!("{}:active:not(.{disabled})", c.id),
+            _ => disabled.clone(),
+        };
+        for layer in now.subtree(&now.root) {
+            let had = base.layer(&layer.id).map(|l| part(&base, l)).unwrap_or_default();
+            let selector = match layer.id == c.root {
+                true => root.clone(),
+                false => format!("{root} .{}", class(&layer.id)),
+            };
+            block(&mut out, "", &selector, &changes(&had, &part(&now, layer), layer.hidden));
         }
     }
     out
@@ -185,25 +205,28 @@ fn element(page: &Page, id: &str, depth: usize, base: &str, path: &mut Vec<Strin
     }
     let indent = "  ".repeat(depth);
     let tag = tag(layer);
-    let class = classes(layer);
+    // A disabled instance says so to whoever can't see it, as well as by
+    // its look.
+    let disabled = !layer.id.contains('.') && layer.props.get(STATE).is_some_and(|s| s == "disabled");
+    let attrs = format!("class=\"{}\"{}", classes(layer), if disabled { " aria-disabled=\"true\"" } else { "" });
     match layer.kind {
         Kind::Text => {
             let words = layer.text.lines().map(escape).collect::<Vec<_>>().join("<br>");
-            let _ = writeln!(out, "{indent}<{tag} class=\"{class}\">{words}</{tag}>");
+            let _ = writeln!(out, "{indent}<{tag} {attrs}>{words}</{tag}>");
         }
         Kind::Image => {
             // Its text is what it shows, for whoever can't see it.
-            let _ = writeln!(out, "{indent}<img class=\"{class}\" src=\"{}{}\" alt=\"{}\">", escape(base), escape(&layer.src), escape(&layer.text));
+            let _ = writeln!(out, "{indent}<img {attrs} src=\"{}{}\" alt=\"{}\">", escape(base), escape(&layer.src), escape(&layer.text));
         }
         Kind::Instance => {
             // Still an instance once expanded: its component isn't there.
             let _ = writeln!(out, "{indent}<!-- {}: no component {} -->", layer.id, escape(&layer.component));
         }
         _ if layer.children.is_empty() => {
-            let _ = writeln!(out, "{indent}<{tag} class=\"{class}\"></{tag}>");
+            let _ = writeln!(out, "{indent}<{tag} {attrs}></{tag}>");
         }
         _ => {
-            let _ = writeln!(out, "{indent}<{tag} class=\"{class}\">");
+            let _ = writeln!(out, "{indent}<{tag} {attrs}>");
             path.push(id.to_string());
             for child in &layer.children {
                 element(page, child, depth + 1, base, path, out);

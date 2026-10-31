@@ -99,6 +99,23 @@ public final class DesignDocument {
         }
     }
 
+    /// Instance `layer` of page `page` made plain layers again: one step of
+    /// the page.
+    @discardableResult
+    public func detach(_ layer: String, on page: String, label: String) -> Bool {
+        do {
+            try editor.detach(page: page, layer: layer)
+            refusal = nil
+            done.append(Step(target: "page:\(page)", label: label))
+            undone.removeAll()
+            reload("page:\(page)")
+            return true
+        } catch {
+            refusal = Self.describe(error)
+            return false
+        }
+    }
+
     private func apply(_ ops: [DesignOp], target: String, label: String) -> Bool {
         do {
             let data = try JSONSerialization.data(withJSONObject: ops.map(\.json))

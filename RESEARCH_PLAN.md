@@ -1668,6 +1668,21 @@ Not yet:
     - Two things found and fixed: the Editing label was squeezed into a column by three options, and component artboards were drawn on white, hiding the secondary's light label. They now sit on the ground of the page that places them.
 - **Not yet:** hover and pressed as `:hover`/`:active` states, Detach, components inside components, a component's own breakpoints.
 
+**2026-11-01 · Design: component states, and Detach.** The user said "start the next step", the one named next: hover and pressed states. Detach came with it, being small.
+
+- **States:** a component's `states` is any of hover, focus, pressed and disabled. Each is said in a layer's `when` as `state=hover`, so it's edited and drawn like an option: an artboard each, and an entry in the Editing control, which is now a menu because six options outgrew a segmented control.
+  - `state` can't be a prop's name. A state not listed can't be said, and the list can't drop a state a page uses.
+  - A page picks only `state=disabled`. The rest are how someone uses the page.
+  - The CSS writes the states after the options, so a state wins where both hold: `.button:hover:not(.button--state-disabled)`, `:focus-visible`, `:active:not(…)` and `.button--state-disabled`, each with only what it changes. A disabled instance also carries `aria-disabled="true"`.
+  - The starter's button dims on hover (0.85) and press (0.7), and most when disabled (0.4).
+- **Detach** (`Design::detach`): an instance becomes its component's layers as its options and words make them. They get ids of their own (`trailer.label` becomes `trailer-label`, numbered past any taken) and lose the instance's component fields. It's one step of the page, from the inspector, the layer's menu or Design ▸ Detach the Instance.
+- **Fixed from the on-screen check:** a layer with an opacity faded every layer drawn after it, because the canvas left the alpha set. That had been there since slice 1; it showed now because states are the first thing to set an opacity.
+- **Checked:**
+  - Rust: 2 new tests (23). The states' CSS, in order. Disabled picked by a page, written as a modifier and `aria-disabled`. Hover refused as a pick, an unlisted state refused, `state` refused as a prop's name, and a used state kept. Detach as plain layers with new ids, undone.
+  - Swift: 2 new tests (27 for Design; 219 in all). A state edited on its artboard reaching the CSS, a page disabling an instance, and the component kept from dropping that state. Detach as one project step, undone; only an instance detaches.
+  - On screen: the button's six artboards, Focus turned on as a seventh, and clicking its artboard to edit Focus. Disabling Watch the trailer dimmed it. Detaching it left a frame with its label and "Button · 1 use". The fade fix was checked again on screen.
+- **Not yet:** components inside components, and a component's own breakpoints.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

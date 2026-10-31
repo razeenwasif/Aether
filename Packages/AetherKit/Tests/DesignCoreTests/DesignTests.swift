@@ -473,7 +473,7 @@ struct DesignComponentTests {
         #expect(drawn(model, "trailer")?.style.stroke == "--color-line")
         #expect(DesignLayer.owner(of: "wishlist.label") == "wishlist" && DesignLayer.owner(of: "hero") == "hero")
         #expect(model.uses(of: "button").map(\.layer) == ["wishlist", "trailer"])
-        #expect(model.document?.component("button")?.options.map(\.key) == ["variant=primary", "variant=secondary"])
+        #expect(model.document?.component("button")?.options.map(\.key) == ["variant=primary", "variant=secondary", "state=hover", "state=pressed", "state=disabled"])
     }
 
     @Test func anInstancePicksAnOptionAndItsOwnWords() throws {
@@ -513,6 +513,40 @@ struct DesignComponentTests {
         #expect(code.css.contains(".button--variant-secondary .button__label {") && code.html.contains("button__label"))
         model.closeComponent()
         #expect(model.componentID == nil && model.selection == "wishlist")
+    }
+
+    @Test func aStateIsEditedOnItsArtboardAndAPageCanDisableAnInstance() throws {
+        let (model, _) = try opened()
+        model.editComponent("button")
+        model.variant = "state=hover"
+        #expect(model.overriding?.name == "Hover")
+        model.setStyle("button", "opacity", to: 0.6)
+        #expect(model.document?.component("button")?.asPage("state=hover").layer("button")?.style.opacity == 0.6)
+        #expect(model.code?.css.contains(".button:hover:not(.button--state-disabled) {\n  opacity: 0.6;\n}") == true)
+        model.closeComponent()
+        model.setDisabled("trailer", true)
+        #expect(drawn(model, "trailer")?.style.opacity == 0.4 && model.undoLabel == "State of Watch the trailer")
+        #expect(model.document?.code(page: "home", layer: "trailer")?.html.contains("aria-disabled=\"true\"") == true)
+        // The component can't drop the look a page is using.
+        model.editComponent("button")
+        model.setStates(["hover", "pressed"])
+        #expect(model.notice?.contains("disabled") == true && model.component?.states.contains("disabled") == true)
+        model.setStates(["hover", "focus", "pressed", "disabled"])
+        #expect(model.component?.states == ["hover", "focus", "pressed", "disabled"])
+    }
+
+    @Test func aDetachedInstanceIsPlainLayersInOneStep() throws {
+        let (model, project) = try opened()
+        model.selection = "trailer"
+        model.detachSelected()
+        #expect(model.page?.layer("trailer")?.kind == .frame && model.page?.layer("trailer-label")?.text == "Watch the trailer")
+        #expect(model.uses(of: "button").map(\.layer) == ["wishlist"])
+        #expect(model.undoLabel == "Detach Watch the trailer" && project.history.done.count == 1)
+        model.undo()
+        #expect(model.page?.layer("trailer")?.kind == .instance && model.page?.layer("trailer-label") == nil)
+        model.selection = "hero"
+        model.detachSelected()
+        #expect(model.page?.layer("hero")?.kind == .frame && project.history.done.isEmpty, "only an instance detaches")
     }
 
     @Test func aFrameMadeAComponentIsOneStepOnTheProjectsHistory() throws {

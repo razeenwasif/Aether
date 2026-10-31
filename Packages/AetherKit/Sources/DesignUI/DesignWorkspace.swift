@@ -306,6 +306,7 @@ private struct LayerRow: View {
             }
             if layer.kind == .instance {
                 Button("Edit the Component") { model.editComponent(layer.component) }
+                Button("Detach") { model.selection = layer.id; model.detachSelected() }
             }
             if !isRoot {
                 Button("Move Up") { model.selection = layer.id; model.moveSelected(by: -1) }
@@ -410,7 +411,9 @@ private struct DesignInspector: View {
                         Text("As written").tag("")
                         ForEach(component.options, id: \.key) { Text($0.name).tag($0.key) }
                     }
-                    .labelsHidden().pickerStyle(.segmented).controlSize(.small)
+                    // A menu: a component's options and states outgrow a
+                    // segmented control in the inspector's width.
+                    .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 14)
@@ -595,13 +598,24 @@ private struct InstanceSection: View {
                         model.setProp(layer.id, prop.name, to: $0 == prop.defaultOption ? nil : $0)
                     }
                 }
+                if component.states.contains("disabled") {
+                    InspectorRow("Disabled") {
+                        Toggle("Shown as disabled, and said so", isOn: Binding(get: { layer.props["state"] == "disabled" }, set: { model.setDisabled(layer.id, $0) }))
+                            .toggleStyle(.checkbox).font(.aeSmall)
+                    }
+                }
                 ForEach(component.textLayers) { text in
                     InspectorRow(text.label) {
                         CommitField(title: "\(text.label) words", value: layer.texts[text.id] ?? "", prompt: text.text) { model.setWords(layer.id, for: text.id, to: $0) }
                     }
                 }
                 let uses = model.uses(of: component.id)
-                Text(verbatim: "Used \(uses.count) time\(uses.count == 1 ? "" : "s") in the design").font(.aeSmall).foregroundStyle(Color.ink3)
+                HStack {
+                    Text(verbatim: "Used \(uses.count) time\(uses.count == 1 ? "" : "s") in the design").font(.aeSmall).foregroundStyle(Color.ink3)
+                    Spacer(minLength: 0)
+                    Button("Detach") { model.detachSelected() }.buttonStyle(.borderless).font(.aeSmall)
+                        .help("Make it plain layers, as it looks now, no longer following \(component.name)")
+                }
             }
         } else {
             PanelSection("Component") {
@@ -659,6 +673,17 @@ private struct ComponentInspector: View {
                     }
                     .buttonStyle(.borderless).font(.aeSmall)
                     Text("The first option is the default. An option a page picks can't be taken away while it's picked.")
+                        .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                }
+                PanelSection("States") {
+                    ForEach(DesignComponent.allStates, id: \.self) { state in
+                        Toggle(state.prefix(1).uppercased() + state.dropFirst(), isOn: Binding(
+                            get: { component.states.contains(state) },
+                            set: { on in model.setStates(on ? component.states + [state] : component.states.filter { $0 != state }) }
+                        ))
+                        .toggleStyle(.checkbox).font(.aeSmall)
+                    }
+                    Text("Each has an artboard of its own. Hover, focus and pressed are how someone uses the page; a page can make an instance disabled.")
                         .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 }
                 PanelSection("Used in") {

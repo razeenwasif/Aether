@@ -384,3 +384,51 @@ fn a_frame_made_a_component_is_one_step_with_its_file() {
     assert!(!file.exists());
     assert!(Design::open(&dir).unwrap().component("card").is_none());
 }
+
+#[test]
+fn a_components_states_are_the_browsers_and_disabled_the_pages() {
+    let (_, mut design) = made("states");
+    let components = design.component_map();
+    let css = html::component_css(&components["button"]);
+    assert!(css.contains(".button:hover:not(.button--state-disabled) {\n  opacity: 0.85;\n}"), "{css}");
+    assert!(css.contains(".button:active:not(.button--state-disabled) {\n  opacity: 0.7;\n}"), "{css}");
+    assert!(css.contains(".button--state-disabled {\n  opacity: 0.4;\n}"), "{css}");
+    // States come after the options, so a state wins where both hold.
+    assert!(css.find(".button--variant-secondary {").unwrap() < css.find(":hover").unwrap());
+
+    // A page can make one disabled, and nothing else.
+    let disable = ops(json!([{"op": "set", "path": ["layers", "#trailer", "props", "state"], "value": "disabled"}]));
+    assert!(design.apply(&home_target(), &disable).unwrap());
+    let page = design.expanded("home").unwrap();
+    assert_eq!(page.layer("trailer").unwrap().style.opacity, Some(0.4));
+    let markup = html::markup(home(&design), &design.component_map(), "trailer", "");
+    assert!(markup.starts_with("<a class=\"trailer button button--state-disabled button--variant-secondary\" aria-disabled=\"true\">"), "{markup}");
+    let hover = ops(json!([{"op": "set", "path": ["layers", "#wishlist", "props", "state"], "value": "hover"}]));
+    assert!(design.apply(&home_target(), &hover).unwrap_err().contains("only disabled"));
+
+    // A state the component doesn't list can't be said, nor a prop take its name.
+    let focus = ops(json!([{"op": "set", "path": ["layers", "#label", "when", "state=focus"], "value": {"style": {"color": "red"}}}]));
+    assert!(design.apply(&component_target("button"), &focus).unwrap_err().contains("state=focus"));
+    let named = ops(json!([{"op": "insert", "path": ["props"], "value": {"name": "state", "options": ["a"]}}]));
+    assert!(design.apply(&component_target("button"), &named).unwrap_err().contains("can't be called state"));
+    // Nor can a state go while a page picks it.
+    let fewer = ops(json!([{"op": "set", "path": ["states"], "value": ["hover"]}]));
+    assert!(design.apply(&component_target("button"), &fewer).unwrap_err().contains("disabled"));
+}
+
+#[test]
+fn an_instance_detached_is_its_components_layers_as_its_own() {
+    let (_, mut design) = made("detach");
+    design.detach("home", "trailer").unwrap();
+    let page = home(&design);
+    let trailer = page.layer("trailer").unwrap();
+    assert_eq!((trailer.kind, trailer.component.as_str()), (Kind::Frame, ""));
+    assert_eq!(trailer.children, ["trailer-label"]);
+    assert_eq!((trailer.style.fill.as_deref(), trailer.style.stroke.as_deref()), (Some("transparent"), Some("--color-line")), "as its option made it");
+    assert!(trailer.when.is_empty() && trailer.props.is_empty());
+    assert_eq!(page.layer("trailer-label").unwrap().text, "Watch the trailer");
+    assert_eq!(design.uses()["button"], [("home".to_string(), "wishlist".to_string())]);
+    assert!(design.undo(&home_target()).unwrap());
+    assert_eq!(home(&design).layer("trailer").unwrap().kind, Kind::Instance);
+    assert!(design.detach("home", "hero").unwrap_err().contains("isn't an instance"));
+}
