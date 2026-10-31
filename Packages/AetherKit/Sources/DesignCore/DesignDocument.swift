@@ -33,6 +33,11 @@ public final class DesignDocument {
     public private(set) var view: DesignView
     /// Each page as it is now, by id.
     public private(set) var pages: [String: DesignPage] = [:]
+    /// Each page with its instances expanded into their components' layers,
+    /// as it's drawn.
+    public private(set) var expanded: [String: DesignPage] = [:]
+    /// Each component as it is now, by id.
+    public private(set) var components: [String: DesignComponent] = [:]
     /// Bumped on every change, so a view knows to draw again.
     public private(set) var revision = 0
     /// Why the last edit was refused, in the core's words.
@@ -53,7 +58,7 @@ public final class DesignDocument {
         self.url = url
         editor = try DesignEditor.open(path: url.path)
         view = try Self.decode(DesignView.self, editor.view())
-        for row in view.pages { readPage(row.id) }
+        readAll()
     }
 
     public var name: String { view.design.name }
@@ -61,11 +66,40 @@ public final class DesignDocument {
 
     public func page(_ id: String) -> DesignPage? { pages[id] }
 
+    public func component(_ id: String) -> DesignComponent? { components[id] }
+
     /// A batch of ops on page `id` as one step called `label`. Whether it
     /// changed anything.
     @discardableResult
     public func apply(_ ops: [DesignOp], toPage id: String, label: String) -> Bool {
-        let target = "page:\(id)"
+        apply(ops, target: "page:\(id)", label: label)
+    }
+
+    /// A batch of ops on component `id` as one step: every page that places
+    /// it changes with it.
+    @discardableResult
+    public func apply(_ ops: [DesignOp], toComponent id: String, label: String) -> Bool {
+        apply(ops, target: "component:\(id)", label: label)
+    }
+
+    /// Component `id` made from frame `layer` of page `page`, an instance in
+    /// its place: one step.
+    @discardableResult
+    public func makeComponent(from layer: String, on page: String, id: String, name: String) -> Bool {
+        do {
+            try editor.makeComponent(page: page, layer: layer, id: id, name: name)
+            refusal = nil
+            done.append(Step(target: "made:\(id)/\(page)", label: "Make \(name) a Component"))
+            undone.removeAll()
+            reload(nil)
+            return true
+        } catch {
+            refusal = Self.describe(error)
+            return false
+        }
+    }
+
+    private func apply(_ ops: [DesignOp], target: String, label: String) -> Bool {
         do {
             let data = try JSONSerialization.data(withJSONObject: ops.map(\.json))
             let changed = try editor.apply(targetName: target, ops: String(decoding: data, as: UTF8.self))
@@ -172,20 +206,35 @@ public final class DesignDocument {
         editor.code(id: id, layer: layer).flatMap { try? Self.decode(DesignCode.self, $0) }
     }
 
-    /// The core's state read again: the view, and the page `target` names.
+    /// A component as its instances are written.
+    public func code(component id: String) -> DesignCode? {
+        editor.componentCode(id: id).flatMap { try? Self.decode(DesignCode.self, $0) }
+    }
+
+    /// The core's state read again: the view, and what `target` changed —
+    /// a page; or with a component, every page that might place it.
     private func reload(_ target: String?) {
         if let fresh = try? Self.decode(DesignView.self, editor.view()) { view = fresh }
         if let target, target.hasPrefix("page:") {
             readPage(String(target.dropFirst(5)))
-        } else if target == nil {
-            for row in view.pages { readPage(row.id) }
+        } else if target != "theme" {
+            readAll()
         }
         revision &+= 1
+    }
+
+    private func readAll() {
+        components = [:]
+        for row in view.components {
+            if let text = editor.component(id: row.id), let c = try? Self.decode(DesignComponent.self, text) { components[row.id] = c }
+        }
+        for row in view.pages { readPage(row.id) }
     }
 
     private func readPage(_ id: String) {
         guard let text = editor.page(id: id), let page = try? Self.decode(DesignPage.self, text) else { return }
         pages[id] = page
+        expanded[id] = editor.expanded(id: id).flatMap { try? Self.decode(DesignPage.self, $0) } ?? page
     }
 
     static func decode<T: Decodable>(_ type: T.Type, _ text: String) throws -> T {

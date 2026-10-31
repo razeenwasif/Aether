@@ -1387,8 +1387,8 @@ public func FfiConverterTypeCanvasEditor_lower(_ value: CanvasEditor) -> UInt64 
 public protocol DesignEditorProtocol: AnyObject, Sendable {
     
     /**
-     * A batch of ops (JSON, Game's ops) on `design` or `page:<id>`, whole
-     * or not at all. Whether it changed anything.
+     * A batch of ops (JSON, Game's ops) on `design`, `page:<id>` or
+     * `component:<id>`, whole or not at all. Whether it changed anything.
      */
     func apply(targetName: String, ops: String) throws  -> Bool
     
@@ -1399,10 +1399,32 @@ public protocol DesignEditorProtocol: AnyObject, Sendable {
     func code(id: String, layer: String)  -> String?
     
     /**
+     * Component `id`, as JSON, as it is now.
+     */
+    func component(id: String)  -> String?
+    
+    /**
+     * Component `id` as its instances are written: `{html, css}`.
+     */
+    func componentCode(id: String)  -> String?
+    
+    /**
+     * Page `id` with its instances expanded into their components' layers,
+     * as JSON.
+     */
+    func expanded(id: String)  -> String?
+    
+    /**
      * Page `id` as an HTML document, its tokens from `theme_href` and its
      * pictures' `images/` under `base`.
      */
     func html(id: String, themeHref: String, base: String)  -> String?
+    
+    /**
+     * Component `id` made from frame `layer` of page `page`, an instance
+     * in the frame's place: one step, undone as `made:<id>/<page>`.
+     */
+    func makeComponent(page: String, layer: String, id: String, name: String) throws 
     
     /**
      * Page `id`, as JSON, as it is now.
@@ -1505,8 +1527,8 @@ public static func `open`(path: String)throws  -> DesignEditor  {
 
     
     /**
-     * A batch of ops (JSON, Game's ops) on `design` or `page:<id>`, whole
-     * or not at all. Whether it changed anything.
+     * A batch of ops (JSON, Game's ops) on `design`, `page:<id>` or
+     * `component:<id>`, whole or not at all. Whether it changed anything.
      */
 open func apply(targetName: String, ops: String)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
@@ -1535,6 +1557,46 @@ open func code(id: String, layer: String) -> String?  {
 }
     
     /**
+     * Component `id`, as JSON, as it is now.
+     */
+open func component(id: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_component(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Component `id` as its instances are written: `{html, css}`.
+     */
+open func componentCode(id: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_component_code(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Page `id` with its instances expanded into their components' layers,
+     * as JSON.
+     */
+open func expanded(id: String) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_expanded(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
      * Page `id` as an HTML document, its tokens from `theme_href` and its
      * pictures' `images/` under `base`.
      */
@@ -1548,6 +1610,22 @@ open func html(id: String, themeHref: String, base: String) -> String?  {
         FfiConverterString.lower(base),uniffiCallStatus
     )
 })
+}
+    
+    /**
+     * Component `id` made from frame `layer` of page `page`, an instance
+     * in the frame's place: one step, undone as `made:<id>/<page>`.
+     */
+open func makeComponent(page: String, layer: String, id: String, name: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_make_component(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(page),
+        FfiConverterString.lower(layer),
+        FfiConverterString.lower(id),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+}
 }
     
     /**
@@ -5746,13 +5824,25 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aether_diffuse_checksum_method_designeditor_apply() != 8193) {
+    if (uniffi_aether_diffuse_checksum_method_designeditor_apply() != 61688) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_code() != 57325) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_component() != 22429) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_component_code() != 36551) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_expanded() != 36269) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_aether_diffuse_checksum_method_designeditor_html() != 25546) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_make_component() != 52316) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_page() != 13516) {

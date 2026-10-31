@@ -35,6 +35,17 @@
 //! workspace writes each new version over that file, as Diffuse writes a
 //! Load Image's picture; the page itself doesn't change.
 //!
+//! ## Components
+//!
+//! `components/<id>.component.json` is a tree of layers like a page's, with
+//! props — `variant: primary | secondary`, the first option the default —
+//! and each layer's `when` saying what an option changes, as `at` does for a
+//! breakpoint. A page places one as an `instance` layer: which component,
+//! which option of each prop, and the words of any of its text layers. An
+//! instance is expanded into the component's layers wherever the page is
+//! drawn or written ([`expand`]), so changing the component changes every
+//! page that uses it.
+//!
 //! Every struct defaults field by field and the writer leaves out what is
 //! empty, as Game's files do, so a hand-written layer needs only what it
 //! means.
@@ -127,23 +138,202 @@ impl Page {
 
     /// `id` and everything inside it, in the tree's order.
     pub fn subtree(&self, id: &str) -> Vec<&Layer> {
-        let mut out = Vec::new();
-        let mut seen = BTreeSet::new();
-        self.walk(id, &mut seen, &mut out);
-        out
+        subtree(&self.layers, id)
     }
+}
 
-    fn walk<'a>(&'a self, id: &str, seen: &mut BTreeSet<String>, out: &mut Vec<&'a Layer>) {
-        // A cycle is a problem `problems` reports; walking one must still end.
+/// `id` and everything inside it in `layers`, in the tree's order.
+pub fn subtree<'a>(layers: &'a [Layer], id: &str) -> Vec<&'a Layer> {
+    fn walk<'a>(layers: &'a [Layer], id: &str, seen: &mut BTreeSet<String>, out: &mut Vec<&'a Layer>) {
+        // A cycle is a problem the checks report; walking one must still end.
         if !seen.insert(id.to_string()) {
             return;
         }
-        let Some(layer) = self.layer(id) else { return };
+        let Some(layer) = layers.iter().find(|l| l.id == id) else { return };
         out.push(layer);
         for child in &layer.children {
-            self.walk(child, seen, out);
+            walk(layers, child, seen, out);
         }
     }
+    let mut out = Vec::new();
+    walk(layers, id, &mut BTreeSet::new(), &mut out);
+    out
+}
+
+/* ── components/<id>.component.json ───────────────────────────────── */
+
+/// A component: a tree of layers placed on pages as instances, and its
+/// props, each a list of options.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Component {
+    pub format: u32,
+    pub id: String,
+    pub name: String,
+    pub props: Vec<Prop>,
+    pub root: String,
+    pub layers: Vec<Layer>,
+}
+
+impl Default for Component {
+    fn default() -> Component {
+        Component { format: FORMAT, id: String::new(), name: String::new(), props: Vec::new(), root: String::new(), layers: Vec::new() }
+    }
+}
+
+/// One of a component's props: `variant`, and its options, the first the
+/// default.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Prop {
+    pub name: String,
+    pub options: Vec<String>,
+}
+
+impl Component {
+    pub fn layer(&self, id: &str) -> Option<&Layer> {
+        self.layers.iter().find(|layer| layer.id == id)
+    }
+
+    /// The option each prop takes for `chosen`: what it says, else the
+    /// default, in the props' order.
+    pub fn options(&self, chosen: &BTreeMap<String, String>) -> Vec<(String, String)> {
+        self.props
+            .iter()
+            .map(|p| (p.name.clone(), chosen.get(&p.name).cloned().or_else(|| p.options.first().cloned()).unwrap_or_default()))
+            .collect()
+    }
+
+    /// The component's layers with what `options` change laid over them,
+    /// `when` taken off.
+    pub fn with(&self, options: &[(String, String)]) -> Vec<Layer> {
+        self.layers
+            .iter()
+            .map(|layer| {
+                let mut out = layer.clone();
+                for (prop, option) in options {
+                    if let Some(over) = layer.when.get(&format!("{prop}={option}")) {
+                        over.apply(&mut out);
+                    }
+                }
+                out.when.clear();
+                out
+            })
+            .collect()
+    }
+
+    /// The component as a page of one breakpoint, for laying out and for
+    /// writing its CSS.
+    pub fn as_page(&self, layers: Vec<Layer>) -> Page {
+        Page { id: self.id.clone(), name: self.name.clone(), breakpoints: vec![], root: self.root.clone(), layers, ..Page::default() }
+    }
+
+    /// Why `instance`'s choices don't fit this component, if they don't.
+    pub fn misfits(&self, instance: &Layer) -> Vec<String> {
+        let mut out = Vec::new();
+        for (prop, option) in &instance.props {
+            match self.props.iter().find(|p| &p.name == prop) {
+                None => out.push(format!("{} picks {prop}, which {} doesn't have", instance.id, self.id)),
+                Some(p) if !p.options.contains(option) => out.push(format!("{} picks {prop}={option}, which {} doesn't have", instance.id, self.id)),
+                Some(_) => {}
+            }
+        }
+        for id in instance.texts.keys() {
+            if self.layer(id).map(|l| l.kind) != Some(Kind::Text) {
+                out.push(format!("{} gives words to {id}, which isn't one of {}'s text layers", instance.id, self.id));
+            }
+        }
+        out
+    }
+}
+
+impl proton_game::Document for Component {
+    fn problems(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if !is_plain(&self.id) {
+            out.push(format!("the component is called {:?}: an id is letters, digits, - and _", self.id));
+        }
+        out.extend(ids("prop", self.props.iter().map(|p| p.name.as_str())));
+        for prop in &self.props {
+            if prop.options.is_empty() {
+                out.push(format!("{} has no options", prop.name));
+            }
+            out.extend(ids("option", prop.options.iter().map(String::as_str)).into_iter().map(|why| format!("{}: {why}", prop.name)));
+        }
+        out.extend(tree_problems("component", &self.root, &self.layers));
+        for layer in &self.layers {
+            if !layer.at.is_empty() {
+                out.push(format!("{} says something at a breakpoint: a component takes its page's breakpoints from where it's placed", layer.id));
+            }
+            if layer.kind == Kind::Instance {
+                out.push(format!("{} is an instance: a component doesn't hold other components yet", layer.id));
+            }
+            for (key, over) in &layer.when {
+                let fits = key.split_once('=').is_some_and(|(prop, option)| self.props.iter().any(|p| p.name == prop && p.options.iter().any(|o| o == option)));
+                if !fits {
+                    out.push(format!("{} says what {key} changes, which isn't one of the component's options", layer.id));
+                } else {
+                    let mut there = layer.clone();
+                    over.apply(&mut there);
+                    out.extend(layer_problems(&there).into_iter().map(|why| format!("when {key}, {why}")));
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+}
+
+/// `page` with each instance expanded into its component's layers, as the
+/// options it picks change them and with its words: the instance keeps its
+/// id on the component's root, and the root's layers inside are
+/// `<instance>.<layer>`. The instance's own sizes, place, breakpoint values
+/// and tag are the root's. An instance of a component that isn't there
+/// stays as it is, and draws nothing.
+pub fn expand(page: &Page, components: &BTreeMap<String, Component>) -> Page {
+    let mut layers = Vec::with_capacity(page.layers.len());
+    for layer in &page.layers {
+        let Some(component) = components.get(&layer.component).filter(|_| layer.kind == Kind::Instance) else {
+            layers.push(layer.clone());
+            continue;
+        };
+        let options = component.options(&layer.props);
+        let name = |id: &str| match id == component.root {
+            true => layer.id.clone(),
+            false => format!("{}.{id}", layer.id),
+        };
+        for inner in component.with(&options) {
+            let mut out = inner.clone();
+            out.id = name(&inner.id);
+            out.children = inner.children.iter().map(|c| name(c)).collect();
+            out.component = component.id.clone();
+            if let Some(words) = layer.texts.get(&inner.id) {
+                out.text = words.clone();
+            }
+            if inner.id == component.root {
+                // Where it sits and how big it is are the page's to say.
+                out.name = layer.name.clone();
+                if !layer.tag.is_empty() {
+                    out.tag = layer.tag.clone();
+                }
+                if layer.w.is_some() {
+                    out.w = layer.w.clone();
+                }
+                if layer.h.is_some() {
+                    out.h = layer.h.clone();
+                }
+                if layer.min_w.is_some() {
+                    out.min_w = layer.min_w;
+                }
+                out.hidden = layer.hidden;
+                out.at = layer.at.clone();
+                out.props = options.iter().cloned().collect();
+            }
+            layers.push(out);
+        }
+    }
+    Page { layers, ..page.clone() }
 }
 
 /// A width a page is drawn at.
@@ -168,6 +358,8 @@ pub enum Kind {
     Rect,
     /// A picture from the design's `images/`.
     Image,
+    /// A component placed on a page.
+    Instance,
 }
 
 /// A number, or a word: a token's name, `hug`, `fill`, a CSS value.
@@ -225,6 +417,16 @@ pub struct Layer {
     pub style: Style,
     /// What a narrower breakpoint says otherwise, by its id.
     pub at: BTreeMap<String, Override>,
+    /// In a component: what an option of a prop changes, by `prop=option`.
+    pub when: BTreeMap<String, Override>,
+    /// An instance's component, by id. Kept on the layers an instance is
+    /// expanded into, to name their CSS classes.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub component: String,
+    /// An instance's option of each prop it doesn't leave at the default.
+    pub props: BTreeMap<String, String>,
+    /// An instance's words for the component's text layers, by their id.
+    pub texts: BTreeMap<String, String>,
 }
 
 /// What a breakpoint says of a layer where it differs: each field said
@@ -367,6 +569,50 @@ impl proton_game::Document for DesignFile {
     }
 }
 
+/// A tree of layers' problems: ids, one root frame, each layer in one
+/// frame and every one reached, and each layer's own. `what` is "page" or
+/// "component", for the words.
+fn tree_problems(what: &str, root_id: &str, layers: &[Layer]) -> Vec<String> {
+    let mut out = ids("layer", layers.iter().map(|l| l.id.as_str()));
+    let find = |id: &str| layers.iter().find(|l| l.id == id);
+    let known: BTreeSet<&str> = layers.iter().map(|l| l.id.as_str()).collect();
+    match find(root_id) {
+        None => out.push(format!("the {what}'s root, {root_id:?}, is not one of its layers")),
+        Some(root) if root.kind != Kind::Frame => out.push(format!("the {what}'s root, {}, is not a frame", root.id)),
+        Some(_) => {}
+    }
+
+    // Each layer in one frame only, every one but the root in some frame.
+    let mut parents: BTreeMap<&str, &str> = BTreeMap::new();
+    for layer in layers {
+        if layer.kind != Kind::Frame && !layer.children.is_empty() {
+            out.push(format!("{} has layers inside it but is not a frame", layer.id));
+        }
+        for child in &layer.children {
+            if !known.contains(child.as_str()) {
+                out.push(format!("{} holds {child}, which is not a layer", layer.id));
+            } else if let Some(other) = parents.insert(child, &layer.id) {
+                out.push(format!("{child} is in both {other} and {}", layer.id));
+            }
+        }
+    }
+    if let Some(holder) = parents.get(root_id) {
+        out.push(format!("the {what}'s root is inside {holder}"));
+    }
+    // Reached from the root, or lost: a layer outside the tree, or a loop of
+    // frames inside each other, is drawn nowhere.
+    let reached: BTreeSet<&str> = subtree(layers, root_id).iter().map(|l| l.id.as_str()).collect();
+    for layer in layers {
+        if !reached.contains(layer.id.as_str()) && layer.id != root_id && known.contains(layer.id.as_str()) {
+            out.push(format!("{} is in no frame of the {what}", layer.id));
+        }
+    }
+    for layer in layers {
+        out.extend(layer_problems(layer));
+    }
+    out
+}
+
 impl proton_game::Document for Page {
     fn problems(&self) -> Vec<String> {
         let mut out = Vec::new();
@@ -382,43 +628,11 @@ impl proton_game::Document for Page {
                 out.push(format!("{} is {} wide", point.id, point.width));
             }
         }
-        out.extend(ids("layer", self.layers.iter().map(|l| l.id.as_str())));
-
-        let known: BTreeSet<&str> = self.layers.iter().map(|l| l.id.as_str()).collect();
-        match self.layer(&self.root) {
-            None => out.push(format!("the page's root, {:?}, is not one of its layers", self.root)),
-            Some(root) if root.kind != Kind::Frame => out.push(format!("the page's root, {}, is not a frame", root.id)),
-            Some(_) => {}
-        }
-
-        // Each layer in one frame only, every one but the root in some frame.
-        let mut parents: BTreeMap<&str, &str> = BTreeMap::new();
+        out.extend(tree_problems("page", &self.root, &self.layers));
         for layer in &self.layers {
-            if layer.kind != Kind::Frame && !layer.children.is_empty() {
-                out.push(format!("{} has layers inside it but is not a frame", layer.id));
+            if !layer.when.is_empty() {
+                out.push(format!("{} says what a prop's option changes, which only a component's layers do", layer.id));
             }
-            for child in &layer.children {
-                if !known.contains(child.as_str()) {
-                    out.push(format!("{} holds {child}, which is not a layer", layer.id));
-                } else if let Some(other) = parents.insert(child, &layer.id) {
-                    out.push(format!("{child} is in both {other} and {}", layer.id));
-                }
-            }
-        }
-        if let Some(holder) = parents.get(self.root.as_str()) {
-            out.push(format!("the page's root is inside {holder}"));
-        }
-        // Reached from the root, or lost: a layer outside the tree, or a
-        // loop of frames inside each other, is drawn nowhere.
-        let reached: BTreeSet<&str> = self.subtree(&self.root).iter().map(|l| l.id.as_str()).collect();
-        for layer in &self.layers {
-            if !reached.contains(layer.id.as_str()) && layer.id != self.root && known.contains(layer.id.as_str()) {
-                out.push(format!("{} is in no frame of the page", layer.id));
-            }
-        }
-
-        for layer in &self.layers {
-            out.extend(layer_problems(layer));
         }
 
         // What a breakpoint says is checked as the layer it makes there.
@@ -494,6 +708,16 @@ fn layer_problems(layer: &Layer) -> Vec<String> {
         if fit != "cover" && fit != "contain" {
             out.push(format!("{id}'s fit is {fit:?}: cover or contain"));
         }
+    }
+    match layer.kind {
+        Kind::Instance if !is_plain(&layer.component) => {
+            out.push(format!("{id} is an instance of {:?}, which isn't a component's id", layer.component));
+        }
+        Kind::Instance => {}
+        _ if !layer.props.is_empty() || !layer.texts.is_empty() || !layer.component.is_empty() => {
+            out.push(format!("{id} picks a component's options but isn't an instance"));
+        }
+        _ => {}
     }
     match layer.kind {
         Kind::Image if !is_image_path(&layer.src) => {

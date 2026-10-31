@@ -21,7 +21,7 @@ public struct DesignWorkspace: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
-                DesignCanvas(model: model, revision: document.revision &+ model.pictureRevision, pageID: model.pageID, selection: model.selection, breakpoint: model.breakpoint, fitRequest: model.fitRequest,
+                DesignCanvas(model: model, revision: document.revision &+ model.pictureRevision, pageID: model.componentID.map { "component:\($0)" } ?? model.pageID, selection: model.selection, editing: model.overriding?.key, fitRequest: model.fitRequest,
                              insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0, model.codeOpen ? 260 : 72))
                 HStack(alignment: .top, spacing: 0) {
                     DesignNavigator(model: model, document: document)
@@ -168,8 +168,18 @@ private struct DesignNavigator: View {
         }
         if let page = model.page {
             HStack {
-                Text(page.name).font(.aeLabel).foregroundStyle(Color.ink2)
-                Text(verbatim: "\(page.breakpoints.count) breakpoint\(page.breakpoints.count == 1 ? "" : "s")").font(.aeSmall).foregroundStyle(Color.ink3)
+                if let component = model.component {
+                    Button { model.closeComponent() } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 9, weight: .semibold))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Color.ink2)
+                    .help("Back to the page").accessibilityLabel("Back to the page")
+                    Text(component.name).font(.aeLabel).foregroundStyle(Color.ink2)
+                    Text(verbatim: "component · \(component.options.count) option\(component.options.count == 1 ? "" : "s")").font(.aeSmall).foregroundStyle(Color.ink3)
+                } else {
+                    Text(page.name).font(.aeLabel).foregroundStyle(Color.ink2)
+                    Text(verbatim: "\(page.breakpoints.count) breakpoint\(page.breakpoints.count == 1 ? "" : "s")").font(.aeSmall).foregroundStyle(Color.ink3)
+                }
                 Spacer()
                 Menu {
                     Button("Frame  A") { model.add(.frame) }
@@ -177,7 +187,14 @@ private struct DesignNavigator: View {
                     Button("Shape  R") { model.add(.rect) }
                     Divider()
                     Button("Image from a File…") { model.chooseImageFile() }
-                    if !model.assets.isEmpty {
+                    if model.component == nil, !document.view.components.isEmpty {
+                        Menu("Component") {
+                            ForEach(document.view.components) { row in
+                                Button(row.name) { model.place(component: row.id) }
+                            }
+                        }
+                    }
+                    if model.component == nil, !model.assets.isEmpty {
                         Menu("Image That Follows") {
                             ForEach(model.assets) { asset in
                                 Button("\(asset.name) · \(asset.source.title)") { model.addImage(from: asset) }
@@ -209,7 +226,43 @@ private struct DesignNavigator: View {
                     if let id { withAnimation { scroller.scrollTo(id) } }
                 }
             }
+            if model.component == nil, !document.view.components.isEmpty {
+                ComponentsList(model: model, rows: document.view.components)
+            }
         }
+    }
+}
+
+/// The design's components: each one's uses, and a click to edit it.
+private struct ComponentsList: View {
+    let model: DesignWorkspaceModel
+    let rows: [DesignView.ComponentRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Divider().padding(.vertical, 4)
+            Text("Components").font(.aeLabel).foregroundStyle(Color.ink2)
+                .padding(.horizontal, 14).padding(.bottom, 4)
+            ForEach(rows) { row in
+                Button { model.editComponent(row.id) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "diamond").font(.system(size: 10)).foregroundStyle(Color.lavender).frame(width: 12)
+                        Text(row.name).font(.aeBody).foregroundStyle(Color.ink).lineLimit(1)
+                        if row.dirty { Circle().fill(Color.amber).frame(width: 5, height: 5).accessibilityLabel("unsaved") }
+                        Spacer(minLength: 4)
+                        Text(verbatim: "\(row.uses.count) use\(row.uses.count == 1 ? "" : "s")").font(.aeSmall).foregroundStyle(Color.ink3)
+                    }
+                    .padding(.horizontal, 14).frame(height: 24).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Edit \(row.name): what changes here changes every page that places it")
+                .accessibilityLabel("Edit the component \(row.name), \(row.uses.count) uses")
+                .contextMenu {
+                    Button("Place on the Page") { model.place(component: row.id) }
+                }
+            }
+        }
+        .padding(.bottom, 8)
     }
 }
 
@@ -248,6 +301,12 @@ private struct LayerRow: View {
         .accessibilityLabel("\(layer.label), \(layer.kind.title)")
         .accessibilityAddTraits(chosen ? .isSelected : [])
         .contextMenu {
+            if !isRoot, layer.kind == .frame, model.component == nil {
+                Button("Make a Component") { model.selection = layer.id; model.makeComponent() }
+            }
+            if layer.kind == .instance {
+                Button("Edit the Component") { model.editComponent(layer.component) }
+            }
             if !isRoot {
                 Button("Move Up") { model.selection = layer.id; model.moveSelected(by: -1) }
                 Button("Move Down") { model.selection = layer.id; model.moveSelected(by: 1) }
@@ -264,6 +323,7 @@ private struct LayerRow: View {
         case .text: "textformat"
         case .rect: "square"
         case .image: "photo"
+        case .instance: "diamond"
         }
     }
 }
@@ -343,9 +403,22 @@ private struct DesignInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let page = model.page, page.breakpoints.count > 1 {
+            if let component = model.component, !component.options.isEmpty {
                 HStack(spacing: 8) {
-                    Text("Editing").font(.aeSmall).foregroundStyle(Color.ink2)
+                    Text("Editing").font(.aeSmall).foregroundStyle(Color.ink2).fixedSize()
+                    Picker("Editing", selection: Binding(get: { model.variant ?? "" }, set: { model.variant = $0.isEmpty ? nil : $0 })) {
+                        Text("As written").tag("")
+                        ForEach(component.options, id: \.key) { Text($0.name).tag($0.key) }
+                    }
+                    .labelsHidden().pickerStyle(.segmented).controlSize(.small)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .help("A change made with an option chosen holds for instances that pick it")
+            } else if model.component == nil, let page = model.page, page.breakpoints.count > 1 {
+                HStack(spacing: 8) {
+                    Text("Editing").font(.aeSmall).foregroundStyle(Color.ink2).fixedSize()
                     Picker("Editing", selection: Binding(get: { model.breakpoint ?? page.widestFirst.first?.id ?? "" }, set: { model.breakpoint = $0 })) {
                         ForEach(page.widestFirst) { Text($0.name).tag($0.id) }
                     }
@@ -359,6 +432,9 @@ private struct DesignInspector: View {
             if let page = model.pageHere, let layer = model.chosen {
                 LayerInspector(model: model, page: page, layer: layer, tokens: document.tokens, resolver: model.resolver)
                     .id(layer.id)
+            } else if let component = model.component {
+                ComponentInspector(model: model, component: component)
+                    .id(component.id)
             } else if let page = model.page {
                 PanelSection(page.name) {
                     Text(verbatim: page.breakpoints.map { "\($0.name) \(Int($0.width))" }.joined(separator: " · "))
@@ -432,6 +508,9 @@ private struct LayerInspector: View {
                 if layer.kind == .image {
                     ImageSection(model: model, layer: layer, said: said)
                 }
+                if layer.kind == .instance {
+                    InstanceSection(model: model, layer: layer)
+                }
                 if parent != nil {
                     PanelSection("Size") {
                         SizePicker(label: "Width", value: layer.width, said: said(["w"])) { model.setSize(layer.id, width: true, to: $0) }
@@ -474,7 +553,7 @@ private struct LayerInspector: View {
                         }
                     }
                 }
-                if layer.kind != .text {
+                if layer.kind != .text, layer.kind != .instance {
                     PanelSection("Style") {
                         if layer.kind != .image {
                             TokenPicker(label: "Fill", kind: .color, value: layer.style.fill, tokens: tokens, resolver: resolver, said: said(["style", "fill"])) { model.setStyle(layer.id, "fill", to: $0) }
@@ -490,6 +569,111 @@ private struct LayerInspector: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
+                }
+            }
+        }
+    }
+}
+
+/// An instance: its component, the option it picks of each prop, its words
+/// for the component's text, and the way to the component.
+private struct InstanceSection: View {
+    let model: DesignWorkspaceModel
+    let layer: DesignLayer
+
+    var body: some View {
+        if let component = model.document?.component(layer.component) {
+            PanelSection("Component") {
+                HStack(spacing: 4) {
+                    Image(systemName: "diamond").font(.system(size: 10)).foregroundStyle(Color.lavender)
+                    Text(verbatim: "Instance of \(component.name)").font(.aeBody).foregroundStyle(Color.ink)
+                    Spacer(minLength: 0)
+                    Button("Edit Component") { model.editComponent(component.id) }.buttonStyle(.borderless).font(.aeSmall)
+                }
+                ForEach(component.props) { prop in
+                    WordPicker(label: prop.name.prefix(1).uppercased() + prop.name.dropFirst(), value: layer.props[prop.name] ?? prop.defaultOption, options: prop.options.map { ($0, $0) }) {
+                        model.setProp(layer.id, prop.name, to: $0 == prop.defaultOption ? nil : $0)
+                    }
+                }
+                ForEach(component.textLayers) { text in
+                    InspectorRow(text.label) {
+                        CommitField(title: "\(text.label) words", value: layer.texts[text.id] ?? "", prompt: text.text) { model.setWords(layer.id, for: text.id, to: $0) }
+                    }
+                }
+                let uses = model.uses(of: component.id)
+                Text(verbatim: "Used \(uses.count) time\(uses.count == 1 ? "" : "s") in the design").font(.aeSmall).foregroundStyle(Color.ink3)
+            }
+        } else {
+            PanelSection("Component") {
+                Text(verbatim: "Places \(layer.component), which isn't one of the design's components.").font(.aeSmall).foregroundStyle(Color.coral)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The component being edited, with nothing chosen: its name, its props
+/// and their options, and where it's used.
+private struct ComponentInspector: View {
+    let model: DesignWorkspaceModel
+    let component: DesignComponent
+
+    private var props: [(name: String, options: [String])] { component.props.map { ($0.name, $0.options) } }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                PanelSection(component.name) {
+                    InspectorRow("Name") {
+                        CommitField(title: "Name", value: component.name) { model.renameComponent($0) }
+                    }
+                    Text("Changes here change every page that places it. Choose an option's artboard to say what that option changes.")
+                        .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                }
+                PanelSection("Props") {
+                    ForEach(Array(component.props.enumerated()), id: \.offset) { i, prop in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                CommitField(title: "Prop name", value: prop.name) { name in
+                                    var next = props
+                                    next[i].name = name.trimmingCharacters(in: .whitespaces)
+                                    model.setProps(next)
+                                }
+                                .frame(width: 100)
+                                Spacer(minLength: 0)
+                                Button("Remove") { model.setProps(props.enumerated().filter { $0.offset != i }.map(\.element)) }
+                                    .buttonStyle(.borderless).font(.aeSmall)
+                            }
+                            CommitField(title: "\(prop.name) options", value: prop.options.joined(separator: ", "), prompt: "primary, secondary") { text in
+                                var next = props
+                                next[i].options = text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                                model.setProps(next)
+                            }
+                        }
+                    }
+                    Button("Add a Prop") {
+                        var name = "variant"
+                        var n = 2
+                        while props.contains(where: { $0.name == name }) { name = "prop\(n)"; n += 1 }
+                        model.setProps(props + [(name, ["one", "two"])])
+                    }
+                    .buttonStyle(.borderless).font(.aeSmall)
+                    Text("The first option is the default. An option a page picks can't be taken away while it's picked.")
+                        .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                }
+                PanelSection("Used in") {
+                    let uses = model.uses(of: component.id)
+                    if uses.isEmpty {
+                        Text("No page places it yet: + ▸ Component on a page.").font(.aeSmall).foregroundStyle(Color.ink3)
+                    }
+                    ForEach(uses, id: \.self) { use in
+                        Button {
+                            model.show(use)
+                        } label: {
+                            Text(verbatim: "\(model.document?.page(use.page)?.name ?? use.page) · \(model.document?.page(use.page)?.layer(use.layer)?.label ?? use.layer)")
+                        }
+                        .buttonStyle(.link).font(.aeSmall)
+                    }
                 }
             }
         }
@@ -567,9 +751,16 @@ private struct DesignStatusBar: View {
             .help("Back to the designs")
             .accessibilityLabel("Back to the designs")
             Text(document.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.inkHi)
-            if let page = model.page {
+            if let pageID = model.pageID, let page = document.page(pageID) {
                 Divider().frame(height: 12)
-                Text(page.name).font(.system(size: 11.5)).foregroundStyle(Color.ink)
+                Button(page.name) { model.closeComponent() }
+                    .buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(model.component == nil ? Color.ink : Color.ink2)
+                    .disabled(model.component == nil)
+            }
+            if let component = model.component {
+                Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Color.ink3)
+                Image(systemName: "diamond").font(.system(size: 9)).foregroundStyle(Color.lavender)
+                Text(component.name).font(.system(size: 11.5)).foregroundStyle(Color.inkHi)
             }
             if !document.unsaved.isEmpty {
                 Divider().frame(height: 12)

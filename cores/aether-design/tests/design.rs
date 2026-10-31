@@ -180,7 +180,7 @@ fn the_page_is_written_as_html_styled_by_the_theme() {
     let (_, mut design) = made("html");
     design.apply(&home_target(), &ops(json!([{"op": "set", "path": ["layers", "#logo", "text"], "value": "<Lumen> & co"}]))).unwrap();
     let page = home(&design);
-    let doc = html::document(page, "theme.css", "");
+    let doc = html::document(page, &design.component_map(), "theme.css", "");
     assert!(doc.starts_with("<!doctype html>"));
     assert!(doc.contains("<link rel=\"stylesheet\" href=\"theme.css\">"));
     assert!(doc.contains("<h1 class=\"title\">Carry the light through the Hollow Grove.</h1>"), "{doc}");
@@ -189,12 +189,12 @@ fn the_page_is_written_as_html_styled_by_the_theme() {
     assert!(doc.contains("background: var(--color-lantern-500);"));
     assert!(!doc.contains("#f2b84b"));
     // A fill in a row that wraps grows from its narrowest.
-    let card = html::css(page, "lantern");
+    let card = html::css(page, &design.component_map(), "lantern");
     assert!(card.contains("flex: 1 1 240px;"), "{card}");
     // The buttons hug their labels, down the hero's column.
-    let actions = html::css(page, "actions");
+    let actions = html::css(page, &design.component_map(), "actions");
     assert!(actions.contains(".actions {\n  display: flex;\n  flex-direction: row;"), "{actions}");
-    assert!(html::markup(page, "actions", "").starts_with("<div class=\"actions\">\n  <a class=\"wishlist\">"));
+    assert!(html::markup(page, &design.component_map(), "actions", "").starts_with("<div class=\"actions\">\n  <a class=\"wishlist button button--variant-primary\">"));
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn what_a_breakpoint_says_is_checked_too() {
 #[test]
 fn each_narrower_breakpoint_is_a_media_query_of_what_changes() {
     let (_, mut design) = made("media");
-    let css = html::css(home(&design), "page");
+    let css = html::css(home(&design), &design.component_map(), "page");
     let media = css.split("@media (max-width: 1279px) {").nth(1).expect("a query below Desktop");
     assert!(media.contains(".title {\n    font: var(--type-display-sm);\n  }"), "{media}");
     assert!(media.contains(".hero {\n    padding: var(--space-12) var(--space-8);\n  }"), "{media}");
@@ -245,7 +245,7 @@ fn each_narrower_breakpoint_is_a_media_query_of_what_changes() {
     // no longer say is put back.
     design.apply(&home_target(), &ops(json!([{"op": "set", "path": ["layers", "#features", "at"], "value": {"mobile": {"layout": {"direction": "column"}, "hidden": false}}}]))).unwrap();
     design.apply(&home_target(), &ops(json!([{"op": "set", "path": ["layers", "#availability", "at"], "value": {"mobile": {"hidden": true}}}]))).unwrap();
-    let css = html::css(home(&design), "page");
+    let css = html::css(home(&design), &design.component_map(), "page");
     let media = css.split("@media (max-width: 1279px) {").nth(1).unwrap();
     assert!(media.contains(".lantern {\n    flex: 0 0 auto;\n    align-self: stretch;\n    max-width: 100%;\n    min-width: revert;\n  }"), "{media}");
     assert!(media.contains(".availability {\n    display: none;\n  }"), "{media}");
@@ -263,11 +263,124 @@ fn an_image_is_a_file_in_images_and_is_written_as_img() {
     }
     assert!(design.apply(&home_target(), &add("images/Key art.png")).unwrap());
     let page = home(&design);
-    let html = html::markup(page, "key-art", "../");
+    let html = html::markup(page, &design.component_map(), "key-art", "../");
     assert_eq!(html, "<img class=\"key-art\" src=\"../images/Key art.png\" alt=\"Wren and her lantern\">\n");
-    let css = html::css(page, "key-art");
+    let css = html::css(page, &design.component_map(), "key-art");
     assert!(css.contains("display: block;") && css.contains("object-fit: cover;") && css.contains("height: 320px;"), "{css}");
     // A picture holds no layers.
     let inside = ops(json!([{"op": "insert", "path": ["layers", "#key-art", "children"], "value": "title"}]));
     assert!(design.apply(&home_target(), &inside).is_err());
+}
+
+fn component_target(id: &str) -> Target {
+    Target::Component(id.into())
+}
+
+#[test]
+fn an_instance_is_expanded_into_its_component_as_its_options_say() {
+    let (_, design) = made("expand");
+    assert_eq!(design.components.iter().map(|c| c.get().id.as_str()).collect::<Vec<_>>(), ["button"]);
+    assert!(design.problems().is_empty(), "{:?}", design.problems());
+    let page = design.expanded("home").unwrap();
+    let wishlist = page.layer("wishlist").unwrap();
+    assert_eq!(wishlist.kind, Kind::Frame);
+    assert_eq!(wishlist.style.fill.as_deref(), Some("--color-lantern-500"));
+    assert_eq!(wishlist.tag, "a", "the instance's tag");
+    assert_eq!(wishlist.children, ["wishlist.label"]);
+    assert_eq!(page.layer("wishlist.label").unwrap().text, "Wishlist now");
+    let trailer = page.layer("trailer").unwrap();
+    assert_eq!((trailer.style.fill.as_deref(), trailer.style.stroke.as_deref()), (Some("transparent"), Some("--color-line")));
+    assert_eq!(page.layer("trailer.label").unwrap().style.color.as_deref(), Some("--color-ink"));
+    assert_eq!(design.uses()["button"], [("home".to_string(), "wishlist".to_string()), ("home".to_string(), "trailer".to_string())]);
+}
+
+#[test]
+fn a_component_is_written_once_and_its_instances_by_its_classes() {
+    let (_, design) = made("component-css");
+    let components = design.component_map();
+    let page = home(&design);
+    let markup = html::markup(page, &components, "actions", "");
+    assert!(markup.contains("<a class=\"trailer button button--variant-secondary\">\n    <p class=\"button__label\">Watch the trailer</p>\n  </a>"), "{markup}");
+    let css = html::css(page, &components, "page");
+    assert_eq!(css.matches(".button {").count(), 1, "{css}");
+    assert!(css.contains(".button--variant-secondary {\n  background: transparent;\n  border: 1px solid var(--color-line);\n}"), "{css}");
+    assert!(css.contains(".button--variant-secondary .button__label {\n  color: var(--color-ink);\n}"), "{css}");
+    // The instance's own class says only where it sits.
+    assert!(css.contains(".wishlist {\n  flex: 0 0 auto;\n}"), "{css}");
+    let own = html::component_css(&components["button"]);
+    assert!(own.starts_with(".button {\n  display: flex;") && !own.contains("min-height"), "{own}");
+}
+
+#[test]
+fn an_instance_picks_only_what_its_component_has() {
+    let (_, mut design) = made("misfit");
+    for (ops_, why) in [
+        (json!([{"op": "set", "path": ["layers", "#trailer", "props"], "value": {"variant": "ghost"}}]), "variant=ghost"),
+        (json!([{"op": "set", "path": ["layers", "#trailer", "props"], "value": {"size": "lg"}}]), "picks size"),
+        (json!([{"op": "set", "path": ["layers", "#trailer", "texts"], "value": {"button": "hi"}}]), "isn't one of button's text layers"),
+        (json!([{"op": "set", "path": ["layers", "#trailer", "component"], "value": "card"}]), "isn't one of the design's components"),
+    ] {
+        let said = design.apply(&home_target(), &ops(ops_)).unwrap_err();
+        assert!(said.contains(why), "{said}");
+    }
+    // Nor can the component take away an option a page picks.
+    let narrower = ops(json!([{"op": "set", "path": ["props", "0", "options"], "value": ["primary"]}]));
+    let said = design.apply(&component_target("button"), &narrower).unwrap_err();
+    assert!(said.contains("variant=secondary"), "{said}");
+    assert!(design.unsaved_files().is_empty());
+}
+
+#[test]
+fn a_change_to_a_component_reaches_every_instance_and_undoes() {
+    let (dir, mut design) = made("reach");
+    let bigger = ops(json!([{"op": "set", "path": ["layers", "#label", "style", "font"], "value": "--type-title"}]));
+    assert!(design.apply(&component_target("button"), &bigger).unwrap());
+    let page = design.expanded("home").unwrap();
+    for id in ["wishlist.label", "trailer.label"] {
+        assert_eq!(page.layer(id).unwrap().style.font.as_deref(), Some("--type-title"));
+    }
+    assert_eq!(design.unsaved_files(), [component_file("button")]);
+    assert!(design.undo(&component_target("button")).unwrap());
+    assert_eq!(design.expanded("home").unwrap().layer("trailer.label").unwrap().style.font.as_deref(), Some("--type-label-md"));
+    design.redo(&component_target("button")).unwrap();
+    design.save().unwrap();
+    assert!(std::fs::read_to_string(dir.join("components/button.component.json")).unwrap().contains("--type-title"));
+}
+
+fn component_file(id: &str) -> String {
+    aether_design::component_rel(id)
+}
+
+#[test]
+fn a_frame_made_a_component_is_one_step_with_its_file() {
+    let (dir, mut design) = made("make");
+    design.make_component("home", "lantern", "card", "Card").unwrap();
+    let page = home(&design);
+    let instance = page.layer("lantern").unwrap();
+    assert_eq!((instance.kind, instance.component.as_str(), instance.min_w), (Kind::Instance, "card", Some(240.0)));
+    assert!(page.layer("lantern-title").is_none(), "its layers are the component's now");
+    let card = design.component("card").unwrap().get();
+    assert_eq!(card.root, "lantern");
+    assert_eq!(card.layer("lantern").unwrap().min_w, None, "where it sits is the instance's");
+    assert_eq!(design.expanded("home").unwrap().layer("lantern.lantern-title").unwrap().text, "A lantern that matters");
+    assert_eq!(design.unsaved_files(), [page_rel("home"), component_file("card")]);
+    // A component can't hold another yet, nor be the page itself.
+    assert!(design.make_component("home", "hero", "header", "Header").unwrap_err().contains("instance"));
+    assert!(design.make_component("home", "page", "everything", "All").is_err());
+    assert!(design.make_component("home", "painted", "card", "Again").unwrap_err().contains("already"));
+
+    let made_step = Target::parse("made:card/home").unwrap();
+    assert!(design.undo(&made_step).unwrap());
+    assert!(design.component("card").is_none() && home(&design).layer("lantern-title").is_some());
+    assert!(design.unsaved_files().is_empty());
+    assert!(design.redo(&made_step).unwrap());
+    design.save().unwrap();
+    let file = dir.join("components/card.component.json");
+    assert!(file.exists());
+    // Undone after it was saved, the next save takes the file away.
+    design.undo(&made_step).unwrap();
+    assert_eq!(design.unsaved_files(), [page_rel("home"), component_file("card")]);
+    design.save().unwrap();
+    assert!(!file.exists());
+    assert!(Design::open(&dir).unwrap().component("card").is_none());
 }

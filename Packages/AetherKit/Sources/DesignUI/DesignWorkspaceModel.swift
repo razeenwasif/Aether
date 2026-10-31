@@ -5,6 +5,15 @@ import Foundation
 import ImageIO
 import Observation
 
+/// What a change at a narrower breakpoint, or in one option of a
+/// component's prop, is said in: the layer's `at` or `when`, under `key`.
+public struct DesignOverrideTarget: Equatable, Sendable {
+    public var field: String
+    public var key: String
+    /// For people: Mobile, Secondary.
+    public var name: String
+}
+
 /// Which list the navigator shows.
 public enum DesignNavigatorTab: String, CaseIterable, Sendable {
     case layers = "Layers"
@@ -24,8 +33,14 @@ public final class DesignWorkspaceModel {
     public private(set) var document: DesignDocument?
     /// The page on screen, by id.
     public var pageID: String? {
-        didSet { if pageID != oldValue { selection = nil; breakpoint = nil; fitRequest &+= 1 } }
+        didSet { if pageID != oldValue { selection = nil; breakpoint = nil; componentID = nil; fitRequest &+= 1 } }
     }
+    /// The component being edited in the page's place, by id.
+    public private(set) var componentID: String?
+    /// The option of the component's prop the inspector edits
+    /// (`variant=secondary`); nil is the component as written. Choosing a
+    /// layer on an option's artboard edits that option.
+    public var variant: String?
     /// The breakpoint the inspector edits, by id; nil is the widest, the
     /// page's own. Choosing a layer on an artboard edits that artboard's.
     public var breakpoint: String?
@@ -65,19 +80,39 @@ public final class DesignWorkspaceModel {
         refreshList()
     }
 
-    public var page: DesignPage? { pageID.flatMap { document?.page($0) } }
-    /// The page as the breakpoint being edited has it.
-    public var pageHere: DesignPage? { page?.at(breakpoint) }
-    /// The chosen layer, as the breakpoint being edited has it.
+    /// The page on screen, or the component being edited, as a tree of
+    /// layers.
+    public var page: DesignPage? {
+        if let componentID { return document?.component(componentID)?.asPage() }
+        return pageID.flatMap { document?.page($0) }
+    }
+    /// The component being edited.
+    public var component: DesignComponent? { componentID.flatMap { document?.component($0) } }
+    /// The tree as the breakpoint or option being edited has it.
+    public var pageHere: DesignPage? {
+        if let component { return component.asPage(variant) }
+        return page?.at(breakpoint)
+    }
+    /// The chosen layer, as the breakpoint or option being edited has it.
     public var chosen: DesignLayer? { selection.flatMap { pageHere?.layer($0) } }
     public var resolver: DesignResolver { DesignResolver(tokens: document?.tokens ?? []) }
 
-    /// The breakpoint being edited, when it's not the widest: where a change
-    /// is what that breakpoint says, not the layer's own.
-    public var overriding: DesignBreakpoint? {
+    /// The breakpoint being edited when it's not the widest, or the option
+    /// of a component's prop: where a change is what it says, not the
+    /// layer's own.
+    public var overriding: DesignOverrideTarget? {
+        if let component {
+            guard let variant, let option = component.options.first(where: { $0.key == variant }) else { return nil }
+            return DesignOverrideTarget(field: "when", key: variant, name: option.name)
+        }
         guard let page, let breakpoint, let point = page.breakpoints.first(where: { $0.id == breakpoint }),
               point.id != page.widestFirst.first?.id else { return nil }
-        return point
+        return DesignOverrideTarget(field: "at", key: point.id, name: point.name)
+    }
+
+    /// What `layer` says for the breakpoint or option being edited.
+    private func said(by layer: DesignLayer, for target: DesignOverrideTarget) -> DesignOverride? {
+        target.field == "when" ? layer.when[target.key] : layer.at[target.key]
     }
 
     /// How the project names the design open.
@@ -177,12 +212,20 @@ public final class DesignWorkspaceModel {
 
     // MARK: Editing
 
-    /// Ops on the page on screen as one step, and the project change made
-    /// with it, if any, as part of the same step.
+    /// Ops on the page on screen, or the component being edited, as one
+    /// step, and the project change made with it, if any, as part of the
+    /// same step.
     @discardableResult
     private func apply(_ ops: [DesignOp], label: String, with tx: AetherGraph.Transaction? = nil) -> Bool {
-        guard let document, let pageID else { return false }
-        let changed = document.apply(ops, toPage: pageID, label: label)
+        guard let document else { return false }
+        let changed: Bool
+        if let componentID {
+            changed = document.apply(ops, toComponent: componentID, label: label)
+        } else if let pageID {
+            changed = document.apply(ops, toPage: pageID, label: label)
+        } else {
+            return false
+        }
         if let refusal = document.refusal { notice = refusal }
         if changed { stepped(label, with: tx) }
         return changed
@@ -224,19 +267,19 @@ public final class DesignWorkspaceModel {
             return
         }
         let label = "\(what) of \(layer.label) on \(point.name)"
-        if layer.at[point.id] != nil {
-            apply([.set(path(id, ["at", point.id] + keys), value)], label: label)
+        if said(by: layer, for: point) != nil {
+            apply([.set(path(id, [point.field, point.key] + keys), value)], label: label)
         } else if let value {
-            // The breakpoint says nothing of it yet: what it says, made.
+            // It says nothing of it yet: what it says, made.
             let said = keys.reversed().reduce(value) { inner, key in [key: inner] as [String: Any] }
-            apply([.set(path(id, ["at", point.id]), said)], label: label)
+            apply([.set(path(id, [point.field, point.key]), said)], label: label)
         }
     }
 
     /// Whether the breakpoint being edited says the field at `keys` of `id`
     /// itself, rather than taking the wider one's.
     public func says(_ id: String, _ keys: [String]) -> Bool {
-        guard let point = overriding, let over = page?.layer(id)?.at[point.id] else { return false }
+        guard let point = overriding, let layer = page?.layer(id), let over = said(by: layer, for: point) else { return false }
         return over.says(keys)
     }
 
@@ -322,6 +365,8 @@ public final class DesignWorkspaceModel {
             layer["style"] = ["fill": token("--color-surface") ?? "#808080", "radius": token("--radius-md") ?? 8] as [String: Any]
         case .image:
             return chooseImageFile()
+        case .instance:
+            return
         }
         insert(layer, id: id, in: page, label: "Add \(kind.title)")
     }
@@ -378,6 +423,109 @@ public final class DesignWorkspaceModel {
         if apply(ops, label: "Frame \(layer.label)") { selection = frame }
     }
 
+    // MARK: Components
+
+    /// Edit component `id` in the page's place: its option artboards on the
+    /// canvas, its layers in the navigator.
+    public func editComponent(_ id: String) {
+        guard document?.component(id) != nil else { return }
+        componentID = id
+        variant = nil
+        selection = nil
+        fitRequest &+= 1
+    }
+
+    /// Back to the page from a component.
+    public func closeComponent() {
+        guard componentID != nil else { return }
+        let was = componentID
+        componentID = nil
+        variant = nil
+        // The instance of it there was, if any, chosen again.
+        selection = page?.layers.first { $0.kind == .instance && $0.component == was }?.id
+        fitRequest &+= 1
+    }
+
+    /// Where component `id` is placed, by page and instance.
+    public func uses(of id: String) -> [DesignView.ComponentRow.Use] {
+        document?.view.components.first { $0.id == id }?.uses ?? []
+    }
+
+    /// Go to an instance: its page, it chosen.
+    public func show(_ use: DesignView.ComponentRow.Use) {
+        componentID = nil
+        variant = nil
+        if pageID != use.page { pageID = use.page }
+        selection = use.layer
+    }
+
+    /// The chosen frame made a component, an instance of it in its place:
+    /// one step. The component is called what the frame is.
+    public func makeComponent() {
+        guard let document, let pageID, componentID == nil, let id = selection, let layer = page?.layer(id) else { return }
+        guard layer.kind == .frame, id != page?.root else {
+            notice = "Choose a frame to make a component of it."
+            return
+        }
+        let name = layer.label.prefix(1).uppercased() + layer.label.dropFirst()
+        var slug = name.lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "-" }.joined()
+        if slug.first?.isLetter != true { slug = "c-" + slug }
+        var componentID = slug
+        var n = 2
+        while document.component(componentID) != nil {
+            componentID = "\(slug)-\(n)"
+            n += 1
+        }
+        let before = document.steps
+        if document.makeComponent(from: id, on: pageID, id: componentID, name: name) {
+            if document.steps > before { stepped("Make \(name) a Component") }
+            selection = id
+        } else if let refusal = document.refusal {
+            notice = refusal
+        }
+    }
+
+    /// An instance of component `id` placed as `placeForNew` says, and
+    /// chosen.
+    public func place(component id: String) {
+        guard componentID == nil, let page, let component = document?.component(id) else { return }
+        let layer = Self.fresh(id, in: page)
+        insert(["id": layer, "kind": "instance", "component": id, "name": component.name, "w": "hug"], id: layer, in: page, label: "Place \(component.name)")
+    }
+
+    /// An instance's option of a prop; nil, the component's default.
+    public func setProp(_ id: String, _ prop: String, to option: String?) {
+        guard let layer = page?.layer(id), layer.props[prop] != option else { return }
+        let key = path(id, ["props", prop])
+        if let option {
+            apply([.set(key, option)], label: "\(prop.prefix(1).uppercased() + prop.dropFirst()) of \(layer.label)")
+        } else {
+            apply([.remove(key)], label: "\(prop.prefix(1).uppercased() + prop.dropFirst()) of \(layer.label)")
+        }
+    }
+
+    /// An instance's words for one of its component's text layers; empty,
+    /// the component's own.
+    public func setWords(_ id: String, for text: String, to words: String) {
+        guard let layer = page?.layer(id), (layer.texts[text] ?? "") != words else { return }
+        let key = path(id, ["texts", text])
+        apply([words.isEmpty ? .remove(key) : .set(key, words)], label: "Words of \(layer.label)")
+    }
+
+    /// The component being edited renamed.
+    public func renameComponent(_ name: String) {
+        guard let component, !name.trimmingCharacters(in: .whitespaces).isEmpty, name != component.name else { return }
+        apply([.set(["name"], name.trimmingCharacters(in: .whitespaces))], label: "Rename \(component.name)")
+    }
+
+    /// The component's props, all of them, as one step: each a name and its
+    /// options, the first the default.
+    public func setProps(_ props: [(name: String, options: [String])]) {
+        guard component != nil else { return }
+        let value: [[String: Any]] = props.map { ["name": $0.name, "options": $0.options] }
+        apply([.set(["props"], value)], label: "Props of \(component?.name ?? "")")
+    }
+
     // MARK: Pictures
 
     /// The link an image layer of the page on screen follows, if any.
@@ -399,6 +547,10 @@ public final class DesignWorkspaceModel {
     /// An image of `asset`, following its newest version: one step, the
     /// layer and its link together.
     public func addImage(from asset: Asset) {
+        guard componentID == nil else {
+            notice = "A picture that follows an asset goes on a page; a component takes one from a file."
+            return
+        }
         guard let project, let document, let page else {
             notice = "Open a design to place \(asset.name) in it."
             return
@@ -596,7 +748,9 @@ public final class DesignWorkspaceModel {
 
     /// The code drawer's contents: the chosen layer's, or the page's.
     public var code: DesignCode? {
-        guard let document, let page else { return nil }
+        guard let document else { return nil }
+        if let componentID { return document.code(component: componentID) }
+        guard let page else { return nil }
         return document.code(page: page.id, layer: selection ?? page.root)
     }
 
@@ -605,7 +759,7 @@ public final class DesignWorkspaceModel {
     /// opened in the browser. A browser draws it; Aether has no web view.
     @discardableResult
     public func preview() -> URL? {
-        guard let document, let page else { return nil }
+        guard let document, let pageID, let page = document.page(pageID) else { return nil }
         let fm = FileManager.default
         let dir = fm.temporaryDirectory.appending(path: "Aether Preview/\(document.url.lastPathComponent)", directoryHint: .isDirectory)
         let file = dir.appending(path: "\(page.id).html")

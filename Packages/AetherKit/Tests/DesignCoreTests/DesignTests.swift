@@ -160,16 +160,18 @@ struct DesignWorkspaceTests {
         #expect(model.designs.map(\.name) == ["Lumen"])
         // Laid out as the board has it: three cards in a row on a desktop,
         // one above another on a phone.
-        let desktop = DesignLayout.lay(page, width: 1280, resolver: model.resolver)
-        let phone = DesignLayout.lay(page, width: 390, resolver: model.resolver)
+        let drawn = try #require(model.document?.expanded["home"])
+        let desktop = DesignLayout.lay(drawn.at("desktop"), width: 1280, resolver: model.resolver)
+        let phone = DesignLayout.lay(drawn.at("mobile"), width: 390, resolver: model.resolver)
         let cards = ["lantern", "painted", "remembers"]
         #expect(Set(cards.compactMap { desktop.frames[$0]?.minY }).count == 1)
         #expect(Set(cards.compactMap { phone.frames[$0]?.minY }).count == 3)
-        for id in page.layers.map(\.id) {
+        for id in drawn.layers.map(\.id) {
             #expect((phone.frames[id]?.maxX ?? 0) <= 390.5, "\(id) stays on the phone")
         }
         let wishlist = try #require(desktop.frames["wishlist"])
-        #expect(wishlist.width < 200, "the button hugs its label")
+        #expect(wishlist.width > 60 && wishlist.width < 200, "the button hugs its label")
+        #expect(desktop.frames["wishlist.label"].map { wishlist.contains($0) } == true)
     }
 
     @Test func eachEditIsOneStepAndUndoWalksPagesAndTheThemeInOrder() throws {
@@ -274,7 +276,7 @@ struct DesignWorkspaceTests {
         #expect(theme.contains("--color-lantern-500: #ffcc66"), "unsaved, and previewed")
         model.selection = "wishlist"
         let code = try #require(model.code)
-        #expect(code.html.hasPrefix("<a class=\"wishlist\">") && code.css.contains("border-radius: var(--radius-full);"))
+        #expect(code.html.hasPrefix("<a class=\"wishlist button button--variant-primary\">") && code.css.contains("border-radius: var(--radius-full);"))
     }
 }
 
@@ -445,5 +447,94 @@ struct DesignProjectTests {
         model.undo()
         #expect(model.document?.tokens.first { $0.name == "--color-ink" }?.value == "#f2efe6")
         #expect(model.undoLabel == nil)
+    }
+}
+
+@MainActor
+struct DesignComponentTests {
+    private func opened() throws -> (DesignWorkspaceModel, ProjectGraph) {
+        let designs = FileManager.default.temporaryDirectory.appending(path: "aether-design-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let model = DesignWorkspaceModel(folder: designs)
+        let project = ProjectGraph(folder: nil)
+        model.project = project
+        model.create()
+        _ = try #require(model.document, "\(model.notice ?? "")")
+        return (model, project)
+    }
+
+    private func drawn(_ model: DesignWorkspaceModel, _ id: String) -> DesignLayer? {
+        model.document?.expanded["home"]?.layer(id)
+    }
+
+    @Test func aPagesInstancesAreDrawnAsTheirComponentAndChosenWhole() throws {
+        let (model, _) = try opened()
+        #expect(model.page?.layer("wishlist")?.kind == .instance)
+        #expect(drawn(model, "wishlist")?.kind == .frame && drawn(model, "wishlist.label")?.text == "Wishlist now")
+        #expect(drawn(model, "trailer")?.style.stroke == "--color-line")
+        #expect(DesignLayer.owner(of: "wishlist.label") == "wishlist" && DesignLayer.owner(of: "hero") == "hero")
+        #expect(model.uses(of: "button").map(\.layer) == ["wishlist", "trailer"])
+        #expect(model.document?.component("button")?.options.map(\.key) == ["variant=primary", "variant=secondary"])
+    }
+
+    @Test func anInstancePicksAnOptionAndItsOwnWords() throws {
+        let (model, _) = try opened()
+        model.setProp("wishlist", "variant", to: "secondary")
+        #expect(drawn(model, "wishlist")?.style.fill == "transparent" && model.undoLabel == "Variant of Wishlist CTA")
+        model.setProp("wishlist", "variant", to: nil)
+        #expect(drawn(model, "wishlist")?.style.fill == "--color-lantern-500" && model.page?.layer("wishlist")?.props.isEmpty == true)
+        model.setProp("wishlist", "variant", to: "ghost")
+        #expect(model.notice?.contains("variant=ghost") == true)
+        model.setWords("trailer", for: "label", to: "See the grove move")
+        #expect(drawn(model, "trailer.label")?.text == "See the grove move")
+        model.undo()
+        #expect(drawn(model, "trailer.label")?.text == "Watch the trailer")
+    }
+
+    @Test func anOptionEditedInTheComponentReachesTheInstancesThatPickIt() throws {
+        let (model, project) = try opened()
+        model.selection = "wishlist"
+        model.editComponent("button")
+        #expect(model.page?.id == "button" && model.selection == nil)
+        model.variant = "variant=secondary"
+        #expect(model.overriding?.name == "Secondary")
+        model.setStyle("label", "font", to: "--type-body")
+        #expect(model.says("label", ["style", "font"]))
+        #expect(drawn(model, "trailer.label")?.style.font == "--type-body", "the secondary changed")
+        #expect(drawn(model, "wishlist.label")?.style.font == "--type-label-md", "the primary didn't")
+        #expect(model.undoLabel == "Font of Label on Secondary")
+        model.variant = nil
+        model.setStyle("button", "radius", to: DesignVal.num(4).json)
+        #expect(drawn(model, "wishlist")?.style.radius == .num(4) && drawn(model, "trailer")?.style.radius == .num(4))
+        #expect(model.document?.unsaved == ["components/button.component.json"])
+        // Steps in the component are the design's, undone in order.
+        project.undo(in: model.documentPath) { model.document!.undo() }
+        #expect(drawn(model, "trailer")?.style.radius == .text("--radius-full"))
+        let code = try #require(model.code)
+        #expect(code.css.contains(".button--variant-secondary .button__label {") && code.html.contains("button__label"))
+        model.closeComponent()
+        #expect(model.componentID == nil && model.selection == "wishlist")
+    }
+
+    @Test func aFrameMadeAComponentIsOneStepOnTheProjectsHistory() throws {
+        let (model, project) = try opened()
+        model.selection = "lantern"
+        model.makeComponent()
+        let instance = try #require(model.page?.layer("lantern"))
+        #expect(instance.kind == .instance && instance.component == "a-lantern-that-matters")
+        #expect(model.page?.layer("lantern-title") == nil && drawn(model, "lantern.lantern-title")?.text == "A lantern that matters")
+        #expect(model.undoLabel == "Make A lantern that matters a Component" && project.history.done.count == 1)
+        #expect(model.document?.view.components.map(\.id) == ["a-lantern-that-matters", "button"])
+        model.undo()
+        #expect(model.page?.layer("lantern")?.kind == .frame && model.document?.component("a-lantern-that-matters") == nil)
+        model.redo()
+        #expect(model.page?.layer("lantern")?.kind == .instance)
+        // Placed again on the page: the same component, another instance.
+        model.selection = "features"
+        model.place(component: "a-lantern-that-matters")
+        #expect(model.uses(of: "a-lantern-that-matters").count == 2)
+        // Not a frame, or the page itself: said, not done.
+        model.selection = "title"
+        model.makeComponent()
+        #expect(model.notice?.contains("Choose a frame") == true)
     }
 }

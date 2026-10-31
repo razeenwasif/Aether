@@ -3,6 +3,7 @@ import AppKit
 import CanvasUI
 import DiffuseBridge
 import DiffuseCore
+import DesignCore
 import DesignUI
 import DiffuseUI
 import ModelCore
@@ -271,6 +272,14 @@ public struct AetherCommands: Commands {
                 .disabled(!onDesign || design.selection == nil)
             Button("Choose the Frame It's In  (Esc)") { design.chooseParent() }
                 .disabled(!onDesign || design.selection == nil)
+            Divider()
+            Button("Make a Component") { design.makeComponent() }
+                .keyboardShortcut("k", modifiers: [.command, .option])
+                .disabled(!onDesign || design.component != nil || design.chosen?.kind != .frame)
+            Button("Edit the Component") { if let id = design.chosen?.component { design.editComponent(id) } }
+                .disabled(!onDesign || design.chosen?.kind != .instance)
+            Button("Back to the Page") { design.closeComponent() }
+                .disabled(!onDesign || design.component == nil)
             Divider()
             Button("All Designs") { design.close() }
                 .disabled(!onDesign)

@@ -4,9 +4,11 @@ import DesignCore
 import SwiftUI
 
 /// The canvas: a page drawn at each of its breakpoints, side by side, as the
-/// design board has Desktop and Mobile. Laid out by `DesignLayout` and drawn
-/// with AppKit's own drawing, the text measured and drawn the same way. A
-/// click chooses the innermost layer under it, a double-click on text types
+/// design board has Desktop and Mobile — or a component being edited, as
+/// written and as each option of its props changes it. Laid out by
+/// `DesignLayout` and drawn with AppKit's own drawing, the text measured and
+/// drawn the same way. A click chooses the innermost layer under it (on a
+/// page, a component's layers are its instance), a double-click on text types
 /// into it; drag the empty canvas or use two fingers to move over it, pinch
 /// or ⌘-scroll to zoom, f to see it all.
 struct DesignCanvas: NSViewRepresentable {
@@ -15,8 +17,9 @@ struct DesignCanvas: NSViewRepresentable {
     let revision: Int
     let pageID: String?
     let selection: String?
-    /// The breakpoint being edited, whose artboard's name is lit.
-    let breakpoint: String?
+    /// The breakpoint or option being edited, whose artboard's name is lit:
+    /// nil, the widest breakpoint or the component as written.
+    let editing: String?
     let fitRequest: Int
     /// How much of the canvas the panels cover, left and right.
     let insets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
@@ -30,14 +33,19 @@ struct DesignCanvas: NSViewRepresentable {
     func updateNSView(_ view: DesignCanvasView, context: Context) {
         view.model = model
         view.insets = insets
-        view.update(revision: revision, pageID: pageID, selection: selection, breakpoint: breakpoint, fit: fitRequest)
+        view.update(revision: revision, pageID: pageID, selection: selection, editing: editing, fit: fitRequest)
     }
 }
 
-/// One breakpoint's artboard: the page laid out at its width, and where it
-/// sits on the canvas.
+/// One artboard: a breakpoint's, the page laid out at its width, or an
+/// option's of the component being edited; and where it sits on the canvas.
 struct DesignBoard {
-    var breakpoint: DesignBreakpoint
+    /// The breakpoint's id or the option's key; nil, the widest breakpoint
+    /// or the component as written.
+    var key: String?
+    var name: String
+    /// The tree as this artboard has it.
+    var page: DesignPage
     var laid: DesignLaidOut
     var origin: CGPoint
 
@@ -51,10 +59,10 @@ final class DesignCanvasView: NSView {
     private var page: DesignPage?
     private var resolver = DesignResolver(tokens: [])
     private var selection: String?
-    private var breakpoint: String?
+    private var editing: String?
     private var hovered: String?
-    /// The page as each artboard has it, by breakpoint.
-    private var pages: [String: DesignPage] = [:]
+    /// What an artboard is drawn on before its layers.
+    private var ground = NSColor.white
     /// Pictures, read once a revision.
     private var pictures: [String: NSImage] = [:]
     private var drawn = (revision: -1, pageID: String?.none, fit: -1)
@@ -90,12 +98,12 @@ final class DesignCanvasView: NSView {
         if fitPending { fitAll() }
     }
 
-    func update(revision: Int, pageID: String?, selection: String?, breakpoint: String?, fit: Int) {
+    func update(revision: Int, pageID: String?, selection: String?, editing: String?, fit: Int) {
         if revision != drawn.revision || pageID != drawn.pageID {
             pictures = [:]
             build()
         }
-        self.breakpoint = breakpoint
+        self.editing = editing
         if fit != drawn.fit || pageID != drawn.pageID { fitAll() }
         drawn = (revision, pageID, fit)
         if selection != self.selection {
@@ -104,7 +112,9 @@ final class DesignCanvasView: NSView {
         needsDisplay = true
     }
 
-    /// Each breakpoint laid out, left to right.
+    /// Each artboard laid out, left to right: a page's breakpoints, its
+    /// instances expanded; or a component as written, then as each option
+    /// changes it, each as wide as it holds.
     private func build() {
         guard let model, let page = model.page else {
             boards = []
@@ -115,13 +125,28 @@ final class DesignCanvasView: NSView {
         resolver = model.resolver
         var x: CGFloat = 0
         let sizes = { [weak model] (src: String) in model?.imageSize(src) }
-        pages = [:]
-        boards = page.breakpoints.map { point in
-            let here = page.at(point.id)
-            pages[point.id] = here
-            let laid = DesignLayout.lay(here, width: point.width, resolver: resolver, images: sizes)
-            defer { x += point.width + Self.gutter }
-            return DesignBoard(breakpoint: point, laid: laid, origin: CGPoint(x: x, y: 0))
+        let widest = page.widestFirst.first?.id
+        var drawn: [(key: String?, name: String, page: DesignPage, width: CGFloat)]
+        ground = .white
+        if let component = model.component {
+            let pages = model.document?.view.pages.compactMap { model.document?.page($0.id) } ?? []
+            let placed = pages.first { $0.layers.contains { $0.component == component.id } } ?? pages.first
+            ground = placed.flatMap { resolver.color($0.layer($0.root)?.style.fill) } ?? .white
+            drawn = ([(nil, "As written")] + component.options.map { ($0.key, $0.name) }).map { key, name in
+                let here = component.asPage(key)
+                let width = min(1280, max(120, DesignLayout.naturalWidth(of: here, resolver: resolver, images: sizes)))
+                return (key, name, here, width)
+            }
+        } else {
+            let expanded = model.pageID.flatMap { model.document?.expanded[$0] } ?? page
+            drawn = page.breakpoints.map { point in
+                (point.id == widest ? nil : point.id, "\(point.name) · \(Int(point.width))", expanded.at(point.id), point.width)
+            }
+        }
+        boards = drawn.map { board in
+            let laid = DesignLayout.lay(board.page, width: board.width, resolver: resolver, images: sizes)
+            defer { x += board.width + Self.gutter }
+            return DesignBoard(key: board.key, name: board.name, page: board.page, laid: laid, origin: CGPoint(x: x, y: 0))
         }
     }
 
@@ -152,8 +177,10 @@ final class DesignCanvasView: NSView {
     }
 
     /// The layer at a point on screen.
+    /// The layer at a point on screen; on a page, a component's layer is its
+    /// instance's.
     func hit(_ p: CGPoint) -> String? {
-        hitBoard(p)?.layer
+        hitBoard(p)?.layer.map(DesignLayer.owner)
     }
 
     /// The artboard at a point on screen, and the layer there.
@@ -175,15 +202,16 @@ final class DesignCanvasView: NSView {
             label(board, above: onScreen)
             cg.saveGState()
             cg.setShadow(offset: CGSize(width: 0, height: 10), blur: 30, color: NSColor.black.withAlphaComponent(0.5).cgColor)
-            // A browser's page is white until something says otherwise.
-            NSColor.white.setFill()
+            // A browser's page is white until something says otherwise; a
+            // component sits on the ground of the page it's placed on.
+            ground.setFill()
             onScreen.fill()
             cg.restoreGState()
             cg.saveGState()
             cg.clip(to: onScreen)
             cg.translateBy(x: onScreen.minX, y: onScreen.minY)
             cg.scaleBy(x: zoom, y: zoom)
-            let here = pages[board.breakpoint.id] ?? page
+            let here = board.page
             if let root = here.layer(here.root) { drawLayer(root, in: board.laid, page: here, cg: cg, seen: []) }
             cg.restoreGState()
             outline(hovered, in: board, width: 1, color: Color.ice.opacity(0.6))
@@ -192,8 +220,8 @@ final class DesignCanvasView: NSView {
     }
 
     private func label(_ board: DesignBoard, above rect: CGRect) {
-        let text = "\(board.breakpoint.name) · \(Int(board.breakpoint.width))"
-        let editing = board.breakpoint.id == (breakpoint ?? page?.widestFirst.first?.id)
+        let text = board.name
+        let editing = board.key == self.editing
         let string = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 11, weight: editing ? .semibold : .medium), .foregroundColor: NSColor(editing ? Color.ice : Color.ink2)])
         string.draw(at: CGPoint(x: rect.minX, y: rect.minY - 20))
     }
@@ -274,11 +302,11 @@ final class DesignCanvasView: NSView {
         window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
         let found = hitBoard(p)
-        // A click on an artboard edits that artboard's breakpoint.
-        if let board = found?.board {
-            model?.breakpoint = board.breakpoint.id == page?.widestFirst.first?.id ? nil : board.breakpoint.id
+        // A click on an artboard edits that artboard's breakpoint, or option.
+        if let board = found?.board, let model {
+            if model.component != nil { model.variant = board.key } else { model.breakpoint = board.key }
         }
-        guard let id = found?.layer else {
+        guard let id = found?.layer.map(DesignLayer.owner) else {
             model?.selection = nil
             panning = p
             return

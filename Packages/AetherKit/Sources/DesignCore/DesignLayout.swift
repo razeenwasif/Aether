@@ -90,6 +90,17 @@ public struct DesignLayout {
         return DesignLaidOut(width: width, height: height, frames: layout.frames, order: layout.order)
     }
 
+    /// How wide `page`'s root is with nothing wrapped: what a component's
+    /// artboard is drawn at.
+    public static func naturalWidth(of page: DesignPage, resolver: DesignResolver, measure: DesignMeasuring = DesignText(), images: @escaping (String) -> CGSize? = { _ in nil }) -> CGFloat {
+        var layout = DesignLayout(page: page, resolver: resolver, measure: measure, images: images)
+        guard let root = page.layer(page.root) else { return 0 }
+        var natural = root
+        // A root that fills fills nothing here: as wide as what it holds.
+        if natural.w == nil || natural.w == .fill { natural.w = .hug }
+        return layout.natural(natural)
+    }
+
     private init(page: DesignPage, resolver: DesignResolver, measure: DesignMeasuring, images: @escaping (String) -> CGSize?) {
         self.page = page
         self.resolver = resolver
@@ -111,7 +122,8 @@ public struct DesignLayout {
         switch layer.kind {
         case .text:
             return measure.size(of: layer.text, font: resolver.font(layer.style.font), width: nil).width
-        case .rect:
+        case .rect, .instance:
+            // An instance still an instance has no component to draw.
             return 0
         case .image:
             return images(layer.src)?.width ?? 0
@@ -136,7 +148,7 @@ public struct DesignLayout {
         switch layer.kind {
         case .text:
             h = height ?? said ?? measure.size(of: layer.text, font: resolver.font(layer.style.font), width: max(1, width)).height
-        case .rect:
+        case .rect, .instance:
             h = height ?? said ?? 0
         case .image:
             // CSS's `height: auto`: the picture's own aspect, or a wide

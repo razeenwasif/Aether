@@ -1634,6 +1634,40 @@ Not yet:
     - ⌘S wrote exactly the three Mobile values into the page file.
     - Not checked on screen: image layers. The Open panel can't be driven, and the project had no asset to follow; the tests cover both.
 
+**2026-11-01 · Design, third slice: components with variants.** The user said "start the next step", the slice named next: the board's ui/Button, with Variant and Used in.
+
+- **Format:** `components/<id>.component.json` holds a name, `props` (each a name and its options, the first the default), a root and layers. A layer's `when` says what `prop=option` changes, the same `Override` a breakpoint's `at` uses. On a page an `instance` layer names its `component`, its `props` (only those not at the default) and `texts` (its words for the component's text layers, by id). The page and component trees share their checks (`tree_problems`). A component's layers can't say breakpoint values (the instance takes the page's) and can't hold instances yet.
+- **Expansion** (`format::expand`, Rust): an instance becomes its component's layers with its options' `when` laid over them and its words. The root keeps the instance's id, sizes, place, tag and breakpoint values, and the layers inside are `<instance>.<layer>`. Swift draws the expanded pages (`DesignDocument.expanded`), and a click on any of an instance's layers chooses the instance (`DesignLayer.owner`).
+- **Checks across files:** a page's instances are checked against the components (a missing component, an option or prop it lacks, words for a layer that isn't text), and a component's edit against every page. An option a page picks can't be taken away under it.
+- **CSS** (`html.rs`): a layer's rules are split into its own (box, layout, look) and its sizing (how it sits in its frame). A component is written once: `.button` holds the root's own rules, `.button__label` each layer inside, and `.button--variant-secondary .button__label` only what an option changes, reverting what it drops. An instance is `class="wishlist button button--variant-primary"`, and its own class holds only its sizing, in its page's media queries too.
+- **Make a Component** (`Design::make_component`): the chosen frame and what's in it become a new component (its own sizes left to the instance, its breakpoint values dropped), and an instance takes its place. One step: `made:<component>/<page>` undoes the page's change and the component's being together. A component made, saved and then undone has its file taken away on the next save.
+- **Workspace:**
+  - The navigator lists components with their uses.
+  - Editing one shows its tree, and the canvas draws it as written and per option. Each artboard is as wide as the component holds and sits on the page's ground.
+  - The inspector's Editing control picks the option, and an option's rows are marked as a breakpoint's are.
+  - The component inspector covers the name, props and options, and Used in. The instance inspector covers each prop's option, the words, Edit Component and its use count.
+  - Design menu: Make a Component (⌥⌘K), Edit the Component, Back to the Page. The starter's buttons are now one `button` component, primary and secondary.
+- **Checked:**
+  - Rust: 5 new tests (21 in `aether-design`):
+    - an instance expanded as its options say;
+    - the component's CSS written once and the instances by its classes;
+    - an instance's picks checked, and a component's edit refused when it would take an option from a page;
+    - a component's change reaching both instances, undone and saved;
+    - Make a Component as one step, refused for a frame holding an instance or for the page, its file written on save and taken away when undone after.
+  - Swift: 4 new tests (25 for Design; 217 in all):
+    - instances drawn as their component and chosen whole;
+    - an instance's option and words, and a refused option;
+    - an option edited in the component reaching only the instances that pick it, with its undo name, the code, and back to the page;
+    - Make a Component as one step on the project's history, undone, redone and placed again.
+  - On screen:
+    - The starter's buttons show as instances, with "Button · 2 uses".
+    - Clicking the Wishlist button chose the instance. Its inspector showed the component, the variant and the label's words, and setting it to secondary outlined it.
+    - Edit Component drew As written, Primary and Secondary.
+    - Clicking the label on Secondary switched Editing to Secondary, its colour marked with ↺.
+    - Make a Component on the first card made an instance and a listed component, and one undo put the frame back.
+    - Two things found and fixed: the Editing label was squeezed into a column by three options, and component artboards were drawn on white, hiding the secondary's light label. They now sit on the ground of the page that places them.
+- **Not yet:** hover and pressed as `:hover`/`:active` states, Detach, components inside components, a component's own breakpoints.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

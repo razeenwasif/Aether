@@ -5,13 +5,16 @@
 //! that wraps on a phone. Everything is set in tokens, so the first thing a
 //! new design shows is the binding: change `--color-lantern-500` and every
 //! layer that uses it follows. On the phone the title is set smaller and the
-//! hero's padding is less, as the Mobile breakpoint says. What nobody has
+//! hero's padding is less, as the Mobile breakpoint says. Its two buttons are
+//! instances of one component, `button`, a primary and a secondary. What nobody has
 //! decided yet — the platforms, the release window — is a placeholder, not
 //! an invented fact.
 
 use std::path::Path;
 
-use crate::format::{Breakpoint, DesignFile, Kind, Layer, Layout, Override, Page, Style, Val};
+use std::collections::BTreeMap;
+
+use crate::format::{Breakpoint, Component, DesignFile, Kind, Layer, Layout, Override, Page, Prop, Style, Val};
 
 /// One file: where it goes in the design's folder, and its text.
 pub struct File {
@@ -57,6 +60,7 @@ pub fn files(name: &str) -> Vec<File> {
         File { rel: crate::DESIGN.into(), text: proton_game::doc::to_text(&design) },
         File { rel: crate::THEME.into(), text: THEME.into() },
         File { rel: crate::page_rel("home"), text: proton_game::doc::to_text(&home()) },
+        File { rel: crate::component_rel("button"), text: proton_game::doc::to_text(&button()) },
     ]
 }
 
@@ -110,17 +114,50 @@ fn row(gap: &str) -> Layout {
     Layout { direction: Some("row".into()), gap: token(gap), align: Some("center".into()), ..Layout::default() }
 }
 
-fn button(id: &str, name: &str, fill: Option<&str>, stroke: Option<&str>) -> Layer {
+/// The board's ui/Button: a pill of a label, filled with the lantern's
+/// colour, or outlined as the secondary.
+fn button() -> Component {
+    let secondary = |style: Style| BTreeMap::from([("variant=secondary".to_string(), Override { style, ..Override::default() })]);
+    Component {
+        id: "button".into(),
+        name: "Button".into(),
+        props: vec![Prop { name: "variant".into(), options: vec!["primary".into(), "secondary".into()] }],
+        root: "button".into(),
+        layers: vec![
+            Layer {
+                when: secondary(Style { fill: Some("transparent".into()), stroke: Some("--color-line".into()), ..Style::default() }),
+                ..frame(
+                    "button",
+                    "Button",
+                    &["label"],
+                    Layout { direction: Some("row".into()), pad_h: Some(Val::Num(20.0)), pad_v: Some(Val::Num(12.0)), align: Some("center".into()), ..Layout::default() },
+                    Style { fill: Some("--color-lantern-500".into()), radius: token("--radius-full"), ..Style::default() },
+                )
+            },
+            Layer {
+                when: secondary(Style { color: Some("--color-ink".into()), ..Style::default() }),
+                ..text("label", "Label", "Button", "--type-label-md", "--color-lantern-ink")
+            },
+        ],
+        ..Component::default()
+    }
+}
+
+/// A button on the page: an instance of `button`, its words and its variant.
+fn button_on(id: &str, name: &str, words: &str, variant: &str) -> Layer {
     Layer {
+        id: id.into(),
+        kind: Kind::Instance,
+        name: name.into(),
         tag: "a".into(),
         w: Some(Val::Text("hug".into())),
-        ..frame(
-            id,
-            name,
-            &[&format!("{id}-label")],
-            Layout { direction: Some("row".into()), pad_h: Some(Val::Num(20.0)), pad_v: Some(Val::Num(12.0)), align: Some("center".into()), ..Layout::default() },
-            Style { fill: fill.map(Into::into), stroke: stroke.map(Into::into), radius: token("--radius-full"), ..Style::default() },
-        )
+        component: "button".into(),
+        props: match variant {
+            "primary" => BTreeMap::new(),
+            other => BTreeMap::from([("variant".to_string(), other.to_string())]),
+        },
+        texts: BTreeMap::from([("label".to_string(), words.to_string())]),
+        ..Layer::default()
     }
 }
 
@@ -184,10 +221,8 @@ fn home() -> Page {
             )
         },
         Layer { w: Some(Val::Text("hug".into())), ..frame("actions", "Actions", &["wishlist", "trailer"], row("--space-2"), Style::default()) },
-        button("wishlist", "Wishlist CTA", Some("--color-lantern-500"), None),
-        text("wishlist-label", "Label", "Wishlist now", "--type-label-md", "--color-lantern-ink"),
-        button("trailer", "Watch the trailer", None, Some("--color-line")),
-        text("trailer-label", "Label", "Watch the trailer", "--type-label-md", "--color-ink"),
+        button_on("wishlist", "Wishlist CTA", "Wishlist now", "primary"),
+        button_on("trailer", "Watch the trailer", "Watch the trailer", "secondary"),
         text("availability", "Availability", "Coming to Mac · [PLATFORMS] · [RELEASE WINDOW]", "--type-eyebrow", "--color-ink-muted"),
         Layer {
             tag: "section".into(),

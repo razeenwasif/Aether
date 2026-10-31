@@ -1,7 +1,7 @@
 //! Design, for Swift: a design's folder open for editing (`aether-design`'s
 //! `Design`: its pages changed by Game's ops and its theme's tokens spliced,
-//! each document with its own undo, held until saved), and the HTML and CSS
-//! a page is written as.
+//! each document with its own undo, held until saved), its components and
+//! their instances expanded, and the HTML and CSS a page is written as.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -71,10 +71,20 @@ impl DesignEditor {
             .iter()
             .map(|p| serde_json::json!({ "id": p.get().id, "name": p.get().name, "dirty": p.is_dirty(), "canUndo": p.can_undo(), "canRedo": p.can_redo() }))
             .collect();
+        let uses = d.uses();
+        let components: Vec<serde_json::Value> = d
+            .components
+            .iter()
+            .map(|c| {
+                let placed: Vec<_> = uses.get(&c.get().id).into_iter().flatten().map(|(page, layer)| serde_json::json!({ "page": page, "layer": layer })).collect();
+                serde_json::json!({ "id": c.get().id, "name": c.get().name, "dirty": c.is_dirty(), "uses": placed })
+            })
+            .collect();
         json(&serde_json::json!({
             "path": d.root().to_string_lossy(),
             "design": d.design.get(),
             "pages": pages,
+            "components": components,
             "theme": {
                 "exists": d.theme.exists(),
                 "tokens": d.theme.tokens(),
@@ -90,8 +100,25 @@ impl DesignEditor {
         lock(&self.held).page(&id).map(|p| json(p.get()))
     }
 
-    /// A batch of ops (JSON, Game's ops) on `design` or `page:<id>`, whole
-    /// or not at all. Whether it changed anything.
+    /// Page `id` with its instances expanded into their components' layers,
+    /// as JSON.
+    pub fn expanded(&self, id: String) -> Option<String> {
+        lock(&self.held).expanded(&id).map(|p| json(&p))
+    }
+
+    /// Component `id`, as JSON, as it is now.
+    pub fn component(&self, id: String) -> Option<String> {
+        lock(&self.held).component(&id).map(|c| json(c.get()))
+    }
+
+    /// Component `id` made from frame `layer` of page `page`, an instance
+    /// in the frame's place: one step, undone as `made:<id>/<page>`.
+    pub fn make_component(&self, page: String, layer: String, id: String, name: String) -> Result<(), DiffuseError> {
+        lock(&self.held).make_component(&page, &layer, &id, &name).map_err(failed)
+    }
+
+    /// A batch of ops (JSON, Game's ops) on `design`, `page:<id>` or
+    /// `component:<id>`, whole or not at all. Whether it changed anything.
     pub fn apply(&self, target_name: String, ops: String) -> Result<bool, DiffuseError> {
         let ops: Vec<Op> = serde_json::from_str(&ops).map_err(|e| failed(format!("not ops: {e}")))?;
         lock(&self.held).apply(&target(&target_name)?, &ops).map_err(failed)
@@ -123,7 +150,8 @@ impl DesignEditor {
     /// Page `id` as an HTML document, its tokens from `theme_href` and its
     /// pictures' `images/` under `base`.
     pub fn html(&self, id: String, theme_href: String, base: String) -> Option<String> {
-        lock(&self.held).page(&id).map(|p| html::document(p.get(), &theme_href, &base))
+        let d = lock(&self.held);
+        d.page(&id).map(|p| html::document(p.get(), &d.component_map(), &theme_href, &base))
     }
 
     /// Layer `layer` of page `id` and everything in it, as JSON:
@@ -132,6 +160,14 @@ impl DesignEditor {
         let d = lock(&self.held);
         let page = d.page(&id)?.get();
         page.layer(&layer)?;
-        Some(json(&serde_json::json!({ "html": html::markup(page, &layer, ""), "css": html::css(page, &layer) })))
+        let components = d.component_map();
+        Some(json(&serde_json::json!({ "html": html::markup(page, &components, &layer, ""), "css": html::css(page, &components, &layer) })))
+    }
+
+    /// Component `id` as its instances are written: `{html, css}`.
+    pub fn component_code(&self, id: String) -> Option<String> {
+        let d = lock(&self.held);
+        let c = d.component(&id)?.get();
+        Some(json(&serde_json::json!({ "html": html::component_markup(c, ""), "css": html::component_css(c) })))
     }
 }

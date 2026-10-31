@@ -61,6 +61,8 @@ public enum DesignKind: String, Codable, Sendable, CaseIterable {
     case rect
     /// A picture from the design's `images/`.
     case image
+    /// A component placed on a page.
+    case instance
 
     public var title: String {
         switch self {
@@ -68,6 +70,7 @@ public enum DesignKind: String, Codable, Sendable, CaseIterable {
         case .text: "Text"
         case .rect: "Shape"
         case .image: "Image"
+        case .instance: "Instance"
         }
     }
 }
@@ -203,8 +206,17 @@ public struct DesignLayer: Decodable, Hashable, Sendable, Identifiable {
     public var style: DesignStyle
     /// What a narrower breakpoint says otherwise, by its id.
     public var at: [String: DesignOverride]
+    /// In a component: what an option of a prop changes, by `prop=option`.
+    public var when: [String: DesignOverride]
+    /// An instance's component, by id; on the layers it's expanded into,
+    /// the component they came from.
+    public var component: String
+    /// An instance's option of each prop it doesn't leave at the default.
+    public var props: [String: String]
+    /// An instance's words for its component's text layers, by their id.
+    public var texts: [String: String]
 
-    enum CodingKeys: String, CodingKey { case id, kind, name, tag, text, children, src, hidden, w, h, minW, layout, style, at }
+    enum CodingKeys: String, CodingKey { case id, kind, name, tag, text, children, src, hidden, w, h, minW, layout, style, at, when, component, props, texts }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
@@ -221,6 +233,16 @@ public struct DesignLayer: Decodable, Hashable, Sendable, Identifiable {
         layout = try c.value(.layout, DesignFlex())
         style = try c.value(.style, DesignStyle())
         at = try c.value(.at, [:])
+        when = try c.value(.when, [:])
+        component = try c.value(.component, "")
+        props = try c.value(.props, [:])
+        texts = try c.value(.texts, [:])
+    }
+
+    /// The instance on a page a layer drawn there belongs to: itself, or for
+    /// `wishlist.label`, `wishlist`.
+    public static func owner(of id: String) -> String {
+        id.split(separator: ".", maxSplits: 1).first.map(String.init) ?? id
     }
 
     /// `o` laid over it.
@@ -261,6 +283,14 @@ public struct DesignPage: Decodable, Hashable, Sendable, Identifiable {
         breakpoints = try c.value(.breakpoints, [])
         root = try c.value(.root, "")
         layers = try c.value(.layers, [])
+    }
+
+    init(id: String, name: String, breakpoints: [DesignBreakpoint], root: String, layers: [DesignLayer]) {
+        self.id = id
+        self.name = name
+        self.breakpoints = breakpoints
+        self.root = root
+        self.layers = layers
     }
 
     public func layer(_ id: String) -> DesignLayer? {
@@ -329,6 +359,51 @@ public struct DesignPage: Decodable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// One of a component's props: `variant`, and its options, the first the
+/// default.
+public struct DesignProp: Decodable, Hashable, Sendable, Identifiable {
+    public var name: String
+    public var options: [String]
+
+    public var id: String { name }
+    public var defaultOption: String { options.first ?? "" }
+}
+
+/// A component: a tree of layers placed on pages as instances, and its
+/// props (aether-design's `Component`).
+public struct DesignComponent: Decodable, Hashable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public var props: [DesignProp]
+    public var root: String
+    public var layers: [DesignLayer]
+
+    enum CodingKeys: String, CodingKey { case id, name, props, root, layers }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.value(.id, "")
+        name = try c.value(.name, "")
+        props = try c.value(.props, [])
+        root = try c.value(.root, "")
+        layers = try c.value(.layers, [])
+    }
+
+    /// The component as a page, its layers as `option` (`variant=secondary`)
+    /// changes them, or as written.
+    public func asPage(_ option: String? = nil) -> DesignPage {
+        let layers = option.map { key in self.layers.map { layer in layer.when[key].map(layer.over) ?? layer } } ?? self.layers
+        return DesignPage(id: id, name: name, breakpoints: [], root: root, layers: layers)
+    }
+
+    /// Each option there is to show: `prop=option`, with a name for it.
+    public var options: [(key: String, name: String)] {
+        props.flatMap { prop in prop.options.map { ("\(prop.name)=\($0)", "\($0.prefix(1).uppercased() + $0.dropFirst())") } }
+    }
+
+    /// The text layers an instance can give words to.
+    public var textLayers: [DesignLayer] { asPage().tree().map(\.layer).filter { $0.kind == .text } }
+}
+
 /// One custom property of the theme, and where it is (proton-design's
 /// `Token`).
 public struct DesignToken: Decodable, Hashable, Sendable, Identifiable {
@@ -363,6 +438,17 @@ public struct DesignView: Decodable, Sendable {
         public var canRedo: Bool
     }
 
+    public struct ComponentRow: Decodable, Sendable, Identifiable {
+        public struct Use: Decodable, Sendable, Hashable {
+            public var page: String
+            public var layer: String
+        }
+        public var id: String
+        public var name: String
+        public var dirty: Bool
+        public var uses: [Use]
+    }
+
     public struct Theme: Decodable, Sendable {
         public var exists: Bool
         public var tokens: [DesignToken]
@@ -372,6 +458,7 @@ public struct DesignView: Decodable, Sendable {
     public var path: String
     public var design: Info
     public var pages: [PageRow]
+    public var components: [ComponentRow]
     public var theme: Theme
     public var unsaved: [String]
     public var problems: [String]
