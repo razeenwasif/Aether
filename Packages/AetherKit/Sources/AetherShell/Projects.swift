@@ -78,6 +78,7 @@ extension AppModel {
         project = next
         canvas.project = next
         modeling.project = next
+        design.project = next
         diffuse.project = next
         omnibar.close()
         remember(folder)

@@ -68,30 +68,37 @@ public struct DesignLaidOut: Sendable {
 /// - Along a row, `hug` is the content's width, `fill` grows from its
 ///   narrowest (`minW`, else nothing) to share what's left, and a row that
 ///   wraps moves what doesn't fit to the next line.
-/// - Text is as tall as it wraps to; a page is as tall as what it holds.
+/// - Text is as tall as it wraps to; a picture as tall as its width at its
+///   own aspect; a page is as tall as what it holds.
+/// - A hidden layer takes no room.
+///
+/// Lay out `page.at(breakpoint)` to see a breakpoint as it says.
 public struct DesignLayout {
     let page: DesignPage
     let resolver: DesignResolver
     let measure: DesignMeasuring
+    /// A picture's size in pixels, by its `src`, when it's known.
+    let images: (String) -> CGSize?
     private var frames: [String: CGRect] = [:]
     private var order: [String] = []
     private var visiting: Set<String> = []
 
-    public static func lay(_ page: DesignPage, width: CGFloat, resolver: DesignResolver, measure: DesignMeasuring = DesignText()) -> DesignLaidOut {
-        var layout = DesignLayout(page: page, resolver: resolver, measure: measure)
+    public static func lay(_ page: DesignPage, width: CGFloat, resolver: DesignResolver, measure: DesignMeasuring = DesignText(), images: @escaping (String) -> CGSize? = { _ in nil }) -> DesignLaidOut {
+        var layout = DesignLayout(page: page, resolver: resolver, measure: measure, images: images)
         guard let root = page.layer(page.root) else { return DesignLaidOut(width: width, height: 0, frames: [:], order: []) }
         let height = layout.place(root, at: .zero, width: width, height: nil, recording: true)
         return DesignLaidOut(width: width, height: height, frames: layout.frames, order: layout.order)
     }
 
-    private init(page: DesignPage, resolver: DesignResolver, measure: DesignMeasuring) {
+    private init(page: DesignPage, resolver: DesignResolver, measure: DesignMeasuring, images: @escaping (String) -> CGSize?) {
         self.page = page
         self.resolver = resolver
         self.measure = measure
+        self.images = images
     }
 
     private func children(of layer: DesignLayer) -> [DesignLayer] {
-        layer.children.compactMap(page.layer).filter { !visiting.contains($0.id) }
+        layer.children.compactMap(page.layer).filter { !visiting.contains($0.id) && !$0.hidden }
     }
 
     private func pads(_ layer: DesignLayer) -> (h: CGFloat, v: CGFloat, gap: CGFloat) {
@@ -106,6 +113,8 @@ public struct DesignLayout {
             return measure.size(of: layer.text, font: resolver.font(layer.style.font), width: nil).width
         case .rect:
             return 0
+        case .image:
+            return images(layer.src)?.width ?? 0
         case .frame:
             visiting.insert(layer.id)
             defer { visiting.remove(layer.id) }
@@ -129,6 +138,11 @@ public struct DesignLayout {
             h = height ?? said ?? measure.size(of: layer.text, font: resolver.font(layer.style.font), width: max(1, width)).height
         case .rect:
             h = height ?? said ?? 0
+        case .image:
+            // CSS's `height: auto`: the picture's own aspect, or a wide
+            // frame's while there's no picture to measure.
+            let aspect = images(layer.src).map { $0.width > 0 ? $0.height / $0.width : 0 } ?? 9.0 / 16.0
+            h = height ?? said ?? width * aspect
         case .frame:
             visiting.insert(layer.id)
             h = layer.layout.isRow

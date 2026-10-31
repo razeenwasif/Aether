@@ -4,12 +4,14 @@
 //! eyebrow, title, body and two actions, and three feature cards in a row
 //! that wraps on a phone. Everything is set in tokens, so the first thing a
 //! new design shows is the binding: change `--color-lantern-500` and every
-//! layer that uses it follows. What nobody has decided yet — the platforms,
-//! the release window — is a placeholder, not an invented fact.
+//! layer that uses it follows. On the phone the title is set smaller and the
+//! hero's padding is less, as the Mobile breakpoint says. What nobody has
+//! decided yet — the platforms, the release window — is a placeholder, not
+//! an invented fact.
 
 use std::path::Path;
 
-use crate::format::{Breakpoint, DesignFile, Kind, Layer, Layout, Page, Style, Val};
+use crate::format::{Breakpoint, DesignFile, Kind, Layer, Layout, Override, Page, Style, Val};
 
 /// One file: where it goes in the design's folder, and its text.
 pub struct File {
@@ -40,6 +42,7 @@ const THEME: &str = "/* The palette. Layers use these tokens; change one here an
   --radius-full: 999px;
 
   --type-display: 700 56px/1.05 system-ui, sans-serif;
+  --type-display-sm: 700 38px/1.1 system-ui, sans-serif;
   --type-title: 600 22px/1.25 system-ui, sans-serif;
   --type-body: 400 17px/1.5 system-ui, sans-serif;
   --type-label-md: 600 15px/1 system-ui, sans-serif;
@@ -66,6 +69,14 @@ pub fn write(root: &Path, files: &[File]) -> Result<(), String> {
         proton_game::doc::write_atomically(&root.join(&file.rel), file.text.as_bytes()).map_err(|e| format!("{}: {e}", file.rel))?;
     }
     Ok(())
+}
+
+impl Layer {
+    /// What breakpoint `id` says otherwise.
+    fn on(mut self, id: &str, over: Override) -> Layer {
+        self.at.insert(id.into(), over);
+        self
+    }
 }
 
 fn token(name: &str) -> Option<Val> {
@@ -157,9 +168,11 @@ fn home() -> Page {
                 Layout { gap: token("--space-6"), pad_h: token("--space-8"), pad_v: token("--space-16"), ..Layout::default() },
                 Style::default(),
             )
-        },
+        }
+        .on("mobile", Override { layout: Layout { pad_v: token("--space-12"), ..Layout::default() }, ..Override::default() }),
         text("eyebrow", "Eyebrow", "A hand-painted adventure", "--type-eyebrow", "--color-lantern-500"),
-        Layer { tag: "h1".into(), w: Some(Val::Text("fill".into())), ..text("title", "Title", "Carry the light through the Hollow Grove.", "--type-display", "--color-ink") },
+        Layer { tag: "h1".into(), w: Some(Val::Text("fill".into())), ..text("title", "Title", "Carry the light through the Hollow Grove.", "--type-display", "--color-ink") }
+            .on("mobile", Override { style: Style { font: Some("--type-display-sm".into()), ..Style::default() }, ..Override::default() }),
         Layer {
             w: Some(Val::Text("fill".into())),
             ..text(

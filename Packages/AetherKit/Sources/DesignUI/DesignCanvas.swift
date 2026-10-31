@@ -15,6 +15,8 @@ struct DesignCanvas: NSViewRepresentable {
     let revision: Int
     let pageID: String?
     let selection: String?
+    /// The breakpoint being edited, whose artboard's name is lit.
+    let breakpoint: String?
     let fitRequest: Int
     /// How much of the canvas the panels cover, left and right.
     let insets: (left: CGFloat, right: CGFloat, bottom: CGFloat)
@@ -28,7 +30,7 @@ struct DesignCanvas: NSViewRepresentable {
     func updateNSView(_ view: DesignCanvasView, context: Context) {
         view.model = model
         view.insets = insets
-        view.update(revision: revision, pageID: pageID, selection: selection, fit: fitRequest)
+        view.update(revision: revision, pageID: pageID, selection: selection, breakpoint: breakpoint, fit: fitRequest)
     }
 }
 
@@ -49,7 +51,12 @@ final class DesignCanvasView: NSView {
     private var page: DesignPage?
     private var resolver = DesignResolver(tokens: [])
     private var selection: String?
+    private var breakpoint: String?
     private var hovered: String?
+    /// The page as each artboard has it, by breakpoint.
+    private var pages: [String: DesignPage] = [:]
+    /// Pictures, read once a revision.
+    private var pictures: [String: NSImage] = [:]
     private var drawn = (revision: -1, pageID: String?.none, fit: -1)
     private var fitPending = true
     /// The canvas point at the view's middle, and points on screen a
@@ -83,10 +90,12 @@ final class DesignCanvasView: NSView {
         if fitPending { fitAll() }
     }
 
-    func update(revision: Int, pageID: String?, selection: String?, fit: Int) {
+    func update(revision: Int, pageID: String?, selection: String?, breakpoint: String?, fit: Int) {
         if revision != drawn.revision || pageID != drawn.pageID {
+            pictures = [:]
             build()
         }
+        self.breakpoint = breakpoint
         if fit != drawn.fit || pageID != drawn.pageID { fitAll() }
         drawn = (revision, pageID, fit)
         if selection != self.selection {
@@ -105,8 +114,12 @@ final class DesignCanvasView: NSView {
         self.page = page
         resolver = model.resolver
         var x: CGFloat = 0
+        let sizes = { [weak model] (src: String) in model?.imageSize(src) }
+        pages = [:]
         boards = page.breakpoints.map { point in
-            let laid = DesignLayout.lay(page, width: point.width, resolver: resolver)
+            let here = page.at(point.id)
+            pages[point.id] = here
+            let laid = DesignLayout.lay(here, width: point.width, resolver: resolver, images: sizes)
             defer { x += point.width + Self.gutter }
             return DesignBoard(breakpoint: point, laid: laid, origin: CGPoint(x: x, y: 0))
         }
@@ -140,11 +153,14 @@ final class DesignCanvasView: NSView {
 
     /// The layer at a point on screen.
     func hit(_ p: CGPoint) -> String? {
+        hitBoard(p)?.layer
+    }
+
+    /// The artboard at a point on screen, and the layer there.
+    private func hitBoard(_ p: CGPoint) -> (board: DesignBoard, layer: String?)? {
         let c = canvasPoint(p)
-        for board in boards where board.rect.contains(c) {
-            return board.laid.hit(CGPoint(x: c.x - board.origin.x, y: c.y - board.origin.y))
-        }
-        return nil
+        guard let board = boards.first(where: { $0.rect.contains(c) }) else { return nil }
+        return (board, board.laid.hit(CGPoint(x: c.x - board.origin.x, y: c.y - board.origin.y)))
     }
 
     // MARK: Drawing
@@ -167,7 +183,8 @@ final class DesignCanvasView: NSView {
             cg.clip(to: onScreen)
             cg.translateBy(x: onScreen.minX, y: onScreen.minY)
             cg.scaleBy(x: zoom, y: zoom)
-            if let root = page.layer(page.root) { drawLayer(root, in: board.laid, page: page, cg: cg, seen: []) }
+            let here = pages[board.breakpoint.id] ?? page
+            if let root = here.layer(here.root) { drawLayer(root, in: board.laid, page: here, cg: cg, seen: []) }
             cg.restoreGState()
             outline(hovered, in: board, width: 1, color: Color.ice.opacity(0.6))
             outline(selection, in: board, width: 1.5, color: Color.ice)
@@ -176,7 +193,8 @@ final class DesignCanvasView: NSView {
 
     private func label(_ board: DesignBoard, above rect: CGRect) {
         let text = "\(board.breakpoint.name) · \(Int(board.breakpoint.width))"
-        let string = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(Color.ink2)])
+        let editing = board.breakpoint.id == (breakpoint ?? page?.widestFirst.first?.id)
+        let string = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 11, weight: editing ? .semibold : .medium), .foregroundColor: NSColor(editing ? Color.ice : Color.ink2)])
         string.draw(at: CGPoint(x: rect.minX, y: rect.minY - 20))
     }
 
@@ -190,7 +208,7 @@ final class DesignCanvasView: NSView {
     }
 
     private func drawLayer(_ layer: DesignLayer, in laid: DesignLaidOut, page: DesignPage, cg: CGContext, seen: Set<String>) {
-        guard let frame = laid.frames[layer.id], !seen.contains(layer.id) else { return }
+        guard let frame = laid.frames[layer.id], !seen.contains(layer.id), !layer.hidden else { return }
         let style = layer.style
         let faded = (style.opacity ?? 1) < 1
         if faded {
@@ -202,6 +220,9 @@ final class DesignCanvasView: NSView {
         if let fill = resolver.color(style.fill) {
             fill.setFill()
             NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).fill()
+        }
+        if layer.kind == .image {
+            drawPicture(layer, in: frame, radius: radius, cg: cg)
         }
         if let stroke = resolver.color(style.stroke) {
             stroke.setStroke()
@@ -220,12 +241,44 @@ final class DesignCanvasView: NSView {
         if faded { cg.endTransparencyLayer() }
     }
 
+    /// A picture filling its layer as `fit` says, its corners rounded; a
+    /// frame saying so where there's no picture to draw.
+    private func drawPicture(_ layer: DesignLayer, in frame: CGRect, radius: CGFloat, cg: CGContext) {
+        let image: NSImage? = pictures[layer.src] ?? {
+            guard let model, let document = model.document, let read = NSImage(contentsOf: document.file(layer.src)) else { return nil }
+            pictures[layer.src] = read
+            return read
+        }()
+        cg.saveGState()
+        NSBezierPath(roundedRect: frame, xRadius: radius, yRadius: radius).addClip()
+        guard let image, image.size.width > 0, image.size.height > 0 else {
+            NSColor(Color.raise2).setFill()
+            frame.fill()
+            let note = NSAttributedString(string: "No picture at \(layer.src)", attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor(Color.ink2)])
+            note.draw(at: CGPoint(x: frame.minX + 8, y: frame.minY + 8))
+            cg.restoreGState()
+            return
+        }
+        let scale = layer.style.fit == "contain"
+            ? min(frame.width / image.size.width, frame.height / image.size.height)
+            : max(frame.width / image.size.width, frame.height / image.size.height)
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let rect = CGRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2, width: size.width, height: size.height)
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
+        cg.restoreGState()
+    }
+
     // MARK: Pointer and keys
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let p = convert(event.locationInWindow, from: nil)
-        guard let id = hit(p) else {
+        let found = hitBoard(p)
+        // A click on an artboard edits that artboard's breakpoint.
+        if let board = found?.board {
+            model?.breakpoint = board.breakpoint.id == page?.widestFirst.first?.id ? nil : board.breakpoint.id
+        }
+        guard let id = found?.layer else {
             model?.selection = nil
             panning = p
             return

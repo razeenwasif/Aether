@@ -1,6 +1,9 @@
 import AppKit
 import Foundation
+import ImageIO
 import Testing
+import UniformTypeIdentifiers
+@testable import AetherGraph
 @testable import DesignCore
 @testable import DesignUI
 
@@ -272,5 +275,175 @@ struct DesignWorkspaceTests {
         model.selection = "wishlist"
         let code = try #require(model.code)
         #expect(code.html.hasPrefix("<a class=\"wishlist\">") && code.css.contains("border-radius: var(--radius-full);"))
+    }
+}
+
+struct DesignBreakpointTests {
+    @Test func aNarrowerBreakpointSaysWhatDiffersAndTheNarrowerStillInherit() throws {
+        let p = try page("""
+        {"id": "p", "root": "root", "breakpoints": [{"id": "phone", "width": 390}, {"id": "desk", "width": 1280}, {"id": "tab", "width": 768}], "layers": [
+          {"id": "root", "children": ["a", "b"], "layout": {"direction": "row", "gap": 10}, "at": {"tab": {"layout": {"direction": "column"}}}},
+          {"id": "a", "kind": "rect", "h": 50, "at": {"tab": {"hidden": true}, "phone": {"hidden": false, "h": 20}}},
+          {"id": "b", "kind": "rect", "h": 50}
+        ]}
+        """)
+        #expect(p.widestFirst.map(\.id) == ["desk", "tab", "phone"])
+        #expect(p.at("desk").layer("root")?.layout.isRow == true)
+        #expect(p.at("tab").layer("root")?.layout.isRow == false)
+        #expect(p.at("phone").layer("root")?.layout.isRow == false, "the tablet's column holds narrower too")
+        #expect(p.at("tab").layer("a")?.hidden == true && p.at("phone").layer("a")?.hidden == false)
+        let tab = DesignLayout.lay(p.at("tab"), width: 768, resolver: none, measure: Blocks())
+        #expect(tab.frames["a"] == nil && tab.frames["b"] == CGRect(x: 0, y: 0, width: 768, height: 50), "hidden takes no room")
+        let phone = DesignLayout.lay(p.at("phone"), width: 390, resolver: none, measure: Blocks())
+        #expect(phone.frames["a"]?.height == 20 && phone.frames["b"]?.minY == 30)
+        #expect(p.layer("a")?.at["phone"]?.says(["h"]) == true && p.layer("a")?.at["phone"]?.says(["w"]) == false)
+        #expect(p.layer("root")?.at["tab"]?.says(["layout", "direction"]) == true && p.layer("root")?.at["tab"]?.says(["layout", "gap"]) == false)
+    }
+
+    @Test func aPictureIsAsTallAsItsWidthAtItsOwnAspect() throws {
+        let p = try page("""
+        {"id": "p", "root": "root", "breakpoints": [{"id": "d", "width": 400}], "layers": [
+          {"id": "root", "children": ["pic", "none"]},
+          {"id": "pic", "kind": "image", "src": "images/a.png"},
+          {"id": "none", "kind": "image", "src": "images/missing.png"}
+        ]}
+        """)
+        let laid = DesignLayout.lay(p, width: 400, resolver: none, measure: Blocks()) { $0 == "images/a.png" ? CGSize(width: 1600, height: 900) : nil }
+        #expect(laid.frames["pic"] == CGRect(x: 0, y: 0, width: 400, height: 225))
+        #expect(laid.frames["none"]?.height == 225, "no picture: a wide frame's shape, until there is one")
+    }
+}
+
+/// A picture of one colour, as PNG bytes.
+private func png(_ gray: CGFloat, width: Int = 32, height: Int = 18) throws -> Data {
+    let ctx = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    ctx.setFillColor(CGColor(gray: gray, alpha: 1))
+    ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    let image = try #require(ctx.makeImage())
+    let data = NSMutableData()
+    let dest = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(dest, image, nil)
+    #expect(CGImageDestinationFinalize(dest))
+    return data as Data
+}
+
+@MainActor
+struct DesignProjectTests {
+    private func opened() throws -> (DesignWorkspaceModel, ProjectGraph) {
+        let designs = FileManager.default.temporaryDirectory.appending(path: "aether-design-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let model = DesignWorkspaceModel(folder: designs)
+        let project = ProjectGraph(folder: nil)
+        model.project = project
+        model.create()
+        _ = try #require(model.document, "\(model.notice ?? "")")
+        return (model, project)
+    }
+
+    /// Key art, made by a flow, at version 1.
+    private func keyArt(_ project: ProjectGraph) async throws -> Asset {
+        let asset = try project.asset(madeBy: "Flows/key.flow.json", named: "Key art", in: .diffuse)
+        let blob = try await project.pool.store(try png(0.2))
+        try project.publish(asset.id, blob: blob, width: 32, height: 18)
+        return try #require(project.asset(asset.id))
+    }
+
+    @Test func aBreakpointsChangeIsItsOwnAndPutBackInOneStep() throws {
+        let (model, project) = try opened()
+        model.breakpoint = "mobile"
+        model.setLayout("features", "direction", to: "column")
+        #expect(model.page?.layer("features")?.layout.direction == "row", "the page's own is untouched")
+        #expect(model.pageHere?.layer("features")?.layout.direction == "column")
+        #expect(model.says("features", ["layout", "direction"]) && !model.says("features", ["layout", "gap"]))
+        #expect(model.undoLabel == "Direction of Features on Mobile")
+        model.setLayout("features", "gap", to: DesignVal.text("--space-3").json)
+        #expect(model.pageHere?.layer("features")?.layout.gap == .text("--space-3") && model.pageHere?.layer("features")?.layout.isRow == false)
+        model.reset("features", ["layout", "direction"])
+        #expect(model.pageHere?.layer("features")?.layout.isRow == true && !model.says("features", ["layout", "direction"]))
+        model.setHidden("availability", true)
+        #expect(model.pageHere?.layer("availability")?.hidden == true && model.page?.layer("availability")?.hidden == false)
+        model.breakpoint = nil
+        model.setStyle("hero", "fill", to: "--color-surface")
+        #expect(model.page?.layer("hero")?.style.fill == "--color-surface" && model.page?.layer("hero")?.at["mobile"]?.style.fill == nil)
+        // Every step on the project's history, in the design's name.
+        project.undo(in: model.documentPath) { model.document!.undo() }
+        #expect(model.page?.layer("hero")?.style.fill == nil)
+        #expect(model.undoLabel == "Hide of Availability on Mobile")
+        let css = try #require(model.document?.code(page: "home", layer: "page")).css
+        #expect(css.contains("@media (max-width: 1279px)") && css.contains(".availability {\n    display: none;\n  }"))
+    }
+
+    @Test func anImageFollowsItsAssetAndItsLinkUndoesWithIt() async throws {
+        let (model, project) = try opened()
+        let asset = try await keyArt(project)
+        model.selection = "hero"
+        model.addImage(from: asset)
+        await model.writing?.value
+        let id = try #require(model.selection)
+        let layer = try #require(model.page?.layer(id))
+        #expect(layer.kind == .image && layer.src == "images/Key art.png" && model.page?.parent(of: id)?.id == "hero")
+        let link = try #require(model.link(for: id))
+        #expect(link.slot == "design:home/\(id)" && link.consumer == .design && link.pinned == nil)
+        let file = try #require(model.document?.file(layer.src))
+        #expect(try Data(contentsOf: file) == (try await project.pool.data(asset.newest!.blob)))
+        #expect(model.imageSize(layer.src) == CGSize(width: 32, height: 18))
+        #expect(model.undoLabel == "Add Key art")
+
+        // A new version is written over the picture.
+        let v2 = try png(0.8)
+        try project.publish(asset.id, blob: try await project.pool.store(v2), width: 32, height: 18)
+        await model.writing?.value
+        #expect(try Data(contentsOf: file) == v2)
+        // Keeping version 1 puts it back, and is a step.
+        model.keep(1, for: try #require(model.link(for: id)))
+        await model.writing?.value
+        #expect(try Data(contentsOf: file) == (try await project.pool.data(asset.versions[0].blob)))
+        #expect(model.link(for: id)?.pinned == 1 && model.undoLabel == "Keep Version 1")
+        model.undo()
+        await model.writing?.value
+        #expect(try Data(contentsOf: file) == v2, "following the newest again")
+
+        // The layer and its link go together, and come back together.
+        model.undo()
+        #expect(model.page?.layer(id) == nil && project.links.isEmpty)
+        model.redo()
+        #expect(model.page?.layer(id) != nil && model.link(for: id) != nil)
+        model.selection = id
+        model.removeSelected()
+        #expect(model.page?.layer(id) == nil && project.links.isEmpty)
+        model.undo()
+        #expect(model.link(for: id) != nil)
+    }
+
+    @Test func aPictureFromAFileIsCopiedInAndPreviewedBesideThePage() throws {
+        DesignWorkspaceModel.previewsQuietly = true
+        let (model, _) = try opened()
+        let source = FileManager.default.temporaryDirectory.appending(path: "aether-design-\(UUID().uuidString)-Lantern.png")
+        try png(0.5, width: 40, height: 20).write(to: source)
+        model.addImage(file: source)
+        let id = try #require(model.selection)
+        let src = try #require(model.page?.layer(id)?.src)
+        #expect(src == "images/\(source.lastPathComponent)")
+        #expect(FileManager.default.fileExists(atPath: try #require(model.document?.file(src)).path))
+        // The same file again is the same picture, not a second copy.
+        model.addImage(file: source)
+        #expect(model.page?.layer(try #require(model.selection))?.src == src)
+        let page = try #require(model.preview())
+        let html = try String(contentsOf: page, encoding: .utf8)
+        #expect(html.contains("<img class=\"\(id)\" src=\"\(src)\""))
+        #expect(FileManager.default.fileExists(atPath: page.deletingLastPathComponent().appending(path: src).path))
+        model.addImage(file: URL(fileURLWithPath: "/tmp/notes.txt"))
+        #expect(model.notice?.contains("isn’t a PNG") == true)
+    }
+
+    @Test func aColourDragIsOneStepOnTheProjectsHistoryToo() throws {
+        let (model, project) = try opened()
+        for value in ["#eeeeee", "#dddddd"] {
+            let now = try #require(model.document?.tokens.first { $0.name == "--color-ink" })
+            model.setToken(now, to: value, coalescing: true)
+        }
+        #expect(project.history.done.count == 1 && model.undoLabel == "Set --color-ink")
+        model.undo()
+        #expect(model.document?.tokens.first { $0.name == "--color-ink" }?.value == "#f2efe6")
+        #expect(model.undoLabel == nil)
     }
 }

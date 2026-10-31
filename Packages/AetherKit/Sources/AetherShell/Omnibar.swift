@@ -157,8 +157,8 @@ extension AppModel {
     }
 
     /// The project's assets, each doing what fits the workspace on screen:
-    /// placed as a layer in a canvas, taken by a Load Image in a flow, or
-    /// opened where it's made.
+    /// placed as a layer in a canvas, taken by a Load Image in a flow,
+    /// placed as an image in a design, or opened where it's made.
     private var assetItems: [OmniItem] {
         project.assets.map { asset in
             let version = asset.newest.map { " v\($0.number)" } ?? ""
@@ -167,6 +167,8 @@ extension AppModel {
                 ("Place as a layer", { self.canvas.place(asset) })
             case .diffuse where diffuse.editor != nil:
                 ("Use in a Load Image", { Task { await self.diffuse.use(asset) } })
+            case .design where design.page != nil && asset.newest != nil:
+                ("Place as an image", { self.design.addImage(from: asset) })
             default:
                 ("Open", { self.showSource(asset) })
             }

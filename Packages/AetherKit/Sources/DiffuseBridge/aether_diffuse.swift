@@ -1399,9 +1399,10 @@ public protocol DesignEditorProtocol: AnyObject, Sendable {
     func code(id: String, layer: String)  -> String?
     
     /**
-     * Page `id` as an HTML document, its tokens from `theme_href`.
+     * Page `id` as an HTML document, its tokens from `theme_href` and its
+     * pictures' `images/` under `base`.
      */
-    func html(id: String, themeHref: String)  -> String?
+    func html(id: String, themeHref: String, base: String)  -> String?
     
     /**
      * Page `id`, as JSON, as it is now.
@@ -1534,15 +1535,17 @@ open func code(id: String, layer: String) -> String?  {
 }
     
     /**
-     * Page `id` as an HTML document, its tokens from `theme_href`.
+     * Page `id` as an HTML document, its tokens from `theme_href` and its
+     * pictures' `images/` under `base`.
      */
-open func html(id: String, themeHref: String) -> String?  {
+open func html(id: String, themeHref: String, base: String) -> String?  {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_method_designeditor_html(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),
-        FfiConverterString.lower(themeHref),uniffiCallStatus
+        FfiConverterString.lower(themeHref),
+        FfiConverterString.lower(base),uniffiCallStatus
     )
 })
 }
@@ -5749,7 +5752,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_method_designeditor_code() != 57325) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aether_diffuse_checksum_method_designeditor_html() != 31788) {
+    if (uniffi_aether_diffuse_checksum_method_designeditor_html() != 25546) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_page() != 13516) {

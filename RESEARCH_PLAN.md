@@ -1610,6 +1610,30 @@ Not yet:
   - On screen: made the starter; chose a layer on the artboard; edited the title (one step, both artboards); changed `--color-lantern-500` (the buttons and eyebrow followed); undid both in order and redid; Esc to the frame; added text; the code drawer; saved (only the page written); relaunched and reopened. The Tokens tab's colour wells overlapped the names, and are fixed. The user then checked it on screen: "Looks good".
 - **Not yet:** components with variants and Used in; a breakpoint's own values; image layers following a Diffuse or Canvas asset; two-way sync with `src/components` (`proton-design`'s markup parser is here for it); the dark palette drawn; Pagepilot.
 
+**2026-10-31 · Design, second slice: images that follow assets, and breakpoints of their own.** The user said "start the next step" and chose images and breakpoints over components and code sync.
+
+- **Breakpoints:** the widest breakpoint is the page's own. A layer's `at` says what a narrower one changes (`w`, `h`, `minW`, `hidden`, any layout or style field), and what it says holds narrower too: CSS's cascade of `max-width` queries.
+  - `Page::at` (Rust) and `DesignPage.at` (Swift) lay those over the layers, and each artboard is laid out from its own.
+  - The core checks a breakpoint's values as the layer they make, and refuses one said at the widest or at a breakpoint the page lacks.
+  - The HTML writes each narrower breakpoint as `@media (max-width: <wider − 1>px)`, holding only the rules that change there. A rule the layer no longer has there is `revert`ed; a layer hidden there is only `display: none`.
+  - The workspace: clicking a layer on an artboard edits that artboard's breakpoint, which the inspector's Editing control also picks. A row the breakpoint sets itself is marked in ice with ↺ to drop it. Shown hides a layer there, and the Layers tab dims it with an eye. The starter now sets the title smaller and the hero's padding less on Mobile (a new `--type-display-sm`).
+- **Images:** a layer kind that names a file in the design's `images/` (`src`, checked as plain parts under `images/`, a picture's extension, nothing that can end an attribute), with `fit` (cover or contain) and its text as the `alt`. It hugs its picture's aspect (16:9 until there is one) and is written as `<img>` with `object-fit`.
+  - From a file: copied in under a name of its own (the same file again is the same picture).
+  - From an asset: placed following it, through the project graph's links as Load Images and canvas layers do (slot `design:<page>/<layer>`). `images/<asset>.png` is written over as each version is published, a version kept or undone is written back, and the link's `shown` is kept. Placing an image and its link are one step, removing a layer takes its pictures' links with it, and replacing a picture unlinks it. The inspector has the live dot, the version picker, Unlink and Show the Source. The omnibar's assets place an image in a design, and Preview copies `images/` beside the page.
+- **One history:** Design's steps now go on the project's history (`documentStepped`), so ⌘Z is the newest step of the design wherever it was made: page, theme or link. A design let go with unsaved changes takes back its links (`discard`), and a save marks them kept. A colour well's drag is still one step: `DesignDocument.steps` says when an edit merged into the last rather than adding one.
+- **Checked:**
+  - Rust: 4 new tests (16 in `aether-design`): the cascade across three breakpoints, a breakpoint's values checked, the media queries with what changes and what's put back, image paths and `<img>`.
+  - Swift: 6 new tests (21 for Design; 213 in all): the cascade and a hidden layer laid out; a picture's aspect; a breakpoint's change, reset and hide, each one step on the project's history with its name; an image following an asset (placed, a new version written over it, kept, undone, the layer and its link removed and undone together); a picture from a file copied in, once, and previewed beside the page; a colour drag as one project step.
+  - On screen, at the user's request:
+    - Made the starter: Mobile's title is smaller.
+    - Clicking the title on the Mobile artboard switched Editing to Mobile and lit its name; Font was marked with ↺.
+    - Hid Availability at Mobile: Desktop still shows it, and its layer row shows an eye.
+    - Centred the title at Mobile only, reset it with ↺, then undid the reset. The Edit menu named each step.
+    - The code drawer showed the `/* Mobile */ @media (max-width: 1279px)` block holding only what changed.
+    - Preview wrote the page with those rules and opened it in the browser.
+    - ⌘S wrote exactly the three Mobile values into the page file.
+    - Not checked on screen: image layers. The Open panel can't be driven, and the project had no asset to follow; the tests cover both.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

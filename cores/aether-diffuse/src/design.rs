@@ -120,9 +120,10 @@ impl DesignEditor {
         lock(&self.held).theme.text().to_string()
     }
 
-    /// Page `id` as an HTML document, its tokens from `theme_href`.
-    pub fn html(&self, id: String, theme_href: String) -> Option<String> {
-        lock(&self.held).page(&id).map(|p| html::document(p.get(), &theme_href))
+    /// Page `id` as an HTML document, its tokens from `theme_href` and its
+    /// pictures' `images/` under `base`.
+    pub fn html(&self, id: String, theme_href: String, base: String) -> Option<String> {
+        lock(&self.held).page(&id).map(|p| html::document(p.get(), &theme_href, &base))
     }
 
     /// Layer `layer` of page `id` and everything in it, as JSON:
@@ -131,6 +132,6 @@ impl DesignEditor {
         let d = lock(&self.held);
         let page = d.page(&id)?.get();
         page.layer(&layer)?;
-        Some(json(&serde_json::json!({ "html": html::markup(page, &layer), "css": html::css(page, &layer) })))
+        Some(json(&serde_json::json!({ "html": html::markup(page, &layer, ""), "css": html::css(page, &layer) })))
     }
 }

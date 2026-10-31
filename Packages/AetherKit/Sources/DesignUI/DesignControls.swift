@@ -29,21 +29,45 @@ struct CommitField: View {
     }
 }
 
-/// A row of the inspector: a label, then its control.
+/// What a breakpoint narrower than the page's own says of a row: whether
+/// it sets the value itself, and how to put the wider one's back.
+struct Said {
+    var here = false
+    var reset: (() -> Void)?
+
+    static var nothing: Said { Said() }
+}
+
+/// A row of the inspector: a label, then its control. A value the
+/// breakpoint being edited sets itself is marked, with a way back.
 struct InspectorRow<Content: View>: View {
     let label: String
+    let said: Said
     @ViewBuilder let content: () -> Content
 
-    init(_ label: String, @ViewBuilder content: @escaping () -> Content) {
+    init(_ label: String, said: Said = .nothing, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
+        self.said = said
         self.content = content
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(label).font(.aeSmall).foregroundStyle(Color.ink2).frame(width: 58, alignment: .leading)
+            HStack(spacing: 4) {
+                if said.here { Circle().fill(Color.ice).frame(width: 5, height: 5).accessibilityHidden(true) }
+                Text(label).font(.aeSmall).foregroundStyle(said.here ? Color.ice : Color.ink2)
+            }
+            .frame(width: 58, alignment: .leading)
+            .accessibilityLabel(said.here ? "\(label), set at this breakpoint" : label)
             content()
             Spacer(minLength: 0)
+            if said.here, let reset = said.reset {
+                Button(action: reset) { Image(systemName: "arrow.uturn.backward").font(.system(size: 9, weight: .semibold)) }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.ink2)
+                    .help("Use the wider breakpoint's")
+                    .accessibilityLabel("Use the wider breakpoint's \(label)")
+            }
         }
     }
 }
@@ -69,6 +93,7 @@ struct TokenPicker: View {
     let value: String?
     let tokens: [DesignToken]
     let resolver: DesignResolver
+    var said: Said = .nothing
     let set: (String?) -> Void
 
     private var fitting: [DesignToken] {
@@ -77,7 +102,7 @@ struct TokenPicker: View {
     }
 
     var body: some View {
-        InspectorRow(label) {
+        InspectorRow(label, said: said) {
             if kind == .color {
                 Swatch(color: resolver.color(value))
             }
@@ -121,6 +146,7 @@ struct LengthPicker: View {
     let value: DesignVal?
     let tokens: [DesignToken]
     let resolver: DesignResolver
+    var said: Said = .nothing
     let set: (DesignVal?) -> Void
 
     private var fitting: [DesignToken] {
@@ -129,7 +155,7 @@ struct LengthPicker: View {
     }
 
     var body: some View {
-        InspectorRow(label) {
+        InspectorRow(label, said: said) {
             Menu {
                 ForEach(fitting) { token in
                     Button { set(.text(token.name)) } label: { Text(verbatim: "\(token.name)  \(token.value)") }
@@ -161,6 +187,7 @@ struct LengthPicker: View {
 struct SizePicker: View {
     let label: String
     let value: DesignVal
+    var said: Said = .nothing
     let set: (DesignVal?) -> Void
 
     private var mode: String {
@@ -171,7 +198,7 @@ struct SizePicker: View {
     }
 
     var body: some View {
-        InspectorRow(label) {
+        InspectorRow(label, said: said) {
             Picker(label, selection: Binding(get: { mode }, set: { now in
                 switch now {
                 case "fixed": set(.num(value.number ?? 100))
@@ -201,10 +228,11 @@ struct WordPicker: View {
     let label: String
     let value: String
     let options: [(word: String, title: String)]
+    var said: Said = .nothing
     let set: (String) -> Void
 
     var body: some View {
-        InspectorRow(label) {
+        InspectorRow(label, said: said) {
             Picker(label, selection: Binding(get: { value }, set: set)) {
                 ForEach(options, id: \.word) { Text($0.title).tag($0.word) }
             }

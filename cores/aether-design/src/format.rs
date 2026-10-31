@@ -20,6 +20,21 @@
 //! not have is not a broken page: the theme may be mid-edit in a text
 //! editor, so the workspace shows it as missing rather than refusing it.
 //!
+//! ## Breakpoints
+//!
+//! The widest breakpoint is the page's own: a layer's fields are what it is
+//! there. Each narrower one can say otherwise in the layer's `at`, by the
+//! breakpoint's id, and what it says holds for every breakpoint narrower
+//! still unless that one says otherwise too — CSS's cascade of `max-width`
+//! media queries, which is how the page is written out.
+//!
+//! ## Pictures
+//!
+//! An image layer names a file in the design's `images/`. When the picture
+//! is another workspace's asset, the project's graph holds the link and the
+//! workspace writes each new version over that file, as Diffuse writes a
+//! Load Image's picture; the page itself doesn't change.
+//!
 //! Every struct defaults field by field and the writer leaves out what is
 //! empty, as Game's files do, so a hand-written layer needs only what it
 //! means.
@@ -82,6 +97,34 @@ impl Page {
         self.layers.iter().find(|layer| layer.children.iter().any(|child| child == id))
     }
 
+    /// The breakpoints widest first: the page's own, then each that says
+    /// otherwise.
+    pub fn widest_first(&self) -> Vec<&Breakpoint> {
+        let mut points: Vec<&Breakpoint> = self.breakpoints.iter().collect();
+        points.sort_by(|a, b| b.width.total_cmp(&a.width));
+        points
+    }
+
+    /// The page as it is at breakpoint `id`: each layer with what that
+    /// breakpoint and every wider one say laid over it. Unknown, or the
+    /// widest, is the page as written.
+    pub fn at(&self, id: &str) -> Page {
+        let points = self.widest_first();
+        let Some(place) = points.iter().position(|b| b.id == id) else { return self.clone() };
+        // Each breakpoint after the widest down to this one, widest first,
+        // as the media queries cascade.
+        let wider: Vec<String> = points.iter().skip(1).take(place).map(|b| b.id.clone()).collect();
+        let mut page = self.clone();
+        for layer in &mut page.layers {
+            for point in &wider {
+                if let Some(over) = layer.at.get(point).cloned() {
+                    over.apply(layer);
+                }
+            }
+        }
+        page
+    }
+
     /// `id` and everything inside it, in the tree's order.
     pub fn subtree(&self, id: &str) -> Vec<&Layer> {
         let mut out = Vec::new();
@@ -121,8 +164,10 @@ pub enum Kind {
     Frame,
     /// A run of text, wrapped to the width it is given.
     Text,
-    /// A plain shape: a rule, a swatch, a placeholder for an image.
+    /// A plain shape: a rule, a swatch, a placeholder.
     Rect,
+    /// A picture from the design's `images/`.
+    Image,
 }
 
 /// A number, or a word: a token's name, `hug`, `fill`, a CSS value.
@@ -162,6 +207,12 @@ pub struct Layer {
     pub text: String,
     /// A frame's layers, first to last.
     pub children: Vec<String>,
+    /// An image's file, in the design's folder: `images/key-art.png`.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub src: String,
+    /// Not drawn, and taking no room.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
     /// `hug`, `fill` or points. Unsaid: `fill` for a frame or a shape, `hug`
     /// for text.
     pub w: Option<Val>,
@@ -172,6 +223,55 @@ pub struct Layer {
     pub min_w: Option<f64>,
     pub layout: Layout,
     pub style: Style,
+    /// What a narrower breakpoint says otherwise, by its id.
+    pub at: BTreeMap<String, Override>,
+}
+
+/// What a breakpoint says of a layer where it differs: each field said
+/// replaces the layer's, each unsaid is the wider breakpoint's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Override {
+    pub w: Option<Val>,
+    pub h: Option<Val>,
+    pub min_w: Option<f64>,
+    pub hidden: Option<bool>,
+    pub layout: Layout,
+    pub style: Style,
+}
+
+impl Override {
+    /// `self` laid over `layer`.
+    pub fn apply(&self, layer: &mut Layer) {
+        fn over<T: Clone>(to: &mut Option<T>, from: &Option<T>) {
+            if from.is_some() {
+                *to = from.clone();
+            }
+        }
+        over(&mut layer.w, &self.w);
+        over(&mut layer.h, &self.h);
+        over(&mut layer.min_w, &self.min_w);
+        if let Some(hidden) = self.hidden {
+            layer.hidden = hidden;
+        }
+        let (l, o) = (&mut layer.layout, &self.layout);
+        over(&mut l.direction, &o.direction);
+        over(&mut l.gap, &o.gap);
+        over(&mut l.pad_h, &o.pad_h);
+        over(&mut l.pad_v, &o.pad_v);
+        over(&mut l.align, &o.align);
+        over(&mut l.justify, &o.justify);
+        over(&mut l.wrap, &o.wrap);
+        let (s, o) = (&mut layer.style, &self.style);
+        over(&mut s.fill, &o.fill);
+        over(&mut s.stroke, &o.stroke);
+        over(&mut s.radius, &o.radius);
+        over(&mut s.color, &o.color);
+        over(&mut s.font, &o.font);
+        over(&mut s.text_align, &o.text_align);
+        over(&mut s.opacity, &o.opacity);
+        over(&mut s.fit, &o.fit);
+    }
 }
 
 impl Layer {
@@ -217,6 +317,9 @@ pub struct Style {
     /// `start`, `center` or `end`.
     pub text_align: Option<String>,
     pub opacity: Option<f64>,
+    /// How a picture fills its layer: `cover` (cropped) or `contain`
+    /// (letterboxed). Unsaid: `cover`.
+    pub fit: Option<String>,
 }
 
 /* ── what each document checks ────────────────────────────────────── */
@@ -239,6 +342,17 @@ fn ids<'a>(what: &str, all: impl IntoIterator<Item = &'a str>) -> Vec<String> {
         }
     }
     out
+}
+
+/// Whether `src` is a picture in the design's `images/`: plain parts only,
+/// and nothing that could end the HTML attribute it is written into.
+pub fn is_image_path(src: &str) -> bool {
+    let Some(name) = src.strip_prefix("images/") else { return false };
+    let kind = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    !name.is_empty()
+        && ["png", "jpg", "jpeg", "webp", "gif"].contains(&kind.as_str())
+        && name.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+        && !src.contains(['"', '\'', '<', '>', '\\', '\0', '?', '#'])
 }
 
 /// A CSS value written into a page: nothing that could end the declaration
@@ -306,6 +420,25 @@ impl proton_game::Document for Page {
         for layer in &self.layers {
             out.extend(layer_problems(layer));
         }
+
+        // What a breakpoint says is checked as the layer it makes there.
+        let points = self.widest_first();
+        let widest = points.first().map(|b| b.id.as_str());
+        for layer in &self.layers {
+            for (point, over) in &layer.at {
+                if !points.iter().any(|b| &b.id == point) {
+                    out.push(format!("{} says something at {point}, which isn't one of the page's breakpoints", layer.id));
+                } else if Some(point.as_str()) == widest {
+                    out.push(format!("{} says something at {point}, the page's widest: there, a layer is what its own fields say", layer.id));
+                } else {
+                    let mut there = layer.clone();
+                    over.apply(&mut there);
+                    out.extend(layer_problems(&there).into_iter().map(|why| format!("at {point}, {why}")));
+                }
+            }
+        }
+        out.sort();
+        out.dedup();
         out
     }
 }
@@ -356,6 +489,19 @@ fn layer_problems(layer: &Layer) -> Vec<String> {
     }
     if !layer.tag.is_empty() && !(layer.tag.chars().all(|c| c.is_ascii_alphanumeric()) && layer.tag.chars().next().is_some_and(|c| c.is_ascii_alphabetic())) {
         out.push(format!("{id}'s tag is {:?}", layer.tag));
+    }
+    if let Some(fit) = &layer.style.fit {
+        if fit != "cover" && fit != "contain" {
+            out.push(format!("{id}'s fit is {fit:?}: cover or contain"));
+        }
+    }
+    match layer.kind {
+        Kind::Image if !is_image_path(&layer.src) => {
+            out.push(format!("{id}'s picture is {:?}: a file in the design's images/", layer.src));
+        }
+        Kind::Image => {}
+        _ if !layer.src.is_empty() => out.push(format!("{id} names a picture but isn't an image")),
+        _ => {}
     }
     if layer.min_w.is_some_and(|n| !(n.is_finite() && n >= 0.0)) {
         out.push(format!("{id}'s narrowest is not a width"));

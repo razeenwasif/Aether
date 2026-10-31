@@ -60,6 +60,13 @@ public enum Slot {
         slot.hasPrefix("layer:") ? UInt32(slot.dropFirst(6)) : nil
     }
 
+    /// A design's image layer, by its page and its id.
+    public static func design(page: String, layer: String) -> String { "design:\(page)/\(layer)" }
+    public static func design(of slot: String) -> (page: String, layer: String)? {
+        guard slot.hasPrefix("design:"), let cut = slot.firstIndex(of: "/") else { return nil }
+        return (String(slot[slot.index(slot.startIndex, offsetBy: 7)..<cut]), String(slot[slot.index(after: cut)...]))
+    }
+
     /// A flow node's picture field.
     public static func input(node: String, field: String) -> String { "input:\(node)/\(field)" }
     public static func input(of slot: String) -> (node: String, field: String)? {

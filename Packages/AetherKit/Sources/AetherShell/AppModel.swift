@@ -56,6 +56,7 @@ public final class AppModel {
         diffuse.project = project
         canvas.project = project
         modeling.project = project
+        design.project = project
         // Send to Canvas: the picture as a new canvas, on screen, its layer
         // following the flow's newest picture.
         diffuse.canvasReceiver = { [weak self] bytes, name, keep, asset in
@@ -77,6 +78,7 @@ public final class AppModel {
         canvas.gameReceiver = toGame
         diffuse.showSource = { [weak self] in self?.showSource($0) }
         canvas.showSource = { [weak self] in self?.showSource($0) }
+        design.showSource = { [weak self] in self?.showSource($0) }
         Task { await refreshFlowFiles() }
         quitting = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {

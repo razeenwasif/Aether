@@ -1,4 +1,5 @@
 import AetherDesign
+import AetherGraph
 import AppKit
 import DesignCore
 import SwiftUI
@@ -20,7 +21,7 @@ public struct DesignWorkspace: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
-                DesignCanvas(model: model, revision: document.revision, pageID: model.pageID, selection: model.selection, fitRequest: model.fitRequest,
+                DesignCanvas(model: model, revision: document.revision &+ model.pictureRevision, pageID: model.pageID, selection: model.selection, breakpoint: model.breakpoint, fitRequest: model.fitRequest,
                              insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0, model.codeOpen ? 260 : 72))
                 HStack(alignment: .top, spacing: 0) {
                     DesignNavigator(model: model, document: document)
@@ -174,6 +175,15 @@ private struct DesignNavigator: View {
                     Button("Frame  A") { model.add(.frame) }
                     Button("Text  T") { model.add(.text) }
                     Button("Shape  R") { model.add(.rect) }
+                    Divider()
+                    Button("Image from a File…") { model.chooseImageFile() }
+                    if !model.assets.isEmpty {
+                        Menu("Image That Follows") {
+                            ForEach(model.assets) { asset in
+                                Button("\(asset.name) · \(asset.source.title)") { model.addImage(from: asset) }
+                            }
+                        }
+                    }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 11, weight: .semibold))
                 }
@@ -187,8 +197,9 @@ private struct DesignNavigator: View {
             ScrollViewReader { scroller in
                 ScrollView {
                     VStack(spacing: 0) {
+                        let here = model.pageHere ?? page
                         ForEach(page.tree(), id: \.layer.id) { row in
-                            LayerRow(model: model, layer: row.layer, depth: row.depth, isRoot: row.layer.id == page.root)
+                            LayerRow(model: model, layer: row.layer, depth: row.depth, isRoot: row.layer.id == page.root, hidden: here.layer(row.layer.id)?.hidden == true)
                                 .id(row.layer.id)
                         }
                     }
@@ -207,6 +218,8 @@ private struct LayerRow: View {
     let layer: DesignLayer
     let depth: Int
     let isRoot: Bool
+    /// Hidden at the breakpoint being edited.
+    let hidden: Bool
 
     private var chosen: Bool { model.selection == layer.id }
 
@@ -215,6 +228,10 @@ private struct LayerRow: View {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 10)).foregroundStyle(Color.ink3).frame(width: 12)
                 Text(layer.label).font(.aeBody).foregroundStyle(chosen ? Color.inkHi : Color.ink).lineLimit(1)
+                    .opacity(hidden ? 0.45 : 1)
+                if hidden {
+                    Image(systemName: "eye.slash").font(.system(size: 9)).foregroundStyle(Color.ink3).accessibilityLabel("hidden here")
+                }
                 Spacer(minLength: 4)
                 if layer.kind == .text {
                     Text(layer.text).font(.aeSmall).foregroundStyle(Color.ink3).lineLimit(1).frame(maxWidth: 80, alignment: .trailing)
@@ -246,6 +263,7 @@ private struct LayerRow: View {
         case .frame: layer.layout.isRow ? "rectangle.split.3x1" : "rectangle.split.1x2"
         case .text: "textformat"
         case .rect: "square"
+        case .image: "photo"
         }
     }
 }
@@ -325,7 +343,20 @@ private struct DesignInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let page = model.page, let layer = model.chosen {
+            if let page = model.page, page.breakpoints.count > 1 {
+                HStack(spacing: 8) {
+                    Text("Editing").font(.aeSmall).foregroundStyle(Color.ink2)
+                    Picker("Editing", selection: Binding(get: { model.breakpoint ?? page.widestFirst.first?.id ?? "" }, set: { model.breakpoint = $0 })) {
+                        ForEach(page.widestFirst) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .help("A change at a narrower breakpoint holds there and narrower; the widest is the page's own")
+            }
+            if let page = model.pageHere, let layer = model.chosen {
                 LayerInspector(model: model, page: page, layer: layer, tokens: document.tokens, resolver: model.resolver)
                     .id(layer.id)
             } else if let page = model.page {
@@ -334,7 +365,7 @@ private struct DesignInspector: View {
                         .font(.aeBody).foregroundStyle(Color.ink)
                     Text(verbatim: "\(page.layers.count) layers · \(document.tokens.count) tokens in theme.css")
                         .font(.aeSmall).foregroundStyle(Color.ink2)
-                    Text("Click a layer to choose it; double-click text to type into it; Esc chooses the frame it's in. A adds a frame, T text, R a shape, inside the chosen frame. Drag the empty canvas or use two fingers to move; pinch or ⌘-scroll to zoom; f shows it all. ⌘/ shows the code.")
+                    Text("Click a layer to choose it; double-click text to type into it; Esc chooses the frame it's in. A adds a frame, T text, R a shape, inside the chosen frame; + adds an image. A change made on a narrower artboard holds there and narrower, and its row is marked. Drag the empty canvas or use two fingers to move; pinch or ⌘-scroll to zoom; f shows it all. ⌘/ shows the code.")
                         .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 }
                 if !document.view.problems.isEmpty {
@@ -352,6 +383,7 @@ private struct DesignInspector: View {
 
 private struct LayerInspector: View {
     let model: DesignWorkspaceModel
+    /// The page and the layer as the breakpoint being edited has them.
     let page: DesignPage
     let layer: DesignLayer
     let tokens: [DesignToken]
@@ -359,6 +391,11 @@ private struct LayerInspector: View {
 
     private var parent: DesignLayer? { page.parent(of: layer.id) }
     private var inRow: Bool { parent?.layout.isRow == true }
+
+    /// What the breakpoint being edited says of the field at `keys`.
+    private func said(_ keys: [String]) -> Said {
+        Said(here: model.says(layer.id, keys), reset: { model.reset(layer.id, keys) })
+    }
 
     var body: some View {
         ScrollView {
@@ -371,10 +408,8 @@ private struct LayerInspector: View {
                             Button(parent.label) { model.selection = parent.id }
                                 .buttonStyle(.link).font(.aeSmall)
                                 .help("Choose the frame it's in (Esc)")
-                            if parent.kind == .frame {
-                                Text(verbatim: "· \(parent.layout.isRow ? "row" : "column")\(resolver.length(parent.layout.gap).map { ", gap \(DesignVal.num($0))" } ?? "")")
-                                    .font(.aeSmall).foregroundStyle(Color.ink3)
-                            }
+                            Text(verbatim: "· \(parent.layout.isRow ? "row" : "column")\(resolver.length(parent.layout.gap).map { ", gap \(DesignVal.num($0))" } ?? "")")
+                                .font(.aeSmall).foregroundStyle(Color.ink3)
                         } else {
                             Text("· the page").font(.aeSmall).foregroundStyle(Color.ink3)
                         }
@@ -387,19 +422,22 @@ private struct LayerInspector: View {
                     PanelSection("Text") {
                         CommitField(title: "Text", value: layer.text, axis: .vertical, focusRequest: model.editTextRequest) { model.setText(layer.id, $0) }
                             .lineLimit(1...6)
-                        TokenPicker(label: "Font", kind: .font, value: layer.style.font, tokens: tokens, resolver: resolver) { model.setStyle(layer.id, "font", to: $0) }
-                        TokenPicker(label: "Colour", kind: .color, value: layer.style.color, tokens: tokens, resolver: resolver) { model.setStyle(layer.id, "color", to: $0) }
-                        WordPicker(label: "Align", value: layer.style.textAlign ?? "start", options: [("start", "Left"), ("center", "Centre"), ("end", "Right")]) {
-                            model.setStyle(layer.id, "textAlign", to: $0 == "start" ? nil : $0)
+                        TokenPicker(label: "Font", kind: .font, value: layer.style.font, tokens: tokens, resolver: resolver, said: said(["style", "font"])) { model.setStyle(layer.id, "font", to: $0) }
+                        TokenPicker(label: "Colour", kind: .color, value: layer.style.color, tokens: tokens, resolver: resolver, said: said(["style", "color"])) { model.setStyle(layer.id, "color", to: $0) }
+                        WordPicker(label: "Align", value: layer.style.textAlign ?? "start", options: [("start", "Left"), ("center", "Centre"), ("end", "Right")], said: said(["style", "textAlign"])) {
+                            model.setStyle(layer.id, "textAlign", to: $0 == "start" && model.overriding == nil ? nil : $0)
                         }
                     }
                 }
+                if layer.kind == .image {
+                    ImageSection(model: model, layer: layer, said: said)
+                }
                 if parent != nil {
                     PanelSection("Size") {
-                        SizePicker(label: "Width", value: layer.width) { model.setSize(layer.id, width: true, to: $0) }
-                        SizePicker(label: "Height", value: layer.height) { model.setSize(layer.id, width: false, to: $0) }
+                        SizePicker(label: "Width", value: layer.width, said: said(["w"])) { model.setSize(layer.id, width: true, to: $0) }
+                        SizePicker(label: "Height", value: layer.height, said: said(["h"])) { model.setSize(layer.id, width: false, to: $0) }
                         if inRow, parent?.layout.wrap == true, layer.width == .fill {
-                            InspectorRow("Narrowest") {
+                            InspectorRow("Narrowest", said: said(["minW"])) {
                                 CommitField(title: "Narrowest", value: layer.minW.map { DesignVal.num($0).description } ?? "", prompt: "0") {
                                     let t = $0.trimmingCharacters(in: .whitespaces)
                                     model.setNarrowest(layer.id, to: t.isEmpty ? nil : Double(t).map { max(0, $0) })
@@ -408,35 +446,41 @@ private struct LayerInspector: View {
                                 Text("before it wraps").font(.aeSmall).foregroundStyle(Color.ink3)
                             }
                         }
+                        InspectorRow("Shown", said: said(["hidden"])) {
+                            Toggle(model.overriding.map { "At \($0.name)" } ?? "Everywhere it isn't hidden", isOn: Binding(get: { !layer.hidden }, set: { model.setHidden(layer.id, !$0) }))
+                                .toggleStyle(.checkbox).font(.aeSmall)
+                        }
                     }
                 }
                 if layer.kind == .frame {
                     PanelSection("Layout") {
-                        WordPicker(label: "Direction", value: layer.layout.direction ?? "column", options: [("column", "Column"), ("row", "Row")]) {
-                            model.setLayout(layer.id, "direction", to: $0 == "column" ? nil : $0)
+                        WordPicker(label: "Direction", value: layer.layout.direction ?? "column", options: [("column", "Column"), ("row", "Row")], said: said(["layout", "direction"])) {
+                            model.setLayout(layer.id, "direction", to: $0 == "column" && model.overriding == nil ? nil : $0)
                         }
                         if layer.layout.isRow {
-                            InspectorRow("Wrap") {
-                                Toggle("Wrap onto more lines", isOn: Binding(get: { layer.layout.wrap == true }, set: { model.setLayout(layer.id, "wrap", to: $0 ? true : nil) }))
+                            InspectorRow("Wrap", said: said(["layout", "wrap"])) {
+                                Toggle("Wrap onto more lines", isOn: Binding(get: { layer.layout.wrap == true }, set: { model.setLayout(layer.id, "wrap", to: $0 ? true : (model.overriding == nil ? nil : false)) }))
                                     .toggleStyle(.checkbox).font(.aeSmall)
                             }
                         }
-                        LengthPicker(label: "Gap", value: layer.layout.gap, tokens: tokens, resolver: resolver) { model.setLayout(layer.id, "gap", to: $0?.json) }
-                        LengthPicker(label: "Pad H", value: layer.layout.padH, tokens: tokens, resolver: resolver) { model.setLayout(layer.id, "padH", to: $0?.json) }
-                        LengthPicker(label: "Pad V", value: layer.layout.padV, tokens: tokens, resolver: resolver) { model.setLayout(layer.id, "padV", to: $0?.json) }
-                        WordPicker(label: "Align", value: layer.layout.align ?? "start", options: [("start", "Start"), ("center", "Centre"), ("end", "End")]) {
-                            model.setLayout(layer.id, "align", to: $0 == "start" ? nil : $0)
+                        LengthPicker(label: "Gap", value: layer.layout.gap, tokens: tokens, resolver: resolver, said: said(["layout", "gap"])) { model.setLayout(layer.id, "gap", to: $0?.json) }
+                        LengthPicker(label: "Pad H", value: layer.layout.padH, tokens: tokens, resolver: resolver, said: said(["layout", "padH"])) { model.setLayout(layer.id, "padH", to: $0?.json) }
+                        LengthPicker(label: "Pad V", value: layer.layout.padV, tokens: tokens, resolver: resolver, said: said(["layout", "padV"])) { model.setLayout(layer.id, "padV", to: $0?.json) }
+                        WordPicker(label: "Align", value: layer.layout.align ?? "start", options: [("start", "Start"), ("center", "Centre"), ("end", "End")], said: said(["layout", "align"])) {
+                            model.setLayout(layer.id, "align", to: $0 == "start" && model.overriding == nil ? nil : $0)
                         }
-                        WordPicker(label: "Justify", value: layer.layout.justify ?? "start", options: [("start", "Start"), ("center", "Centre"), ("end", "End"), ("between", "Apart")]) {
-                            model.setLayout(layer.id, "justify", to: $0 == "start" ? nil : $0)
+                        WordPicker(label: "Justify", value: layer.layout.justify ?? "start", options: [("start", "Start"), ("center", "Centre"), ("end", "End"), ("between", "Apart")], said: said(["layout", "justify"])) {
+                            model.setLayout(layer.id, "justify", to: $0 == "start" && model.overriding == nil ? nil : $0)
                         }
                     }
                 }
                 if layer.kind != .text {
                     PanelSection("Style") {
-                        TokenPicker(label: "Fill", kind: .color, value: layer.style.fill, tokens: tokens, resolver: resolver) { model.setStyle(layer.id, "fill", to: $0) }
-                        TokenPicker(label: "Stroke", kind: .color, value: layer.style.stroke, tokens: tokens, resolver: resolver) { model.setStyle(layer.id, "stroke", to: $0) }
-                        LengthPicker(label: "Radius", value: layer.style.radius, tokens: tokens, resolver: resolver) { model.setStyle(layer.id, "radius", to: $0?.json) }
+                        if layer.kind != .image {
+                            TokenPicker(label: "Fill", kind: .color, value: layer.style.fill, tokens: tokens, resolver: resolver, said: said(["style", "fill"])) { model.setStyle(layer.id, "fill", to: $0) }
+                        }
+                        TokenPicker(label: "Stroke", kind: .color, value: layer.style.stroke, tokens: tokens, resolver: resolver, said: said(["style", "stroke"])) { model.setStyle(layer.id, "stroke", to: $0) }
+                        LengthPicker(label: "Radius", value: layer.style.radius, tokens: tokens, resolver: resolver, said: said(["style", "radius"])) { model.setStyle(layer.id, "radius", to: $0?.json) }
                     }
                 }
                 if parent != nil {
@@ -447,6 +491,61 @@ private struct LayerInspector: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                 }
+            }
+        }
+    }
+}
+
+/// An image layer: its picture, what it follows, how it fills its layer and
+/// what it says to someone who can't see it.
+private struct ImageSection: View {
+    let model: DesignWorkspaceModel
+    let layer: DesignLayer
+    let said: ([String]) -> Said
+
+    var body: some View {
+        PanelSection("Image") {
+            InspectorRow("Picture") {
+                Text(verbatim: layer.src.replacingOccurrences(of: "images/", with: "")).font(.aeSmall).foregroundStyle(Color.ink).lineLimit(1).truncationMode(.middle)
+                Button("Replace…") { model.chooseImageFile(replacing: layer.id) }.buttonStyle(.borderless).font(.aeSmall)
+            }
+            if let link = model.link(for: layer.id), let asset = model.project?.asset(link.asset) {
+                LinkRow(model: model, link: link, asset: asset)
+            }
+            WordPicker(label: "Fit", value: layer.style.fit ?? "cover", options: [("cover", "Fill"), ("contain", "Fit")], said: said(["style", "fit"])) {
+                model.setStyle(layer.id, "fit", to: $0 == "cover" && model.overriding == nil ? nil : $0)
+            }
+            InspectorRow("Says") {
+                CommitField(title: "What the picture shows, for someone who can't see it", value: layer.text, prompt: "What it shows") { model.setText(layer.id, $0) }
+            }
+        }
+    }
+}
+
+/// What an image follows: a live dot (mint follows the newest, grey keeps
+/// a version), the asset and its workspace, the version, and the way out.
+private struct LinkRow: View {
+    let model: DesignWorkspaceModel
+    let link: AssetLink
+    let asset: Asset
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Circle().fill(link.pinned == nil ? Color.live : Color.ink3).frame(width: 7, height: 7)
+                    .accessibilityLabel(link.pinned == nil ? "Live" : "Kept")
+                Text(verbatim: "\(asset.name) · \(asset.source.title)").font(.aeSmall).foregroundStyle(Color.ink).lineLimit(1)
+                Spacer(minLength: 0)
+                Picker("Version", selection: Binding(get: { link.pinned ?? 0 }, set: { model.keep($0 == 0 ? nil : $0, for: link) })) {
+                    Text("Newest").tag(0)
+                    ForEach(asset.versions.reversed(), id: \.number) { Text(verbatim: "v\($0.number)").tag($0.number) }
+                }
+                .labelsHidden().pickerStyle(.menu).controlSize(.small).fixedSize()
+            }
+            HStack {
+                Button("Show the Source") { model.showSource?(asset) }.buttonStyle(.borderless).font(.aeSmall)
+                Button("Unlink") { model.unlink(link) }.buttonStyle(.borderless).font(.aeSmall)
+                    .help("The picture stays, and stops following \(asset.name)")
             }
         }
     }
@@ -492,6 +591,7 @@ private struct DesignDock: View {
             IconButton("rectangle.split.1x2", label: "Add a frame (A)") { model.add(.frame) }
             IconButton("textformat", label: "Add text (T)") { model.add(.text) }
             IconButton("square", label: "Add a shape (R)") { model.add(.rect) }
+            IconButton("photo", label: "Add an image from a file") { model.chooseImageFile() }
             Divider().frame(height: 20).padding(.horizontal, 4)
             IconButton("chevron.left.forwardslash.chevron.right", label: "Code (⌘/)", isOn: model.codeOpen) { model.codeOpen.toggle() }
             IconButton("arrow.up.left.and.arrow.down.right", label: "Show every artboard (f)", action: model.fit)

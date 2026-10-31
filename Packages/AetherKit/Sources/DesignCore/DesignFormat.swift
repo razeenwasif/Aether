@@ -59,12 +59,15 @@ public enum DesignKind: String, Codable, Sendable, CaseIterable {
     case text
     /// A plain shape.
     case rect
+    /// A picture from the design's `images/`.
+    case image
 
     public var title: String {
         switch self {
         case .frame: "Frame"
         case .text: "Text"
         case .rect: "Shape"
+        case .image: "Image"
         }
     }
 }
@@ -96,6 +99,19 @@ public struct DesignFlex: Decodable, Hashable, Sendable {
 
     public init() {}
     public var isRow: Bool { direction == "row" }
+
+    /// `other`'s fields where it says them.
+    func over(_ other: DesignFlex) -> DesignFlex {
+        var out = self
+        if let v = other.direction { out.direction = v }
+        if let v = other.gap { out.gap = v }
+        if let v = other.padH { out.padH = v }
+        if let v = other.padV { out.padV = v }
+        if let v = other.align { out.align = v }
+        if let v = other.justify { out.justify = v }
+        if let v = other.wrap { out.wrap = v }
+        return out
+    }
 }
 
 /// How a layer looks.
@@ -107,8 +123,65 @@ public struct DesignStyle: Decodable, Hashable, Sendable {
     public var font: String?
     public var textAlign: String?
     public var opacity: Double?
+    /// How a picture fills its layer: `cover` or `contain`.
+    public var fit: String?
 
     public init() {}
+
+    /// `other`'s fields where it says them.
+    func over(_ other: DesignStyle) -> DesignStyle {
+        var out = self
+        if let v = other.fill { out.fill = v }
+        if let v = other.stroke { out.stroke = v }
+        if let v = other.radius { out.radius = v }
+        if let v = other.color { out.color = v }
+        if let v = other.font { out.font = v }
+        if let v = other.textAlign { out.textAlign = v }
+        if let v = other.opacity { out.opacity = v }
+        if let v = other.fit { out.fit = v }
+        return out
+    }
+}
+
+/// What a narrower breakpoint says of a layer where it differs; each field
+/// unsaid is the wider breakpoint's (aether-design's `Override`).
+public struct DesignOverride: Decodable, Hashable, Sendable {
+    public var w: DesignVal?
+    public var h: DesignVal?
+    public var minW: Double?
+    public var hidden: Bool?
+    public var layout: DesignFlex
+    public var style: DesignStyle
+
+    enum CodingKeys: String, CodingKey { case w, h, minW, hidden, layout, style }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        w = try c.decodeIfPresent(DesignVal.self, forKey: .w)
+        h = try c.decodeIfPresent(DesignVal.self, forKey: .h)
+        minW = try c.decodeIfPresent(Double.self, forKey: .minW)
+        hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden)
+        layout = try c.value(.layout, DesignFlex())
+        style = try c.value(.style, DesignStyle())
+    }
+
+    /// Whether it says the field at `keys`: `["w"]`, `["layout", "gap"]`.
+    public func says(_ keys: [String]) -> Bool {
+        switch keys {
+        case ["w"]: w != nil
+        case ["h"]: h != nil
+        case ["minW"]: minW != nil
+        case ["hidden"]: hidden != nil
+        case let k where k.count == 2 && k[0] == "layout":
+            Mirror(reflecting: layout).children.contains { $0.label == k[1] && !Self.isNil($0.value) }
+        case let k where k.count == 2 && k[0] == "style":
+            Mirror(reflecting: style).children.contains { $0.label == k[1] && !Self.isNil($0.value) }
+        default: false
+        }
+    }
+
+    private static func isNil(_ value: Any) -> Bool {
+        if case Optional<Any>.none = value { true } else { false }
+    }
 }
 
 /// One layer of a page.
@@ -119,13 +192,19 @@ public struct DesignLayer: Decodable, Hashable, Sendable, Identifiable {
     public var tag: String
     public var text: String
     public var children: [String]
+    /// An image's file in the design's folder: `images/key-art.png`.
+    public var src: String
+    /// Not drawn, and taking no room.
+    public var hidden: Bool
     public var w: DesignVal?
     public var h: DesignVal?
     public var minW: Double?
     public var layout: DesignFlex
     public var style: DesignStyle
+    /// What a narrower breakpoint says otherwise, by its id.
+    public var at: [String: DesignOverride]
 
-    enum CodingKeys: String, CodingKey { case id, kind, name, tag, text, children, w, h, minW, layout, style }
+    enum CodingKeys: String, CodingKey { case id, kind, name, tag, text, children, src, hidden, w, h, minW, layout, style, at }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.value(.id, "")
@@ -134,11 +213,26 @@ public struct DesignLayer: Decodable, Hashable, Sendable, Identifiable {
         tag = try c.value(.tag, "")
         text = try c.value(.text, "")
         children = try c.value(.children, [])
+        src = try c.value(.src, "")
+        hidden = try c.value(.hidden, false)
         w = try c.decodeIfPresent(DesignVal.self, forKey: .w)
         h = try c.decodeIfPresent(DesignVal.self, forKey: .h)
         minW = try c.decodeIfPresent(Double.self, forKey: .minW)
         layout = try c.value(.layout, DesignFlex())
         style = try c.value(.style, DesignStyle())
+        at = try c.value(.at, [:])
+    }
+
+    /// `o` laid over it.
+    func over(_ o: DesignOverride) -> DesignLayer {
+        var out = self
+        if let v = o.w { out.w = v }
+        if let v = o.h { out.h = v }
+        if let v = o.minW { out.minW = v }
+        if let v = o.hidden { out.hidden = v }
+        out.layout = layout.over(o.layout)
+        out.style = style.over(o.style)
+        return out
     }
 
     /// What the layer tree calls it.
@@ -171,6 +265,24 @@ public struct DesignPage: Decodable, Hashable, Sendable, Identifiable {
 
     public func layer(_ id: String) -> DesignLayer? {
         layers.first { $0.id == id }
+    }
+
+    /// The breakpoints widest first: the page's own, then each that says
+    /// otherwise.
+    public var widestFirst: [DesignBreakpoint] { breakpoints.sorted { $0.width > $1.width } }
+
+    /// The page as it is at breakpoint `id`: what it and every wider
+    /// breakpoint say laid over each layer, as the media queries cascade
+    /// (aether-design's `Page::at`).
+    public func at(_ id: String?) -> DesignPage {
+        let points = widestFirst
+        guard let id, let place = points.firstIndex(where: { $0.id == id }), place > 0 else { return self }
+        let wider = points[1...place].map(\.id)
+        var page = self
+        page.layers = layers.map { layer in
+            wider.reduce(layer) { layer, point in layer.at[point].map(layer.over) ?? layer }
+        }
+        return page
     }
 
     /// The frame `id` is in.

@@ -84,48 +84,68 @@ public final class DesignDocument {
     /// A token's value, as one step. `coalescing`: a change to the same
     /// token as the newest step replaces that step's value rather than
     /// adding another, so a colour well dragged through a hundred colours
-    /// undoes in one.
+    /// undoes in one. Whether it changed the theme; `steps` says whether a
+    /// step was added.
     @discardableResult
     public func setToken(_ token: DesignToken, to value: String, coalescing: Bool = false) -> Bool {
         let key = token.id
+        defer { reload("theme") }
         // Back to before the newest step, then the step again with the new
         // value: one entry from the old value to the newest.
         let merging = coalescing && done.last?.token == key && undone.isEmpty && (try? editor.undo(targetName: "theme")) == true
-        if merging { done.removeLast() }
-        defer { reload("theme") }
         do {
-            let changed = try editor.setToken(name: token.name, scope: token.scope, value: value)
-            refusal = nil
-            // Dragged back to where it started, there is no step left.
-            if changed {
-                done.append(Step(target: "theme", label: "Set \(token.name)", token: key))
-                undone.removeAll()
+            if try editor.setToken(name: token.name, scope: token.scope, value: value) {
+                refusal = nil
+                if !merging {
+                    done.append(Step(target: "theme", label: "Set \(token.name)", token: key))
+                    undone.removeAll()
+                }
+                return true
             }
-            return changed
+            refusal = nil
+            guard merging else { return false }
+            // Dragged back to where it began: the drag's step put back, and
+            // this a step of its own, so each entry is still one step.
+            _ = try editor.redo(targetName: "theme")
+            guard try editor.setToken(name: token.name, scope: token.scope, value: value) else { return false }
+            done.append(Step(target: "theme", label: "Set \(token.name)", token: key))
+            return true
         } catch {
             refusal = Self.describe(error)
-            if merging, (try? editor.redo(targetName: "theme")) == true {
-                done.append(Step(target: "theme", label: "Set \(token.name)", token: key))
-            }
+            if merging { _ = try? editor.redo(targetName: "theme") }
             return false
         }
     }
+
+    /// How many steps there are to undo: grown by one when an edit made a
+    /// step, the same when it was merged into the last.
+    public var steps: Int { done.count }
 
     /// The next step back's name and the next step on's.
     public var undoLabel: String? { done.last?.label }
     public var redoLabel: String? { undone.last?.label }
 
-    public func undo() {
-        guard let last = done.popLast() else { return }
-        if (try? editor.undo(targetName: last.target)) == true { undone.append(last) }
+    /// Undo the newest step; whether there was one.
+    @discardableResult
+    public func undo() -> Bool {
+        guard let last = done.popLast() else { return false }
+        let did = (try? editor.undo(targetName: last.target)) == true
+        if did { undone.append(last) }
         reload(last.target)
+        return did
     }
 
-    public func redo() {
-        guard let next = undone.popLast() else { return }
-        if (try? editor.redo(targetName: next.target)) == true { done.append(next) }
+    @discardableResult
+    public func redo() -> Bool {
+        guard let next = undone.popLast() else { return false }
+        let did = (try? editor.redo(targetName: next.target)) == true
+        if did { done.append(next) }
         reload(next.target)
+        return did
     }
+
+    /// The design's folder: where `src` is.
+    public func file(_ src: String) -> URL { url.appending(path: src) }
 
     /// Write every changed file; the files written.
     @discardableResult
@@ -138,9 +158,10 @@ public final class DesignDocument {
     /// The files changed and not saved.
     public var unsaved: [String] { view.unsaved }
 
-    /// Page `id` as an HTML document whose tokens come from `themeHref`.
-    public func html(page id: String, themeHref: String) -> String? {
-        editor.html(id: id, themeHref: themeHref)
+    /// Page `id` as an HTML document whose tokens come from `themeHref`,
+    /// its pictures' `images/` under `base`.
+    public func html(page id: String, themeHref: String, base: String = "") -> String? {
+        editor.html(id: id, themeHref: themeHref, base: base)
     }
 
     /// The theme's text as it is now, saved or not.

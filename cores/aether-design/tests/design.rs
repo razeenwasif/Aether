@@ -180,7 +180,7 @@ fn the_page_is_written_as_html_styled_by_the_theme() {
     let (_, mut design) = made("html");
     design.apply(&home_target(), &ops(json!([{"op": "set", "path": ["layers", "#logo", "text"], "value": "<Lumen> & co"}]))).unwrap();
     let page = home(&design);
-    let doc = html::document(page, "theme.css");
+    let doc = html::document(page, "theme.css", "");
     assert!(doc.starts_with("<!doctype html>"));
     assert!(doc.contains("<link rel=\"stylesheet\" href=\"theme.css\">"));
     assert!(doc.contains("<h1 class=\"title\">Carry the light through the Hollow Grove.</h1>"), "{doc}");
@@ -194,5 +194,80 @@ fn the_page_is_written_as_html_styled_by_the_theme() {
     // The buttons hug their labels, down the hero's column.
     let actions = html::css(page, "actions");
     assert!(actions.contains(".actions {\n  display: flex;\n  flex-direction: row;"), "{actions}");
-    assert!(html::markup(page, "actions").starts_with("<div class=\"actions\">\n  <a class=\"wishlist\">"));
+    assert!(html::markup(page, "actions", "").starts_with("<div class=\"actions\">\n  <a class=\"wishlist\">"));
+}
+
+#[test]
+fn a_breakpoint_says_what_differs_and_the_narrower_ones_inherit_it() {
+    let (_, mut design) = made("cascade");
+    let page = home(&design).clone();
+    assert_eq!(page.at("desktop").layer("title").unwrap().style.font.as_deref(), Some("--type-display"));
+    assert_eq!(page.at("mobile").layer("title").unwrap().style.font.as_deref(), Some("--type-display-sm"));
+    // A third, between: what it says holds for Mobile too, unless Mobile
+    // says otherwise.
+    let tablet = ops(json!([
+        {"op": "insert", "path": ["breakpoints"], "value": {"id": "tablet", "name": "Tablet", "width": 768}, "at": 1},
+        {"op": "set", "path": ["layers", "#features", "at"], "value": {"tablet": {"layout": {"direction": "column"}}}},
+        {"op": "set", "path": ["layers", "#logo", "at"], "value": {"tablet": {"hidden": true}, "mobile": {"hidden": false}}},
+    ]));
+    assert!(design.apply(&home_target(), &tablet).unwrap());
+    let page = home(&design).clone();
+    assert_eq!(page.at("mobile").layer("features").unwrap().layout.direction.as_deref(), Some("column"));
+    assert_eq!(page.at("desktop").layer("features").unwrap().layout.direction.as_deref(), Some("row"));
+    assert!(page.at("tablet").layer("logo").unwrap().hidden);
+    assert!(!page.at("mobile").layer("logo").unwrap().hidden);
+}
+
+#[test]
+fn what_a_breakpoint_says_is_checked_too() {
+    let (_, mut design) = made("checked-at");
+    for (value, why) in [
+        (json!({"watch": {"w": "fill"}}), "isn't one of the page's breakpoints"),
+        (json!({"desktop": {"w": "fill"}}), "the page's widest"),
+        (json!({"mobile": {"w": "wide"}}), "at mobile, title's width"),
+        (json!({"mobile": {"style": {"color": "red; }"}}}), "at mobile, title has a style"),
+    ] {
+        let why_now = design.apply(&home_target(), &ops(json!([{"op": "set", "path": ["layers", "#title", "at"], "value": value}]))).unwrap_err();
+        assert!(why_now.contains(why), "{why_now}");
+    }
+    assert!(design.unsaved_files().is_empty());
+}
+
+#[test]
+fn each_narrower_breakpoint_is_a_media_query_of_what_changes() {
+    let (_, mut design) = made("media");
+    let css = html::css(home(&design), "page");
+    let media = css.split("@media (max-width: 1279px) {").nth(1).expect("a query below Desktop");
+    assert!(media.contains(".title {\n    font: var(--type-display-sm);\n  }"), "{media}");
+    assert!(media.contains(".hero {\n    padding: var(--space-12) var(--space-8);\n  }"), "{media}");
+    assert!(!media.contains(".logo"), "only what changes");
+    // A row become a column: its cards stop growing along it, and what they
+    // no longer say is put back.
+    design.apply(&home_target(), &ops(json!([{"op": "set", "path": ["layers", "#features", "at"], "value": {"mobile": {"layout": {"direction": "column"}, "hidden": false}}}]))).unwrap();
+    design.apply(&home_target(), &ops(json!([{"op": "set", "path": ["layers", "#availability", "at"], "value": {"mobile": {"hidden": true}}}]))).unwrap();
+    let css = html::css(home(&design), "page");
+    let media = css.split("@media (max-width: 1279px) {").nth(1).unwrap();
+    assert!(media.contains(".lantern {\n    flex: 0 0 auto;\n    align-self: stretch;\n    max-width: 100%;\n    min-width: revert;\n  }"), "{media}");
+    assert!(media.contains(".availability {\n    display: none;\n  }"), "{media}");
+}
+
+#[test]
+fn an_image_is_a_file_in_images_and_is_written_as_img() {
+    let (_, mut design) = made("image");
+    let add = |src: &str| ops(json!([
+        {"op": "insert", "path": ["layers"], "value": {"id": "key-art", "kind": "image", "src": src, "text": "Wren and her lantern", "h": 320, "style": {"fit": "cover", "radius": "--radius-md"}}},
+        {"op": "insert", "path": ["layers", "#hero", "children"], "value": "key-art"},
+    ]));
+    for bad in ["../theme.css", "images/../x.png", "images/a.psd", "/etc/a.png", "images/\"x.png", ""] {
+        assert!(design.apply(&home_target(), &add(bad)).is_err(), "{bad:?}");
+    }
+    assert!(design.apply(&home_target(), &add("images/Key art.png")).unwrap());
+    let page = home(&design);
+    let html = html::markup(page, "key-art", "../");
+    assert_eq!(html, "<img class=\"key-art\" src=\"../images/Key art.png\" alt=\"Wren and her lantern\">\n");
+    let css = html::css(page, "key-art");
+    assert!(css.contains("display: block;") && css.contains("object-fit: cover;") && css.contains("height: 320px;"), "{css}");
+    // A picture holds no layers.
+    let inside = ops(json!([{"op": "insert", "path": ["layers", "#key-art", "children"], "value": "title"}]));
+    assert!(design.apply(&home_target(), &inside).is_err());
 }

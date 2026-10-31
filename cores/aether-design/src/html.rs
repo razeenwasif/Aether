@@ -8,14 +8,18 @@
 //! grows (`flex: 1 1 <narrowest>`), `fill` down a column stretches across it.
 //! The workspace's own layout (`DesignLayout` in Swift) follows the same
 //! rules, so the artboard and a browser agree.
+//!
+//! The widest breakpoint is the page's own rules; each narrower one is a
+//! `max-width` media query holding only what changes there — a rule a layer
+//! no longer has there is `revert`ed — so the cascade is the page's.
 
 use std::fmt::Write as _;
 
 use crate::format::{Kind, Layer, Page, Val};
 
 /// The whole page as a document, its tokens from the stylesheet at
-/// `theme_href`.
-pub fn document(page: &Page, theme_href: &str) -> String {
+/// `theme_href` and its pictures' `images/` under `base`.
+pub fn document(page: &Page, theme_href: &str, base: &str) -> String {
     let mut out = String::new();
     out.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
     out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
@@ -24,36 +28,68 @@ pub fn document(page: &Page, theme_href: &str) -> String {
     out.push_str("<style>\n* { box-sizing: border-box; margin: 0; }\nbody { margin: 0; }\n");
     out.push_str(&css(page, &page.root));
     out.push_str("</style>\n</head>\n<body>\n");
-    out.push_str(&markup(page, &page.root));
+    out.push_str(&markup(page, &page.root, base));
     out.push_str("</body>\n</html>\n");
     out
 }
 
-/// The elements of `id` and everything in it, indented.
-pub fn markup(page: &Page, id: &str) -> String {
+/// The elements of `id` and everything in it, indented, pictures under
+/// `base`.
+pub fn markup(page: &Page, id: &str, base: &str) -> String {
     let mut out = String::new();
-    element(page, id, 0, &mut Vec::new(), &mut out);
+    element(page, id, 0, base, &mut Vec::new(), &mut out);
     out
 }
 
-/// The rules for `id` and everything in it.
+/// The rules for `id` and everything in it: the page's own, then what
+/// each narrower breakpoint changes.
 pub fn css(page: &Page, id: &str) -> String {
     let mut out = String::new();
     for layer in page.subtree(id) {
-        let rules = rules(page, layer);
-        if rules.is_empty() {
-            continue;
+        block(&mut out, "", &layer.id, &rules(page, layer));
+    }
+    let points = page.widest_first();
+    for pair in points.windows(2) {
+        let (wider, here) = (pair[0], pair[1]);
+        let before = page.at(&wider.id);
+        let now = page.at(&here.id);
+        let mut inner = String::new();
+        for layer in now.subtree(id) {
+            let had = before.layer(&layer.id).map(|l| rules(&before, l)).unwrap_or_default();
+            let has = rules(&now, layer);
+            let mut changed: Vec<(&'static str, String)> = has.iter().filter(|r| !had.contains(r)).cloned().collect();
+            // Hidden, nothing else it had matters there.
+            let hidden = layer.hidden;
+            for (property, _) in had.iter().filter(|_| !hidden) {
+                if !has.iter().any(|(p, _)| p == property) {
+                    changed.push((property, "revert".into()));
+                }
+            }
+            block(&mut inner, "  ", &layer.id, &changed);
         }
-        let _ = writeln!(out, ".{} {{", layer.id);
-        for (property, value) in rules {
-            let _ = writeln!(out, "  {property}: {value};");
+        if !inner.is_empty() {
+            // Below the wider breakpoint's width: what a narrower screen
+            // than it gets.
+            let _ = writeln!(out, "/* {} */\n@media (max-width: {}) {{", here.name, px((wider.width - 1.0).max(0.0)));
+            out.push_str(&inner);
+            out.push_str("}\n");
         }
-        out.push_str("}\n");
     }
     out
 }
 
-fn element(page: &Page, id: &str, depth: usize, path: &mut Vec<String>, out: &mut String) {
+fn block(out: &mut String, indent: &str, id: &str, rules: &[(&'static str, String)]) {
+    if rules.is_empty() {
+        return;
+    }
+    let _ = writeln!(out, "{indent}.{id} {{");
+    for (property, value) in rules {
+        let _ = writeln!(out, "{indent}  {property}: {value};");
+    }
+    let _ = writeln!(out, "{indent}}}");
+}
+
+fn element(page: &Page, id: &str, depth: usize, base: &str, path: &mut Vec<String>, out: &mut String) {
     let Some(layer) = page.layer(id) else { return };
     if path.iter().any(|seen| seen == id) {
         return;
@@ -65,6 +101,10 @@ fn element(page: &Page, id: &str, depth: usize, path: &mut Vec<String>, out: &mu
             let words = layer.text.lines().map(escape).collect::<Vec<_>>().join("<br>");
             let _ = writeln!(out, "{indent}<{tag} class=\"{}\">{words}</{tag}>", layer.id);
         }
+        Kind::Image => {
+            // Its text is what it shows, for whoever can't see it.
+            let _ = writeln!(out, "{indent}<img class=\"{}\" src=\"{}{}\" alt=\"{}\">", layer.id, escape(base), escape(&layer.src), escape(&layer.text));
+        }
         _ if layer.children.is_empty() => {
             let _ = writeln!(out, "{indent}<{tag} class=\"{}\"></{tag}>", layer.id);
         }
@@ -72,7 +112,7 @@ fn element(page: &Page, id: &str, depth: usize, path: &mut Vec<String>, out: &mu
             let _ = writeln!(out, "{indent}<{tag} class=\"{}\">", layer.id);
             path.push(id.to_string());
             for child in &layer.children {
-                element(page, child, depth + 1, path, out);
+                element(page, child, depth + 1, base, path, out);
             }
             path.pop();
             let _ = writeln!(out, "{indent}</{tag}>");
@@ -84,6 +124,7 @@ fn tag(layer: &Layer) -> &str {
     match (layer.tag.is_empty(), layer.kind) {
         (false, _) => &layer.tag,
         (true, Kind::Text) => "p",
+        (_, Kind::Image) => "img",
         (true, _) => "div",
     }
 }
@@ -106,6 +147,13 @@ pub fn height(layer: &Layer) -> Val {
 fn rules(page: &Page, layer: &Layer) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     let lay = &layer.layout;
+    if layer.hidden {
+        return vec![("display", "none".to_string())];
+    }
+    if layer.kind == Kind::Image {
+        out.push(("display", "block".to_string()));
+        out.push(("object-fit", layer.style.fit.clone().unwrap_or_else(|| "cover".into())));
+    }
     if layer.kind == Kind::Frame {
         out.push(("display", "flex".to_string()));
         let row = lay.direction.as_deref() == Some("row");
