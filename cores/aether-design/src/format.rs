@@ -306,11 +306,12 @@ impl proton_game::Document for Component {
         }
         out.extend(tree_problems("component", &self.root, &self.layers));
         for layer in &self.layers {
-            if !layer.at.is_empty() {
-                out.push(format!("{} says something at a breakpoint: a component takes its page's breakpoints from where it's placed", layer.id));
-            }
-            if layer.kind == Kind::Instance {
-                out.push(format!("{} is an instance: a component doesn't hold other components yet", layer.id));
+            // What a breakpoint says, by the id it has on the pages that
+            // place it: checked as the layer it makes there.
+            for (point, over) in &layer.at {
+                let mut there = layer.clone();
+                over.apply(&mut there);
+                out.extend(layer_problems(&there).into_iter().map(|why| format!("at {point}, {why}")));
             }
             for (key, over) in &layer.when {
                 let fits = key.split_once('=').is_some_and(|(prop, option)| match prop == STATE {
@@ -341,46 +342,70 @@ impl proton_game::Document for Component {
 pub fn expand(page: &Page, components: &BTreeMap<String, Component>) -> Page {
     let mut layers = Vec::with_capacity(page.layers.len());
     for layer in &page.layers {
-        let Some(component) = components.get(&layer.component).filter(|_| layer.kind == Kind::Instance) else {
-            layers.push(layer.clone());
-            continue;
-        };
-        let options = component.options(&layer.props);
-        let name = |id: &str| match id == component.root {
-            true => layer.id.clone(),
-            false => format!("{}.{id}", layer.id),
-        };
-        for inner in component.with(&options) {
-            let mut out = inner.clone();
-            out.id = name(&inner.id);
-            out.children = inner.children.iter().map(|c| name(c)).collect();
-            out.component = component.id.clone();
-            if let Some(words) = layer.texts.get(&inner.id) {
-                out.text = words.clone();
-            }
-            if inner.id == component.root {
-                // Where it sits and how big it is are the page's to say.
-                out.name = layer.name.clone();
-                if !layer.tag.is_empty() {
-                    out.tag = layer.tag.clone();
-                }
-                if layer.w.is_some() {
-                    out.w = layer.w.clone();
-                }
-                if layer.h.is_some() {
-                    out.h = layer.h.clone();
-                }
-                if layer.min_w.is_some() {
-                    out.min_w = layer.min_w;
-                }
-                out.hidden = layer.hidden;
-                out.at = layer.at.clone();
-                out.props = options.iter().cloned().collect();
-            }
-            layers.push(out);
-        }
+        expand_into(layer, components, &mut Vec::new(), &mut layers);
     }
     Page { layers, ..page.clone() }
+}
+
+/// `layer` as the layers it draws: itself, or an instance's component's
+/// layers, an instance among them expanded in its turn under its name
+/// there (`hero.wishlist`, `hero.wishlist.label`). `within` is the
+/// components being expanded around it, so one placed inside itself — which
+/// the checks refuse — stops rather than going on.
+fn expand_into(layer: &Layer, components: &BTreeMap<String, Component>, within: &mut Vec<String>, out: &mut Vec<Layer>) {
+    let Some(component) = components.get(&layer.component).filter(|_| layer.kind == Kind::Instance && !within.contains(&layer.component)) else {
+        out.push(layer.clone());
+        return;
+    };
+    within.push(component.id.clone());
+    let options = component.options(&layer.props);
+    let name = |id: &str| match id == component.root {
+        true => layer.id.clone(),
+        false => format!("{}.{id}", layer.id),
+    };
+    for inner in component.with(&options) {
+        let mut one = inner.clone();
+        one.id = name(&inner.id);
+        one.children = inner.children.iter().map(|c| name(c)).collect();
+        if let Some(words) = layer.texts.get(&inner.id) {
+            one.text = words.clone();
+        }
+        if inner.id == component.root {
+            // Where it sits and how big it is are the page's to say.
+            one.name = layer.name.clone();
+            if !layer.tag.is_empty() {
+                one.tag = layer.tag.clone();
+            }
+            if layer.w.is_some() {
+                one.w = layer.w.clone();
+            }
+            if layer.h.is_some() {
+                one.h = layer.h.clone();
+            }
+            if layer.min_w.is_some() {
+                one.min_w = layer.min_w;
+            }
+            one.hidden = layer.hidden;
+            // What breakpoints say of it: the component's, then the
+            // instance's over them.
+            for (point, over) in &layer.at {
+                let merged = match one.at.get(point) {
+                    Some(own) => own.over(over),
+                    None => over.clone(),
+                };
+                one.at.insert(point.clone(), merged);
+            }
+            one.component = component.id.clone();
+            one.props = options.iter().cloned().collect();
+            out.push(one);
+        } else if inner.kind == Kind::Instance && components.contains_key(&inner.component) {
+            expand_into(&one, components, within, out);
+        } else {
+            one.component = component.id.clone();
+            out.push(one);
+        }
+    }
+    within.pop();
 }
 
 /// A width a page is drawn at.
@@ -490,6 +515,26 @@ pub struct Override {
 }
 
 impl Override {
+    /// `other`'s fields where it says them, laid over `self`'s.
+    pub fn over(&self, other: &Override) -> Override {
+        let mut out = serde_json::to_value(self).unwrap_or_default();
+        let theirs = serde_json::to_value(other).unwrap_or_default();
+        fn lay(to: &mut serde_json::Value, from: &serde_json::Value) {
+            let (Some(to), Some(from)) = (to.as_object_mut(), from.as_object()) else { return };
+            for (k, v) in from {
+                match (to.get_mut(k), v) {
+                    (Some(t), serde_json::Value::Object(_)) => lay(t, v),
+                    (_, serde_json::Value::Null) => {}
+                    _ => {
+                        to.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+        lay(&mut out, &theirs);
+        serde_json::from_value(out).unwrap_or_default()
+    }
+
     /// `self` laid over `layer`.
     pub fn apply(&self, layer: &mut Layer) {
         fn over<T: Clone>(to: &mut Option<T>, from: &Option<T>) {

@@ -68,6 +68,12 @@ public final class DesignDocument {
 
     public func component(_ id: String) -> DesignComponent? { components[id] }
 
+    /// Component `id` as written, or as `option` changes it, with the
+    /// components it holds expanded: what its artboards draw.
+    public func expandedComponent(_ id: String, option: String?) -> DesignPage? {
+        editor.expandedComponent(id: id, option: option).flatMap { try? Self.decode(DesignPage.self, $0) }
+    }
+
     /// A batch of ops on page `id` as one step called `label`. Whether it
     /// changed anything.
     @discardableResult

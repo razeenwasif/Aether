@@ -1421,6 +1421,12 @@ public protocol DesignEditorProtocol: AnyObject, Sendable {
     func expanded(id: String)  -> String?
     
     /**
+     * Component `id` as written, or as `option` (`variant=secondary`)
+     * changes it, its instances expanded, as JSON: what its artboards draw.
+     */
+    func expandedComponent(id: String, option: String?)  -> String?
+    
+    /**
      * Page `id` as an HTML document, its tokens from `theme_href` and its
      * pictures' `images/` under `base`.
      */
@@ -1633,6 +1639,21 @@ open func expanded(id: String) -> String?  {
     uniffi_aether_diffuse_fn_method_designeditor_expanded(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(id),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Component `id` as written, or as `option` (`variant=secondary`)
+     * changes it, its instances expanded, as JSON: what its artboards draw.
+     */
+open func expandedComponent(id: String, option: String?) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_expanded_component(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(id),
+        FfiConverterOptionString.lower(option),uniffiCallStatus
     )
 })
 }
@@ -5932,6 +5953,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_expanded() != 36269) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_expanded_component() != 19519) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_html() != 25546) {

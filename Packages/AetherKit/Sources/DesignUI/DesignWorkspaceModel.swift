@@ -468,12 +468,26 @@ public final class DesignWorkspaceModel {
         document?.view.components.first { $0.id == id }?.uses ?? []
     }
 
-    /// Go to an instance: its page, it chosen.
+    /// Go to an instance: its page, or the component it's inside; it chosen.
     public func show(_ use: DesignView.ComponentRow.Use) {
-        componentID = nil
-        variant = nil
-        if pageID != use.page { pageID = use.page }
+        if let holder = use.page.split(separator: ":", maxSplits: 1).last.map(String.init), use.page.hasPrefix("component:") {
+            editComponent(holder)
+        } else {
+            componentID = nil
+            variant = nil
+            if pageID != use.page { pageID = use.page }
+        }
         selection = use.layer
+    }
+
+    /// Where a use is, in words: its page's name, or the component's.
+    public func place(of use: DesignView.ComponentRow.Use) -> String {
+        guard let document else { return use.page }
+        if use.page.hasPrefix("component:") {
+            let id = String(use.page.dropFirst("component:".count))
+            return "in \(document.component(id)?.name ?? id)"
+        }
+        return document.page(use.page)?.name ?? use.page
     }
 
     /// The chosen frame made a component, an instance of it in its place:
@@ -503,9 +517,10 @@ public final class DesignWorkspaceModel {
     }
 
     /// An instance of component `id` placed as `placeForNew` says, and
-    /// chosen.
+    /// chosen: on the page, or inside the component being edited (not
+    /// itself; one that would end up inside itself is refused, and said).
     public func place(component id: String) {
-        guard componentID == nil, let page, let component = document?.component(id) else { return }
+        guard id != componentID, let page, let component = document?.component(id) else { return }
         let layer = Self.fresh(id, in: page)
         insert(["id": layer, "kind": "instance", "component": id, "name": component.name, "w": "hug"], id: layer, in: page, label: "Place \(component.name)")
     }

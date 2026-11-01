@@ -187,9 +187,9 @@ private struct DesignNavigator: View {
                     Button("Shape  R") { model.add(.rect) }
                     Divider()
                     Button("Image from a File…") { model.chooseImageFile() }
-                    if model.component == nil, !document.view.components.isEmpty {
+                    if document.view.components.contains(where: { $0.id != model.componentID }) {
                         Menu("Component") {
-                            ForEach(document.view.components) { row in
+                            ForEach(document.view.components.filter { $0.id != model.componentID }) { row in
                                 Button(row.name) { model.place(component: row.id) }
                             }
                         }
@@ -306,7 +306,9 @@ private struct LayerRow: View {
             }
             if layer.kind == .instance {
                 Button("Edit the Component") { model.editComponent(layer.component) }
-                Button("Detach") { model.selection = layer.id; model.detachSelected() }
+                if model.component == nil {
+                    Button("Detach") { model.selection = layer.id; model.detachSelected() }
+                }
             }
             if !isRoot {
                 Button("Move Up") { model.selection = layer.id; model.moveSelected(by: -1) }
@@ -659,8 +661,10 @@ private struct InstanceSection: View {
                 HStack {
                     Text(verbatim: "Used \(uses.count) time\(uses.count == 1 ? "" : "s") in the design").font(.aeSmall).foregroundStyle(Color.ink3)
                     Spacer(minLength: 0)
-                    Button("Detach") { model.detachSelected() }.buttonStyle(.borderless).font(.aeSmall)
-                        .help("Make it plain layers, as it looks now, no longer following \(component.name)")
+                    if model.component == nil {
+                        Button("Detach") { model.detachSelected() }.buttonStyle(.borderless).font(.aeSmall)
+                            .help("Make it plain layers, as it looks now, no longer following \(component.name)")
+                    }
                 }
             }
         } else {
@@ -741,7 +745,7 @@ private struct ComponentInspector: View {
                         Button {
                             model.show(use)
                         } label: {
-                            Text(verbatim: "\(model.document?.page(use.page)?.name ?? use.page) · \(model.document?.page(use.page)?.layer(use.layer)?.label ?? use.layer)")
+                            Text(verbatim: "\(model.place(of: use)) · \(model.document?.page(use.page)?.layer(use.layer)?.label ?? use.layer)")
                         }
                         .buttonStyle(.link).font(.aeSmall)
                     }

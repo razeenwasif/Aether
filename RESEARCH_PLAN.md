@@ -1724,6 +1724,39 @@ Not yet:
     - Choosing a folder that already held edited files wrote over them. It now reads them in first.
 - **Not yet:** sync as React TSX or Tailwind; images' `alt` read back; a rule's sizing read back.
 
+**2026-11-01 · Design: components inside components.** The user said "start the next step", the first of those left: components inside components.
+
+- **Format and checks:** a component's layers can be instances of others. Their picks are checked as a page's are, and a component that would end up inside itself, directly or through others, is refused with the way round ("Button would be inside itself: button holds header holds button").
+- **Expansion** (`expand_into`): recursive. An instance inside a component is expanded in its turn under its name there (`hero.wishlist`, `hero.wishlist.label`), with its own options and words. A click on any of it chooses the outermost instance.
+- **CSS:** the outer component's rule for the inner instance holds only its sizing (`.hero__wishlist`). The inner one's element has both classes (`header__wishlist button button--variant-primary`), so its look stays the inner component's, written once. `aria-disabled` goes on any instance's root. `component_markup` expands with every component.
+- **Breakpoints inside components:** Make a Component used to drop what breakpoints said of the frame's layers, so a hero made a component lost its Mobile title. The on-screen check showed it.
+  - A component's layers now keep `at`, by the page's breakpoint ids, checked as the layer each makes. The made component's root keeps its look's values, and the instance keeps its sizes'.
+  - Expansion lays the component's root values under the instance's.
+  - The page's media queries write a component's values once, on its classes (`.header__title`, `.header`).
+  - Sync leaves those rules to the component and doesn't read them back.
+- **Make and Detach:** a frame holding instances can be made a component. Detach builds from the component's own layers, so instances inside stay instances, renamed `<instance>-<layer>`.
+- **Uses:** uses inside other components count (`component:<id>`). Used in reads "in Hero", and a click opens the component with the instance chosen.
+- **Workspace:** a component's artboards draw it expanded (`Design::expanded_component`). + ▸ Component places another inside the one being edited. Detach is hidden while editing a component.
+- **Checked:**
+  - Rust: 4 new tests (32):
+    - a component holding another, drawn and written with both classes, the button's CSS once;
+    - loops refused, directly and through another, and a misfit inside;
+    - Detach keeping inner instances;
+    - breakpoint values kept, drawn per breakpoint, in the page's query on the component's classes, and nested uses counted.
+  - Swift: 1 new test (34 for Design; 226 in all):
+    - the hero made a component and drawn as one;
+    - an inner instance's option set inside it;
+    - another placed inside;
+    - a loop refused;
+    - uses inside leading there;
+    - the Mobile title kept.
+  - On screen:
+    - The hero made a component, drawn on both artboards with its buttons.
+    - After the fix, the Mobile title small again, and Button "2 uses".
+    - The Hero component's artboard drawing its buttons.
+    - Clicking one showed its instance inspector.
+- **Not yet:** editing a component's breakpoint values on its own artboards, or reading them back by sync. They're kept, drawn and written, but set only by the page's breakpoints before the frame was made a component.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

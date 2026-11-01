@@ -549,6 +549,36 @@ struct DesignComponentTests {
         #expect(model.page?.layer("hero")?.kind == .frame && project.history.done.isEmpty, "only an instance detaches")
     }
 
+    @Test func aComponentHoldsAnotherAndTheyreDrawnAsOne() throws {
+        let (model, _) = try opened()
+        model.selection = "hero"
+        model.makeComponent()
+        #expect(model.page?.layer("hero")?.kind == .instance)
+        #expect(drawn(model, "hero.wishlist")?.component == "button" && drawn(model, "hero.wishlist.label")?.text == "Wishlist now")
+        #expect(DesignLayer.owner(of: "hero.wishlist.label") == "hero", "a click on it chooses the outer instance")
+        let header = try #require(model.page?.layer("hero")?.component)
+        #expect(model.document?.expandedComponent(header, option: nil)?.layer("trailer.label")?.text == "Watch the trailer")
+        // Inside the component, its buttons are instances to pick options for.
+        model.editComponent(header)
+        model.setProp("trailer", "variant", to: "primary")
+        #expect(drawn(model, "hero.trailer")?.style.fill == "--color-lantern-500")
+        // Another placed inside it; but nothing inside itself.
+        model.selection = "actions"
+        model.place(component: "button")
+        #expect(model.component?.layers.filter { $0.kind == .instance }.count == 3)
+        model.closeComponent()
+        model.editComponent("button")
+        model.place(component: header)
+        #expect(model.notice?.contains("inside itself") == true && model.component?.layers.allSatisfy { $0.kind != .instance } == true)
+        // Its uses inside Hero count, and lead there.
+        let inside = model.uses(of: "button").filter { $0.page.hasPrefix("component:") }
+        #expect(inside.count == 3 && model.place(of: inside[0]) == "in Hero")
+        model.show(inside[0])
+        #expect(model.componentID == header && model.selection == inside[0].layer)
+        // What the page's breakpoints said of the hero's layers stays.
+        #expect(model.document?.expanded["home"]?.at("mobile").layer("hero.title")?.style.font == "--type-display-sm")
+    }
+
     @Test func aFrameMadeAComponentIsOneStepOnTheProjectsHistory() throws {
         let (model, project) = try opened()
         model.selection = "lantern"

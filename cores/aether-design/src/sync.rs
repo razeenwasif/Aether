@@ -53,7 +53,7 @@ pub fn files(design: &Design) -> Vec<File> {
     let mut out = vec![File { rel: "theme.css".into(), text: design.theme.text().to_string() }];
     for c in components.values() {
         out.push(File { rel: format!("{}.css", c.id), text: format!("{CSS_MARK}{}", html::component_css(c)) });
-        out.push(File { rel: format!("{}.html", c.id), text: format!("{HTML_MARK}{}", html::component_markup(c, "")) });
+        out.push(File { rel: format!("{}.html", c.id), text: format!("{HTML_MARK}{}", html::component_markup(c, &components, "")) });
     }
     for page in &design.pages {
         let p = page.get();
@@ -503,6 +503,11 @@ fn page_css_ops(page: &Page, components: &BTreeMap<String, Component>, text: &st
     let mut ops = Vec::new();
     for rule in rules(text) {
         let id = rule.selector.strip_prefix('.').unwrap_or("");
+        // A component's rule inside a page's media query says what its layers
+        // say at that breakpoint: the component's, not read back here.
+        if id.contains("__") || components.contains_key(id) {
+            continue;
+        }
         let Some(layer) = page.layer(id).filter(|_| !id.is_empty() && !id.contains([' ', ':', '.'])) else {
             notes.push(format!("{} isn't one of {}'s layers; left as it is", rule.selector, page.name));
             continue;

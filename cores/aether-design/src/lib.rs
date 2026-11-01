@@ -39,7 +39,7 @@ use proton_game::{Doc, Op};
 
 use std::collections::BTreeMap;
 
-use format::{is_plain, Component, DesignFile, Kind, Layer, Page};
+use format::{is_plain, Component, DesignFile, Kind, Layer, Override, Page};
 use theme::ThemeDoc;
 
 /// The design's own file, in its folder.
@@ -162,7 +162,8 @@ impl Design {
         Some(format::expand(self.page(page)?.get(), &self.component_map()))
     }
 
-    /// Where each component is placed: `(page, instance)`, by component.
+    /// Where each component is placed: `(page, instance)`, by component;
+    /// inside another component, `(component:<id>, instance)`.
     pub fn uses(&self) -> BTreeMap<String, Vec<(String, String)>> {
         let mut out: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
         for page in &self.pages {
@@ -170,7 +171,65 @@ impl Design {
                 out.entry(layer.component.clone()).or_default().push((page.get().id.clone(), layer.id.clone()));
             }
         }
+        for c in &self.components {
+            for layer in c.get().layers.iter().filter(|l| l.kind == Kind::Instance) {
+                out.entry(layer.component.clone()).or_default().push((format!("component:{}", c.get().id), layer.id.clone()));
+            }
+        }
         out
+    }
+
+    /// Why the instances inside `components` don't fit them, and which
+    /// component would end up inside itself.
+    fn nesting_problems(components: &BTreeMap<String, Component>) -> Vec<String> {
+        let mut out = Vec::new();
+        for c in components.values() {
+            for layer in c.layers.iter().filter(|l| l.kind == Kind::Instance) {
+                match components.get(&layer.component) {
+                    None => out.push(format!("{} holds {}, which places {}, not one of the design's components", c.name, layer.id, layer.component)),
+                    Some(inner) => out.extend(inner.misfits(layer).into_iter().map(|why| format!("in {}, {why}", c.name))),
+                }
+            }
+        }
+        // Each component's instances followed down: back to it is a loop.
+        for c in components.values() {
+            let mut path = vec![c.id.clone()];
+            if let Some(round) = Self::loop_from(&c.id, components, &mut path) {
+                out.push(format!("{} would be inside itself: {}", c.name, round.join(" holds ")));
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
+    }
+
+    /// The way back to `path`'s first component, if its instances lead there.
+    fn loop_from(id: &str, components: &BTreeMap<String, Component>, path: &mut Vec<String>) -> Option<Vec<String>> {
+        let c = components.get(id)?;
+        for inner in c.layers.iter().filter(|l| l.kind == Kind::Instance).map(|l| &l.component) {
+            if *inner == path[0] {
+                let mut round = path.clone();
+                round.push(inner.clone());
+                return Some(round);
+            }
+            if path.contains(inner) {
+                continue;
+            }
+            path.push(inner.clone());
+            if let Some(round) = Self::loop_from(inner, components, path) {
+                return Some(round);
+            }
+            path.pop();
+        }
+        None
+    }
+
+    /// Component `id` as written, or as `option` (`variant=secondary`)
+    /// changes it, its instances expanded: what its artboards draw.
+    pub fn expanded_component(&self, id: &str, option: Option<&str>) -> Option<Page> {
+        let c = self.component(id)?.get();
+        let options: Vec<(String, String)> = option.and_then(|o| o.split_once('=')).map(|(p, o)| vec![(p.to_string(), o.to_string())]).unwrap_or_default();
+        Some(format::expand(&c.as_page(c.with(&options)), &self.component_map()))
     }
 
     /// Why `page`'s instances don't fit `components`.
@@ -232,9 +291,11 @@ impl Design {
                 if trial.get().id != *id {
                     return Err("a component's id is its file's name, and doesn't change".into());
                 }
-                // An option an instance picks can't go out from under it.
+                // An option an instance picks can't go out from under it,
+                // nor can a component come to hold itself.
                 components.insert(id.clone(), trial.get().clone());
-                let misfits: Vec<String> = self.pages.iter().flat_map(|p| Self::instance_problems(p.get(), &components)).collect();
+                let mut misfits: Vec<String> = self.pages.iter().flat_map(|p| Self::instance_problems(p.get(), &components)).collect();
+                misfits.extend(Self::nesting_problems(&components));
                 if !misfits.is_empty() {
                     return Err(misfits.join("; "));
                 }
@@ -273,21 +334,22 @@ impl Design {
             return Err("the page's own frame can't be a component".into());
         }
         let inside: Vec<Layer> = p.subtree(layer).into_iter().cloned().collect();
-        if inside.iter().any(|l| l.kind == Kind::Instance) {
-            return Err(format!("{} holds an instance: a component doesn't hold other components yet", frame.label()));
-        }
         let component = Component {
             id: id.to_string(),
             name: name.to_string(),
             root: layer.to_string(),
             layers: inside.iter().cloned().map(|mut l| {
-                l.at.clear();
                 if l.id == layer {
-                    // Where it sits is the instance's to say.
+                    // Where it sits is the instance's to say, at every
+                    // breakpoint; its look, the component's.
                     l.w = None;
                     l.h = None;
                     l.min_w = None;
                     l.hidden = false;
+                    for over in l.at.values_mut() {
+                        *over = Override { w: None, h: None, min_w: None, hidden: None, ..over.clone() };
+                    }
+                    l.at.retain(|_, o| o != &Override::default());
                 }
                 l
             }).collect(),
@@ -306,7 +368,10 @@ impl Design {
             h: frame.h.clone(),
             min_w: frame.min_w,
             hidden: frame.hidden,
-            at: frame.at.clone(),
+            at: frame.at.iter().filter_map(|(point, o)| {
+                let sizes = Override { w: o.w.clone(), h: o.h.clone(), min_w: o.min_w, hidden: o.hidden, ..Override::default() };
+                (sizes != Override::default()).then(|| (point.clone(), sizes))
+            }).collect(),
             component: id.to_string(),
             ..Layer::default()
         };
@@ -332,7 +397,8 @@ impl Design {
 
     /// Instance `layer` of page `page` made plain layers again: its
     /// component's, as its options and words make them, with ids of their
-    /// own (`wishlist.label` becomes `wishlist-label`). One step of the page.
+    /// own (`label` becomes `trailer-label`). Instances inside it stay
+    /// instances. One step of the page.
     pub fn detach(&mut self, page: &str, layer: &str) -> Result<(), String> {
         let doc = self.page(page).ok_or_else(|| format!("there is no page {page}"))?;
         let p = doc.get();
@@ -340,19 +406,16 @@ impl Design {
         if instance.kind != Kind::Instance {
             return Err(format!("{} isn't an instance", instance.label()));
         }
-        if self.component(&instance.component).is_none() {
-            return Err(format!("{} isn't one of the design's components", instance.component));
-        }
-        let expanded = format::expand(p, &self.component_map());
+        let c = self.component(&instance.component).ok_or_else(|| format!("{} isn't one of the design's components", instance.component))?.get();
+        let layers = c.with(&c.options(&instance.props));
         let mut taken: std::collections::BTreeSet<String> = p.layers.iter().map(|l| l.id.clone()).collect();
         let mut names: BTreeMap<String, String> = BTreeMap::new();
-        let inside: Vec<Layer> = expanded.subtree(layer).into_iter().cloned().collect();
-        for l in &inside {
-            if l.id == layer {
-                names.insert(l.id.clone(), l.id.clone());
+        for l in &layers {
+            if l.id == c.root {
+                names.insert(l.id.clone(), layer.to_string());
                 continue;
             }
-            let stem = l.id.replace('.', "-");
+            let stem = format!("{layer}-{}", l.id);
             let mut name = stem.clone();
             let mut n = 2;
             while taken.contains(&name) {
@@ -362,14 +425,27 @@ impl Design {
             taken.insert(name.clone());
             names.insert(l.id.clone(), name);
         }
-        let plain: Vec<Layer> = inside
+        let plain: Vec<Layer> = layers
             .into_iter()
             .map(|mut l| {
+                if let Some(words) = instance.texts.get(&l.id) {
+                    l.text = words.clone();
+                }
+                let root = l.id == c.root;
                 l.id = names[&l.id].clone();
                 l.children = l.children.iter().map(|c| names.get(c).cloned().unwrap_or_else(|| c.clone())).collect();
-                l.component.clear();
-                l.props.clear();
-                l.texts.clear();
+                if root {
+                    // Where it sits and how big it is stay the page's.
+                    l.name = instance.name.clone();
+                    if !instance.tag.is_empty() {
+                        l.tag = instance.tag.clone();
+                    }
+                    l.w = instance.w.clone();
+                    l.h = instance.h.clone();
+                    l.min_w = instance.min_w;
+                    l.hidden = instance.hidden;
+                    l.at = instance.at.clone();
+                }
                 l
             })
             .collect();

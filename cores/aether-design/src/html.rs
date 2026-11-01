@@ -81,9 +81,32 @@ pub fn page_css(page: &Page, components: &BTreeMap<String, Component>, id: &str)
         let before = page.at(&wider.id);
         let now = page.at(&here.id);
         let mut inner = String::new();
+        // What a component's layers say at a breakpoint is the same on every
+        // instance: written once, on its classes.
+        let mut written: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for layer in now.subtree(id) {
-            let had = before.layer(&layer.id).map(|l| page_rules(&before, l)).unwrap_or_default();
-            block(&mut inner, "  ", &layer.id, &changes(&had, &page_rules(&now, layer), layer.hidden));
+            let Some(was) = before.layer(&layer.id) else { continue };
+            if layer.component.is_empty() {
+                block(&mut inner, "  ", &layer.id, &changes(&page_rules(&before, was), &page_rules(&now, layer), layer.hidden));
+                continue;
+            }
+            let root = instance_root(&now, layer);
+            let parts: Vec<(String, Part)> = match (root, layer.id.rsplit_once('.')) {
+                // A page's instance: where it sits on its own class, its look on the component's.
+                (true, None) => vec![(layer.id.clone(), Part::Sizing), (layer.component.clone(), Part::Own)],
+                (true, Some((_, inner_id))) => {
+                    let outer = now.parent(&layer.id).map(|p| p.component.clone()).unwrap_or_default();
+                    vec![(format!("{outer}__{inner_id}"), Part::Sizing), (layer.component.clone(), Part::Own)]
+                }
+                (false, Some((_, inner_id))) => vec![(format!("{}__{inner_id}", layer.component), Part::All)],
+                (false, None) => vec![],
+            };
+            for (selector, part) in parts {
+                let said = changes(&rules_of(&before, was, part), &rules_of(&now, layer, part), layer.hidden);
+                if !said.is_empty() && written.insert(selector.clone()) {
+                    block(&mut inner, "  ", &selector, &said);
+                }
+            }
         }
         if !inner.is_empty() {
             // Below the wider breakpoint's width: what a narrower screen
@@ -171,11 +194,14 @@ pub fn component_css(c: &Component) -> String {
     out
 }
 
-/// A component's elements as an instance of it at its defaults is written.
-pub fn component_markup(c: &Component, base: &str) -> String {
+/// A component's elements as an instance of it at its defaults is written,
+/// the components it holds expanded from `components`.
+pub fn component_markup(c: &Component, components: &BTreeMap<String, Component>, base: &str) -> String {
     let instance = Layer { id: c.id.clone(), kind: Kind::Instance, component: c.id.clone(), ..Layer::default() };
     let page = Page { root: c.id.clone(), layers: vec![instance], ..Page::default() };
-    markup(&page, &BTreeMap::from([(c.id.clone(), c.clone())]), &c.id, base)
+    let mut all = components.clone();
+    all.entry(c.id.clone()).or_insert_with(|| c.clone());
+    markup(&page, &all, &c.id, base)
 }
 
 /// A page's rules for a layer: its own, or for a component's root only how
@@ -212,19 +238,29 @@ fn block(out: &mut String, indent: &str, selector: &str, rules: &[(&'static str,
     let _ = writeln!(out, "{indent}}}");
 }
 
+/// Whether a layer drawn is an instance's root: a page's instance, or one
+/// inside a component, whose frame is another component's.
+fn instance_root(page: &Page, layer: &Layer) -> bool {
+    !layer.component.is_empty() && (!layer.id.contains('.') || page.parent(&layer.id).is_some_and(|p| p.component != layer.component))
+}
+
 /// A layer's classes: its id, or for a component's layers the component's
-/// classes — its root's, with a modifier for each option it takes.
-fn classes(layer: &Layer) -> String {
+/// classes — its root's, with a modifier for each option it takes. An
+/// instance inside a component is both: its frame's layer, and its own
+/// component's root.
+fn classes(page: &Page, layer: &Layer) -> String {
     let c = &layer.component;
     if c.is_empty() {
         return layer.id.clone();
     }
-    match layer.id.split_once('.') {
-        Some((_, inner)) => format!("{c}__{inner}"),
-        None => {
-            let modifiers: String = layer.props.iter().map(|(p, o)| format!(" {c}--{p}-{o}")).collect();
-            format!("{} {c}{modifiers}", layer.id)
+    let modifiers: String = layer.props.iter().map(|(p, o)| format!(" {c}--{p}-{o}")).collect();
+    match (layer.id.rsplit_once('.'), instance_root(page, layer)) {
+        (None, _) => format!("{} {c}{modifiers}", layer.id),
+        (Some((_, inner)), true) => {
+            let outer = page.parent(&layer.id).map(|p| p.component.clone()).unwrap_or_default();
+            format!("{outer}__{inner} {c}{modifiers}")
         }
+        (Some((_, inner)), false) => format!("{c}__{inner}"),
     }
 }
 
@@ -237,8 +273,8 @@ fn element(page: &Page, id: &str, depth: usize, base: &str, path: &mut Vec<Strin
     let tag = tag(layer);
     // A disabled instance says so to whoever can't see it, as well as by
     // its look.
-    let disabled = !layer.id.contains('.') && layer.props.get(STATE).is_some_and(|s| s == "disabled");
-    let attrs = format!("class=\"{}\"{}", classes(layer), if disabled { " aria-disabled=\"true\"" } else { "" });
+    let disabled = instance_root(page, layer) && layer.props.get(STATE).is_some_and(|s| s == "disabled");
+    let attrs = format!("class=\"{}\"{}", classes(page, layer), if disabled { " aria-disabled=\"true\"" } else { "" });
     match layer.kind {
         Kind::Text => {
             let words = layer.text.lines().map(escape).collect::<Vec<_>>().join("<br>");

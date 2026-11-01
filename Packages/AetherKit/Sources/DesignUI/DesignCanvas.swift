@@ -133,7 +133,8 @@ final class DesignCanvasView: NSView {
             let placed = pages.first { $0.layers.contains { $0.component == component.id } } ?? pages.first
             ground = placed.flatMap { resolver.color($0.layer($0.root)?.style.fill) } ?? .white
             drawn = ([(nil, "As written")] + component.options.map { ($0.key, $0.name) }).map { key, name in
-                let here = component.asPage(key)
+                // The components it holds, drawn as they are.
+                let here = model.document?.expandedComponent(component.id, option: key) ?? component.asPage(key)
                 let width = min(1280, max(120, DesignLayout.naturalWidth(of: here, resolver: resolver, images: sizes)))
                 return (key, name, here, width)
             }

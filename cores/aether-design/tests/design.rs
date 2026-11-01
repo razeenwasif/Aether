@@ -364,8 +364,7 @@ fn a_frame_made_a_component_is_one_step_with_its_file() {
     assert_eq!(card.layer("lantern").unwrap().min_w, None, "where it sits is the instance's");
     assert_eq!(design.expanded("home").unwrap().layer("lantern.lantern-title").unwrap().text, "A lantern that matters");
     assert_eq!(design.unsaved_files(), [page_rel("home"), component_file("card")]);
-    // A component can't hold another yet, nor be the page itself.
-    assert!(design.make_component("home", "hero", "header", "Header").unwrap_err().contains("instance"));
+    // Nor can the page itself be one.
     assert!(design.make_component("home", "page", "everything", "All").is_err());
     assert!(design.make_component("home", "painted", "card", "Again").unwrap_err().contains("already"));
 
@@ -530,4 +529,76 @@ fn what_sync_cant_take_is_said_and_left() {
     let read = design.sync_in("pages/home.html", &markup).unwrap();
     assert!(read.notes.iter().any(|n| n.contains("holds markup")), "{:?}", read.notes);
     assert!(design.sync_in("elsewhere/x.css", "").is_err());
+}
+
+#[test]
+fn a_component_holds_another_and_both_are_drawn_and_written() {
+    let (_, mut design) = made("nested");
+    design.make_component("home", "hero", "header", "Header").unwrap();
+    let header = design.component("header").unwrap().get();
+    assert_eq!(header.layer("wishlist").unwrap().kind, Kind::Instance, "the buttons stay instances inside it");
+    let page = design.expanded("home").unwrap();
+    let wishlist = page.layer("hero.wishlist").unwrap();
+    assert_eq!((wishlist.kind, wishlist.component.as_str()), (Kind::Frame, "button"));
+    assert_eq!(page.layer("hero.wishlist.label").unwrap().text, "Wishlist now");
+    assert_eq!(page.layer("hero.trailer").unwrap().style.stroke.as_deref(), Some("--color-line"), "its option, from inside");
+    let components = design.component_map();
+    let markup = html::markup(home(&design), &components, "hero", "");
+    assert!(markup.contains("<a class=\"header__wishlist button button--variant-primary\">\n"), "{markup}");
+    assert!(markup.contains("<p class=\"button__label\">Wishlist now</p>"), "{markup}");
+    assert!(markup.contains("<h1 class=\"header__title\">"), "{markup}");
+    let css = html::css(home(&design), &components, "page");
+    assert_eq!(css.matches(".button {").count(), 1);
+    assert!(css.contains(".header__wishlist {\n  flex: 0 0 auto;\n}"), "{css}");
+    // The component's own artboards draw what it holds.
+    assert!(design.expanded_component("header", Some("variant=x")).unwrap().layer("wishlist.label").is_some());
+    assert!(html::component_markup(&components["header"], &components, "").contains("button__label"));
+}
+
+#[test]
+fn a_component_never_ends_up_inside_itself() {
+    let (_, mut design) = made("loop");
+    design.make_component("home", "hero", "header", "Header").unwrap();
+    let inside = |c: &str| ops(json!([
+        {"op": "insert", "path": ["layers"], "value": {"id": "again", "kind": "instance", "component": c}},
+        {"op": "insert", "path": ["layers", "#button", "children"], "value": "again"},
+    ]));
+    let said = design.apply(&component_target("button"), &inside("header")).unwrap_err();
+    assert!(said.contains("would be inside itself") && said.contains("holds"), "{said}");
+    assert!(design.apply(&component_target("button"), &inside("button")).unwrap_err().contains("inside itself"));
+    // An instance inside a component picks only what its component has.
+    let wrong = ops(json!([{"op": "set", "path": ["layers", "#wishlist", "props", "variant"], "value": "ghost"}]));
+    assert!(design.apply(&component_target("header"), &wrong).unwrap_err().contains("variant=ghost"));
+}
+
+#[test]
+fn detaching_keeps_the_instances_inside_as_instances() {
+    let (_, mut design) = made("detach-nested");
+    design.make_component("home", "hero", "header", "Header").unwrap();
+    design.detach("home", "hero").unwrap();
+    let page = home(&design);
+    assert_eq!(page.layer("hero").unwrap().kind, Kind::Frame);
+    let wishlist = page.layer("hero-wishlist").unwrap();
+    assert_eq!((wishlist.kind, wishlist.component.as_str()), (Kind::Instance, "button"));
+    assert_eq!(page.layer("hero-actions").unwrap().children, ["hero-wishlist", "hero-trailer"]);
+    assert_eq!(design.expanded("home").unwrap().layer("hero-wishlist.label").unwrap().text, "Wishlist now");
+}
+
+#[test]
+fn a_component_keeps_what_breakpoints_said_of_its_layers() {
+    let (_, mut design) = made("nested-breakpoints");
+    design.make_component("home", "hero", "header", "Header").unwrap();
+    let header = design.component("header").unwrap().get();
+    assert_eq!(header.layer("title").unwrap().at["mobile"].style.font.as_deref(), Some("--type-display-sm"));
+    assert_eq!(header.layer("hero").unwrap().at["mobile"].layout.pad_v, Some(aether_design::format::Val::Text("--space-12".into())));
+    let page = design.expanded("home").unwrap();
+    assert_eq!(page.at("mobile").layer("hero.title").unwrap().style.font.as_deref(), Some("--type-display-sm"));
+    assert_eq!(page.at("desktop").layer("hero.title").unwrap().style.font.as_deref(), Some("--type-display"));
+    // Written once, on the component's classes, in the page's query.
+    let css = html::css(home(&design), &design.component_map(), "page");
+    let media = css.split("@media (max-width: 1279px) {").nth(1).unwrap();
+    assert!(media.contains(".header__title {\n    font: var(--type-display-sm);\n  }"), "{media}");
+    assert!(media.contains(".header {\n    padding: var(--space-12) var(--space-8);\n  }"), "{media}");
+    // Uses inside a component count, by the component.
+    assert!(design.uses()["button"].contains(&("component:header".to_string(), "wishlist".to_string())));
 }

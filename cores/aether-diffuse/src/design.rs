@@ -106,6 +106,12 @@ impl DesignEditor {
         lock(&self.held).expanded(&id).map(|p| json(&p))
     }
 
+    /// Component `id` as written, or as `option` (`variant=secondary`)
+    /// changes it, its instances expanded, as JSON: what its artboards draw.
+    pub fn expanded_component(&self, id: String, option: Option<String>) -> Option<String> {
+        lock(&self.held).expanded_component(&id, option.as_deref()).map(|p| json(&p))
+    }
+
     /// Component `id`, as JSON, as it is now.
     pub fn component(&self, id: String) -> Option<String> {
         lock(&self.held).component(&id).map(|c| json(c.get()))
@@ -196,6 +202,6 @@ impl DesignEditor {
     pub fn component_code(&self, id: String) -> Option<String> {
         let d = lock(&self.held);
         let c = d.component(&id)?.get();
-        Some(json(&serde_json::json!({ "html": html::component_markup(c, ""), "css": html::component_css(c) })))
+        Some(json(&serde_json::json!({ "html": html::component_markup(c, &d.component_map(), ""), "css": html::component_css(c) })))
     }
 }
