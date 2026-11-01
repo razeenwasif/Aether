@@ -163,6 +163,12 @@ impl DesignEditor {
         lock(&self.held).set_token(&name, &scope, &value).map_err(failed)
     }
 
+    /// A token given a value for a scheme, `light` or `dark`, as a step of
+    /// `theme`.
+    pub fn add_token(&self, name: String, scheme: String, value: String) -> Result<bool, DiffuseError> {
+        lock(&self.held).add_token(&name, &scheme, &value).map_err(failed)
+    }
+
     pub fn undo(&self, target_name: String) -> Result<bool, DiffuseError> {
         lock(&self.held).undo(&target(&target_name)?).map_err(failed)
     }

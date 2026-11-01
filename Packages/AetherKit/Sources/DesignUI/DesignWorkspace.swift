@@ -21,7 +21,7 @@ public struct DesignWorkspace: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
-                DesignCanvas(model: model, revision: document.revision &+ model.pictureRevision, pageID: model.componentID.map { "component:\($0)@\(model.componentBreakpoint ?? "")" } ?? model.pageID, selection: model.selection, editing: model.overriding?.key, fitRequest: model.fitRequest,
+                DesignCanvas(model: model, revision: document.revision &+ model.pictureRevision, pageID: (model.componentID.map { "component:\($0)@\(model.componentBreakpoint ?? "")" } ?? model.pageID ?? "") + "~\(model.scheme ?? "")", selection: model.selection, editing: model.overriding?.key, fitRequest: model.fitRequest,
                              insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0, model.codeOpen ? 260 : 72))
                 HStack(alignment: .top, spacing: 0) {
                     DesignNavigator(model: model, document: document)
@@ -377,7 +377,8 @@ private struct TokenRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                let color = resolver.kind(of: token) == .color ? resolver.color(token.name) : nil
+                // This row's own value: a scheme's row shows the scheme's.
+                let color = resolver.kind(of: token) == .color ? resolver.color(token.value) : nil
                 if let color {
                     ColorPicker(token.name, selection: Binding(
                         get: { Color(nsColor: color) },
@@ -388,6 +389,22 @@ private struct TokenRow: View {
                 }
                 Text(token.name).font(.aeMono).foregroundStyle(Color.ink).lineLimit(1)
                 Spacer(minLength: 0)
+                // A colour's light and dark values: what schemes are for.
+                if token.scope == ":root", resolver.kind(of: token) == .color {
+                    let missing = ["light", "dark"].filter { scheme in !(model.document?.tokens.contains { $0.name == token.name && $0.scope == DesignResolver.scope(of: scheme) } ?? false) }
+                    if !missing.isEmpty {
+                        Menu {
+                            ForEach(missing, id: \.self) { scheme in
+                                Button("Give It a \(scheme.prefix(1).uppercased() + scheme.dropFirst()) Value") { model.addToken(token, scheme: scheme) }
+                            }
+                        } label: {
+                            Image(systemName: "circle.lefthalf.filled").font(.system(size: 10))
+                        }
+                        .menuStyle(.borderlessButton).fixedSize()
+                        .help("A value for the light or dark scheme, in its prefers-color-scheme block")
+                        .accessibilityLabel("Give \(token.name) a light or dark value")
+                    }
+                }
             }
             CommitField(title: "\(token.name) value", value: token.value) { model.setToken(token, to: $0) }
         }
@@ -852,6 +869,15 @@ private struct DesignStatusBar: View {
                 Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)).foregroundStyle(Color.ink3)
                 Image(systemName: "diamond").font(.system(size: 9)).foregroundStyle(Color.lavender)
                 Text(component.name).font(.system(size: 11.5)).foregroundStyle(Color.inkHi)
+            }
+            if !model.schemes.isEmpty {
+                Divider().frame(height: 12)
+                Picker("Appearance", selection: Binding(get: { model.scheme ?? "" }, set: { model.scheme = $0.isEmpty ? nil : $0 })) {
+                    Text("As written").tag("")
+                    ForEach(model.schemes, id: \.self) { Text($0.prefix(1).uppercased() + $0.dropFirst()).tag($0) }
+                }
+                .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
+                .help("Draw the page as a browser would in its light or dark scheme")
             }
             if !document.unsaved.isEmpty {
                 Divider().frame(height: 12)

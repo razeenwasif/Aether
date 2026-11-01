@@ -223,6 +223,25 @@ public final class DesignDocument {
     /// step, the same when it was merged into the last.
     public var steps: Int { done.count }
 
+    /// A token given a value for `scheme` (`light` or `dark`): spliced into
+    /// that scheme's block, made if there's none, as one step.
+    @discardableResult
+    public func addToken(_ name: String, scheme: String, value: String) -> Bool {
+        defer { reload("theme") }
+        do {
+            let changed = try editor.addToken(name: name, scheme: scheme, value: value)
+            refusal = nil
+            if changed {
+                done.append(Step(target: "theme", label: "\(scheme.prefix(1).uppercased() + scheme.dropFirst()) \(name)"))
+                undone.removeAll()
+            }
+            return changed
+        } catch {
+            refusal = Self.describe(error)
+            return false
+        }
+    }
+
     /// The next step back's name and the next step on's.
     public var undoLabel: String? { done.last?.label }
     public var redoLabel: String? { undone.last?.label }

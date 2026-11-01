@@ -125,6 +125,31 @@ fn a_token_is_spliced_and_undone_to_the_same_bytes() {
 }
 
 #[test]
+fn a_token_is_given_a_schemes_value_in_its_block_and_undone_to_the_same_bytes() {
+    let (_, mut design) = made("schemes");
+    let before = design.theme.text().to_string();
+    let light = aether_design::theme::ThemeDoc::scheme_scope("light");
+    // Into the light block, after its last token, as indented.
+    assert!(design.add_token("--radius-md", "light", "6px").unwrap());
+    let after = design.theme.text().to_string();
+    assert!(after.contains("    --color-lantern-ink: #fffaf0;\n    --radius-md: 6px;\n  }"), "{after}");
+    assert!(design.theme.tokens().iter().any(|t| t.name == "--radius-md" && t.scope == light));
+    // Said again, it's a set.
+    assert!(design.add_token("--radius-md", "light", "4px").unwrap());
+    assert_eq!(design.theme.text().matches("--radius-md").count(), 2);
+    // No dark block yet: one of its own, at the end.
+    assert!(design.add_token("--color-ground", "dark", "#05070a").unwrap());
+    assert!(design.theme.text().ends_with("@media (prefers-color-scheme: dark) {\n  :root {\n    --color-ground: #05070a;\n  }\n}\n"));
+    for _ in 0..3 {
+        assert!(design.undo(&Target::Theme).unwrap());
+    }
+    assert_eq!(design.theme.text(), before);
+    for (name, scheme, value) in [("color", "dark", "red"), ("--x", "dusk", "red"), ("--x", "dark", "red; }")] {
+        assert!(design.add_token(name, scheme, value).is_err(), "{name} {scheme} {value}");
+    }
+}
+
+#[test]
 fn a_token_value_that_would_break_the_stylesheet_is_refused() {
     let (_, mut design) = made("token-refused");
     for bad in ["red; --x: blue", "red }", "", "red /* why */"] {

@@ -52,6 +52,20 @@ const THEME: &str = "/* The palette. Layers use these tokens; change one here an
   --type-label-md: 600 15px/1 system-ui, sans-serif;
   --type-eyebrow: 600 13px/1 system-ui, sans-serif;
 }
+
+/* By day: the same page on paper. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-ground: #f6f1e4;
+    --color-surface: #ebe3d0;
+    --color-line: #cfc3a8;
+    --color-ink: #1f1b14;
+    --color-ink-muted: #5c5546;
+    /* Deep enough to read on paper; the buttons' words light on it. */
+    --color-lantern-500: #9a5b06;
+    --color-lantern-ink: #fffaf0;
+  }
+}
 ";
 
 /// The files of a new design called `name`.

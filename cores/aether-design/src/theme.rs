@@ -84,6 +84,67 @@ impl ThemeDoc {
         Ok(true)
     }
 
+    /// The scope a scheme's tokens are in, as Proton's scanner names it.
+    pub fn scheme_scope(scheme: &str) -> String {
+        format!("@media (prefers-color-scheme: {scheme}) > :root")
+    }
+
+    /// `name` given a value for `scheme` (`light` or `dark`), as one step:
+    /// set if the scheme says it already; else a line after the scheme's
+    /// last token, as indented; else a block of its own at the end of the
+    /// file. Nothing else in the file moves.
+    pub fn add(&mut self, name: &str, scheme: &str, value: &str) -> Result<bool, String> {
+        if scheme != "light" && scheme != "dark" {
+            return Err(format!("{scheme:?} isn't a scheme: light or dark"));
+        }
+        let plain = name.strip_prefix("--").is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        if !plain {
+            return Err(format!("{name:?} isn't a token's name"));
+        }
+        let value = value.trim();
+        if value.is_empty() || value.contains([';', '{', '}', '\n']) || value.contains("/*") {
+            return Err(format!("{value:?} can't be a token's value"));
+        }
+        let scope = Self::scheme_scope(scheme);
+        if self.tokens().iter().any(|t| t.name == name && t.scope == scope) {
+            return self.set(name, &scope, value);
+        }
+        let was = self.text().to_string();
+        let mut text = was.clone();
+        match self.tokens().iter().filter(|t| t.scope == scope).last() {
+            Some(last) => {
+                // After the last token's line, as indented as it is.
+                let starts: Vec<usize> = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1)).collect();
+                let start = starts[(last.line - 1).min(starts.len() - 1)];
+                let end = text[start..].find('\n').map(|i| start + i).unwrap_or(text.len());
+                let line = &text[start..end];
+                let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+                // The last declaration in a block may have gone without its
+                // `;`; with another after it, it can't.
+                let close = if line.trim_end().ends_with(';') { "" } else { ";" };
+                let at = start + line.trim_end().len();
+                text.replace_range(at..end, &format!("{close}\n{indent}{name}: {value};"));
+            }
+            None => {
+                if !text.is_empty() && !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str(&format!("\n@media (prefers-color-scheme: {scheme}) {{\n  :root {{\n    {name}: {value};\n  }}\n}}\n"));
+            }
+        }
+        self.theme = Theme::parse(&text);
+        if !self.tokens().iter().any(|t| t.name == name && t.scope == scope && t.value == value) {
+            self.theme = Theme::parse(&was);
+            return Err(format!("{name} couldn't be added to the {scheme} scheme"));
+        }
+        self.undo.push(was);
+        if self.undo.len() > UNDO {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+        Ok(true)
+    }
+
     pub fn undo(&mut self) -> bool {
         let Some(was) = self.undo.pop() else { return false };
         self.redo.push(self.text().to_string());

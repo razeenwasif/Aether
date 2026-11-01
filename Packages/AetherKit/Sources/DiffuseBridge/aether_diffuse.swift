@@ -1387,6 +1387,12 @@ public func FfiConverterTypeCanvasEditor_lower(_ value: CanvasEditor) -> UInt64 
 public protocol DesignEditorProtocol: AnyObject, Sendable {
     
     /**
+     * A token given a value for a scheme, `light` or `dark`, as a step of
+     * `theme`.
+     */
+    func addToken(name: String, scheme: String, value: String) throws  -> Bool
+    
+    /**
      * A batch of ops (JSON, Game's ops) on `design`, `page:<id>` or
      * `component:<id>`, whole or not at all. Whether it changed anything.
      */
@@ -1558,6 +1564,22 @@ public static func `open`(path: String)throws  -> DesignEditor  {
 }
     
 
+    
+    /**
+     * A token given a value for a scheme, `light` or `dark`, as a step of
+     * `theme`.
+     */
+open func addToken(name: String, scheme: String, value: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_add_token(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(scheme),
+        FfiConverterString.lower(value),uniffiCallStatus
+    )
+})
+}
     
     /**
      * A batch of ops (JSON, Game's ops) on `design`, `page:<id>` or
@@ -5935,6 +5957,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_canvaseditor_view() != 12964) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_add_token() != 48049) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_apply() != 61688) {

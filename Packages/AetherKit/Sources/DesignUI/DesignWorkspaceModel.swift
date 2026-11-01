@@ -118,7 +118,24 @@ public final class DesignWorkspaceModel {
     }
     /// The chosen layer, as the breakpoint or option being edited has it.
     public var chosen: DesignLayer? { selection.flatMap { pageHere?.layer($0) } }
-    public var resolver: DesignResolver { DesignResolver(tokens: document?.tokens ?? []) }
+    public var resolver: DesignResolver { DesignResolver(tokens: document?.tokens ?? [], scheme: scheme) }
+
+    /// The scheme the artboards are drawn in, `light` or `dark`: what its
+    /// `prefers-color-scheme` block says laid over `:root`. Nil, as written.
+    public var scheme: String?
+
+    /// The schemes the theme says anything for.
+    public var schemes: [String] { DesignResolver.schemes(in: document?.tokens ?? []) }
+
+    /// A token given a value for `scheme`, its own value to start with when
+    /// none is given: one step of the theme.
+    public func addToken(_ token: DesignToken, scheme: String, value: String? = nil) {
+        guard let document else { return }
+        let before = document.steps
+        document.addToken(token.name, scheme: scheme, value: value ?? token.value)
+        if let refusal = document.refusal { notice = refusal }
+        if document.steps > before { stepped("\(scheme.prefix(1).uppercased() + scheme.dropFirst()) \(token.name)") }
+    }
 
     /// The breakpoint being edited when it's not the widest, or the option
     /// of a component's prop: where a change is what it says, not the

@@ -120,15 +120,21 @@ public struct DesignFont: Hashable, Sendable {
 }
 
 /// A design's tokens, resolved: a layer says `--color-lantern-500` and this
-/// says what colour that is now. `:root`'s tokens are the palette drawn;
-/// a dark palette in a media query is listed by the Tokens tab but not yet
-/// drawn.
+/// says what colour that is now. `:root`'s tokens are the palette drawn, and
+/// with a scheme (`light` or `dark`), what that scheme's
+/// `@media (prefers-color-scheme: …)` block says laid over them, as a
+/// browser does.
 public struct DesignResolver: Sendable {
     private var values: [String: String] = [:]
 
-    public init(tokens: [DesignToken]) {
+    public init(tokens: [DesignToken], scheme: String? = nil) {
         for token in tokens where token.scope == ":root" && values[token.name] == nil {
             values[token.name] = token.value
+        }
+        if let scheme {
+            for token in tokens where token.scope == Self.scope(of: scheme) {
+                values[token.name] = token.value
+            }
         }
         // Tokens declared only elsewhere still resolve, to something.
         for token in tokens where values[token.name] == nil {
@@ -137,6 +143,16 @@ public struct DesignResolver: Sendable {
     }
 
     public func has(_ token: String) -> Bool { values[token] != nil }
+
+    /// The scope a scheme's tokens are in, as Proton's scanner names it.
+    public static func scope(of scheme: String) -> String {
+        "@media (prefers-color-scheme: \(scheme)) > :root"
+    }
+
+    /// The schemes `tokens` say anything for, light before dark.
+    public static func schemes(in tokens: [DesignToken]) -> [String] {
+        ["light", "dark"].filter { scheme in tokens.contains { $0.scope == scope(of: scheme) } }
+    }
 
     /// A word as CSS would read it: a token's value, its `var()`s followed,
     /// or the word itself.

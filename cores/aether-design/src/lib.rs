@@ -312,6 +312,12 @@ impl Design {
         self.theme.set(name, scope, value)
     }
 
+    /// A token given a value for a scheme, `light` or `dark`, as a step of
+    /// the theme.
+    pub fn add_token(&mut self, name: &str, scheme: &str, value: &str) -> Result<bool, String> {
+        self.theme.add(name, scheme, value)
+    }
+
     /// Component `id` made from frame `layer` of page `page`, called `name`:
     /// the frame and what's in it become the component, and an instance of
     /// it takes the frame's place, with its id, its sizes and its place.

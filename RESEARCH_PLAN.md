@@ -1778,6 +1778,26 @@ Not yet:
     - Centring the title at Mobile centred it on the component's Mobile artboard and the page's, and not on Desktop.
 - **Next for Design:** sync as React or Tailwind, the dark palette drawn, and Pagepilot's layout review.
 
+**2026-11-01 · Design: light and dark schemes, drawn and given values.** The user said "continue". Of the three left (React or Tailwind sync, the dark palette, Pagepilot), the dark palette came first: the user had chosen HTML + CSS for sync, and Proton's token format already holds schemes.
+
+- **Drawn:** `DesignResolver(tokens:scheme:)` lays a scheme's tokens, those in `@media (prefers-color-scheme: <scheme>) > :root` as Proton's scanner scopes them, over `:root`'s, as a browser does.
+  - The status bar's **Appearance** (As written · Light · Dark, the schemes the theme says anything for) sets the model's `scheme`. The canvas redraws with it, and every token picker resolves with it.
+  - A Tokens row's swatch is now its own value: a scheme's row showed `:root`'s.
+- **Given values** (`ThemeDoc::add`, `Design::add_token`): a token gets a light or dark value as one theme step.
+  - If the scheme already says it, it's a set. Otherwise the line goes after the scheme's last token, as indented, adding the `;` a last declaration may have left off. With no block, one is made at the end of the file.
+  - Nothing else moves, the result is checked by re-scanning, and undo puts back the same bytes. Names and values are checked as before.
+  - In the Tokens tab a colour's ◐ menu offers whichever of Light and Dark it lacks, starting from its own value.
+- **Starter:** a light scheme, "by day: the same page on paper" (ground `#f6f1e4`, surface, line, ink, muted ink).
+  - On screen the lantern yellow failed contrast on paper (the eyebrow about 1.8:1). The scheme now deepens it to `#9a5b06` (about 4.9:1 on paper) and lightens its buttons' words to `#fffaf0` (about 5.3:1 on it).
+- **Checked:**
+  - Rust: 1 new test (33). A token added into a scheme's block after its last line, said again as a set, a dark block made at the end, all undone to the same bytes, and bad names, schemes and values refused.
+  - Swift: 1 new test (36 for Design; 228 in all). The starter's light scheme drawn, what it doesn't say left to `:root`, a dark value added, a token added from its own value, and both undone.
+  - On screen:
+    - Light drew the page on paper on both artboards.
+    - After the contrast fix, the eyebrow and Wishlist button read clearly.
+    - The ◐ menu gave `--color-ground` a Dark value, and Dark joined Appearance.
+- **Next for Design:** Pagepilot's layout review, and sync as React or Tailwind.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

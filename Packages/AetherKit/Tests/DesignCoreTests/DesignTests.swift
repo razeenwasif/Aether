@@ -196,6 +196,27 @@ struct DesignWorkspaceTests {
         #expect(model.document?.unsaved.sorted() == ["pages/home.page.json", "theme.css"])
     }
 
+    @Test func aSchemeIsDrawnAsABrowserWouldAndGivenValues() throws {
+        let model = try opened()
+        #expect(model.schemes == ["light"], "the starter's paper")
+        #expect(model.resolver.resolve("--color-ground") == "#0f1412")
+        model.scheme = "light"
+        #expect(model.resolver.resolve("--color-ground") == "#f6f1e4")
+        #expect(model.resolver.resolve("--color-lantern-500") == "#9a5b06", "deep enough to read on paper")
+        #expect(model.resolver.resolve("--color-surface") != "#18201c" && model.resolver.resolve("--space-8") == "32px", "unsaid by the scheme: :root's")
+        let lantern = try #require(model.document?.tokens.first { $0.name == "--color-lantern-500" && $0.scope == ":root" })
+        model.addToken(lantern, scheme: "dark", value: "#ffd27a")
+        #expect(model.schemes == ["light", "dark"] && model.undoLabel == "Dark --color-lantern-500")
+        model.scheme = "dark"
+        #expect(model.resolver.resolve("--color-lantern-500") == "#ffd27a" && model.resolver.resolve("--color-ground") == "#0f1412")
+        let radius = try #require(model.document?.tokens.first { $0.name == "--radius-md" })
+        model.addToken(radius, scheme: "light")
+        #expect(model.document?.tokens.contains { $0.name == "--radius-md" && $0.scope == DesignResolver.scope(of: "light") && $0.value == "12px" } == true, "its own value to start with")
+        model.undo()
+        model.undo()
+        #expect(model.schemes == ["light"] && model.document?.unsaved.isEmpty == true)
+    }
+
     @Test func aColourDraggedThroughManyValuesIsOneStep() throws {
         let model = try opened()
         let token = try #require(model.document?.tokens.first { $0.name == "--color-ink" })
