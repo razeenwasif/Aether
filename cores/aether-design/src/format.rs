@@ -73,11 +73,15 @@ pub struct DesignFile {
     /// Its pages' ids, in the order they are listed; each is
     /// `pages/<id>.page.json`.
     pub pages: Vec<String>,
+    /// The folder of HTML and CSS it's kept in step with, from the design's
+    /// folder or whole: a project's `src/components` (see [`crate::sync`]).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub sync: String,
 }
 
 impl Default for DesignFile {
     fn default() -> DesignFile {
-        DesignFile { format: FORMAT, name: String::new(), pages: Vec::new() }
+        DesignFile { format: FORMAT, name: String::new(), pages: Vec::new(), sync: String::new() }
     }
 }
 

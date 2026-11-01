@@ -99,6 +99,51 @@ public final class DesignDocument {
         }
     }
 
+    // MARK: Sync
+
+    /// The folder of HTML and CSS the design is kept in step with: as
+    /// `design.json` says it, from the design's folder or whole (as the
+    /// core reads it), and observed with the view.
+    public var syncFolder: URL? {
+        let said = view.design.sync.trimmingCharacters(in: .whitespaces)
+        guard !said.isEmpty else { return nil }
+        let url = said.hasPrefix("/") ? URL(fileURLWithPath: said, isDirectory: true) : url.appending(path: said, directoryHint: .isDirectory)
+        return url.standardizedFileURL
+    }
+
+    /// The files that folder holds, by where they are in it.
+    public var syncFiles: [String] { editor.syncFiles() }
+
+    /// Keep the design in step with `path` (from the design's folder, or
+    /// whole), or with nothing: one step of `design.json`.
+    @discardableResult
+    public func setSync(_ path: String?, label: String) -> Bool {
+        apply([.set(["sync"], path ?? "")], target: "design", label: label)
+    }
+
+    /// Write the folder's files as the design is now; those written.
+    public func syncOut() throws -> [String] {
+        try editor.syncOut()
+    }
+
+    /// A file of the folder, as `text`, read back: one step, called
+    /// `From <file>`, when it changes anything.
+    public func syncIn(_ rel: String, text: String) -> DesignSyncRead? {
+        do {
+            let read = try Self.decode(DesignSyncRead.self, editor.syncIn(rel: rel, text: text))
+            refusal = nil
+            if read.changed {
+                done.append(Step(target: read.target, label: "From \(rel)"))
+                undone.removeAll()
+                reload(read.target)
+            }
+            return read
+        } catch {
+            refusal = Self.describe(error)
+            return nil
+        }
+    }
+
     /// Instance `layer` of page `page` made plain layers again: one step of
     /// the page.
     @discardableResult

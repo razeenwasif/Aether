@@ -432,3 +432,102 @@ fn an_instance_detached_is_its_components_layers_as_its_own() {
     assert_eq!(home(&design).layer("trailer").unwrap().kind, Kind::Instance);
     assert!(design.detach("home", "hero").unwrap_err().contains("isn't an instance"));
 }
+
+/// A design kept in step with a folder beside it, written once.
+fn synced(name: &str) -> (PathBuf, Design, PathBuf) {
+    let (dir, mut design) = made(name);
+    let folder = dir.join("src/components");
+    assert!(design.apply(&Target::Design, &ops(json!([{"op": "set", "path": ["sync"], "value": "src/components"}]))).unwrap());
+    design.save().unwrap();
+    let written = design.sync_out().unwrap();
+    assert!(written.contains(&"button.css".to_string()) && written.contains(&"pages/home.html".to_string()), "{written:?}");
+    (dir, design, folder)
+}
+
+fn edit(folder: &PathBuf, rel: &str, from: &str, to: &str) -> String {
+    let text = std::fs::read_to_string(folder.join(rel)).unwrap();
+    assert!(text.contains(from), "{rel} has no {from:?}:\n{text}");
+    text.replacen(from, to, 1)
+}
+
+#[test]
+fn what_sync_writes_reads_back_as_no_change() {
+    let (_, mut design, folder) = synced("sync-round");
+    for rel in ["theme.css", "button.css", "button.html", "pages/home.css", "pages/home.html"] {
+        assert!(folder.join(rel).exists(), "{rel}");
+    }
+    for rel in ["button.css", "button.html", "pages/home.css", "pages/home.html"] {
+        let text = std::fs::read_to_string(folder.join(rel)).unwrap();
+        let read = design.sync_in(rel, &text).unwrap();
+        assert!(!read.changed && read.notes.is_empty(), "{rel}: {:?}", read.notes);
+    }
+    // The page links the files beside it.
+    let page = std::fs::read_to_string(folder.join("pages/home.html")).unwrap();
+    assert!(page.contains("href=\"../theme.css\"") && page.contains("href=\"../button.css\"") && page.contains("href=\"home.css\""));
+    // Nothing changed, nothing written again.
+    assert!(design.sync_out().unwrap().is_empty());
+}
+
+#[test]
+fn a_components_css_edited_comes_back_as_one_step() {
+    let (_, mut design, folder) = synced("sync-css");
+    let text = edit(&folder, "button.css", ".button__label {\n", ".button__label {\n  text-align: center;\n");
+    let text = text.replacen("border: 1px solid var(--color-line);", "border: 1px solid var(--color-ink);", 1);
+    let read = design.sync_in("button.css", &text).unwrap();
+    assert!(read.changed && read.target == "component:button", "{read:?}");
+    let button = design.component("button").unwrap().get();
+    assert_eq!(button.layer("label").unwrap().style.text_align.as_deref(), Some("center"));
+    assert_eq!(button.layer("button").unwrap().when["variant=secondary"].style.stroke.as_deref(), Some("--color-ink"));
+    assert!(design.undo(&component_target("button")).unwrap());
+    assert_eq!(design.component("button").unwrap().get().layer("label").unwrap().style.text_align, None);
+}
+
+#[test]
+fn a_pages_css_and_its_media_query_come_back() {
+    let (_, mut design, folder) = synced("sync-page-css");
+    let text = edit(&folder, "pages/home.css", "padding: var(--space-16) var(--space-8);", "padding: 40px var(--space-8);");
+    let text = text.replacen("font: var(--type-display-sm);", "font: var(--type-title);", 1);
+    let read = design.sync_in("pages/home.css", &text).unwrap();
+    assert!(read.changed && read.notes.is_empty(), "{read:?}");
+    let page = home(&design);
+    assert_eq!(page.layer("hero").unwrap().layout.pad_v, Some(aether_design::format::Val::Num(40.0)));
+    assert_eq!(page.layer("title").unwrap().at["mobile"].style.font.as_deref(), Some("--type-title"));
+    // How a layer sits in its frame is the inspector's: an edit to it isn't read.
+    assert!(text.contains("flex: 1 1 240px;"));
+    let sizing = text.replacen("flex: 1 1 240px;", "flex: 1 1 300px;", 1);
+    assert!(!design.sync_in("pages/home.css", &sizing).unwrap().changed);
+    assert_eq!(home(&design).layer("lantern").unwrap().min_w, Some(240.0));
+}
+
+#[test]
+fn words_edited_in_the_html_come_back_to_the_page_and_the_instance() {
+    let (_, mut design, folder) = synced("sync-html");
+    let text = edit(&folder, "pages/home.html", "Carry the light through the Hollow Grove.", "Carry the light &amp; find the way.");
+    let text = text.replacen("<p class=\"button__label\">Watch the trailer</p>", "<p class=\"button__label\">See it move<br>now</p>", 1);
+    let read = design.sync_in("pages/home.html", &text).unwrap();
+    assert!(read.changed, "{read:?}");
+    assert_eq!(home(&design).layer("title").unwrap().text, "Carry the light & find the way.");
+    assert_eq!(home(&design).layer("trailer").unwrap().texts["label"], "See it move\nnow");
+    // The component's own word, and the instance says none of its own.
+    let own = text.replacen("See it move<br>now", "Button", 1);
+    design.sync_in("pages/home.html", &own).unwrap();
+    assert!(home(&design).layer("trailer").unwrap().texts.is_empty());
+    let component = edit(&folder, "button.html", ">Button<", ">Go<");
+    assert!(design.sync_in("button.html", &component).unwrap().changed);
+    assert_eq!(design.component("button").unwrap().get().layer("label").unwrap().text, "Go");
+}
+
+#[test]
+fn what_sync_cant_take_is_said_and_left() {
+    let (_, mut design, folder) = synced("sync-notes");
+    let text = edit(&folder, "button.css", ".button__label {\n", ".button__label {\n  box-shadow: 0 1px 2px black;\n");
+    let text = format!("{text}\n.glow {{ color: red; }}\n");
+    let read = design.sync_in("button.css", &text).unwrap();
+    assert!(!read.changed);
+    assert_eq!(read.notes.len(), 2, "{:?}", read.notes);
+    assert!(read.notes[0].contains("box-shadow") && read.notes[1].contains(".glow"));
+    let markup = edit(&folder, "pages/home.html", ">LUMEN<", "><b>LUMEN</b><");
+    let read = design.sync_in("pages/home.html", &markup).unwrap();
+    assert!(read.notes.iter().any(|n| n.contains("holds markup")), "{:?}", read.notes);
+    assert!(design.sync_in("elsewhere/x.css", "").is_err());
+}

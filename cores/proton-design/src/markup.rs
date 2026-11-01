@@ -89,6 +89,23 @@ pub struct Layer {
     pub(crate) inner: Range<usize>,
 }
 
+impl Layer {
+    /// Everything between its tags, as `source` (the text it was read from)
+    /// has it, unshortened: what [`text`](Layer::text) is a label of.
+    ///
+    /// Added in Aether, for Design's sync to read words back whole.
+    pub fn inner<'a>(&self, source: &'a str) -> Option<&'a str> {
+        source.get(self.inner.clone())
+    }
+
+    /// An attribute's value as `source` has it, if the element has it.
+    pub fn attribute<'a>(&self, source: &'a str, name: &str) -> Option<&'a str> {
+        let tag = source.get(self.open.clone())?;
+        let found = attribute_span(tag, name)?;
+        source.get(self.open.start + found.value.start..self.open.start + found.value.end)
+    }
+}
+
 /// Elements that never have children or a closing tag.
 const VOID: &[&str] = &[
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",

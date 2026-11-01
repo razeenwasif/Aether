@@ -30,6 +30,7 @@
 pub mod format;
 pub mod html;
 pub mod starter;
+pub mod sync;
 pub mod theme;
 
 use std::path::{Path, PathBuf};

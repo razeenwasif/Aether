@@ -447,6 +447,7 @@ private struct DesignInspector: View {
                     Text("Click a layer to choose it; double-click text to type into it; Esc chooses the frame it's in. A adds a frame, T text, R a shape, inside the chosen frame; + adds an image. A change made on a narrower artboard holds there and narrower, and its row is marked. Drag the empty canvas or use two fingers to move; pinch or ⌘-scroll to zoom; f shows it all. ⌘/ shows the code.")
                         .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 }
+                SyncSection(model: model, document: document)
                 if !document.view.problems.isEmpty {
                     PanelSection("Missing tokens") {
                         ForEach(document.view.problems, id: \.self) { Text($0).font(.aeSmall).foregroundStyle(Color.coral).fixedSize(horizontal: false, vertical: true) }
@@ -572,6 +573,51 @@ private struct LayerInspector: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
+                }
+            }
+        }
+    }
+}
+
+/// The folder of HTML and CSS the design is kept in step with: where it is,
+/// a way to choose or type another, and what the last file read back
+/// couldn't take.
+private struct SyncSection: View {
+    let model: DesignWorkspaceModel
+    let document: DesignDocument
+
+    var body: some View {
+        PanelSection("Sync") {
+            if let folder = model.syncFolder {
+                Text(verbatim: folder.path(percentEncoded: false)).font(.aeMono).foregroundStyle(Color.ink).lineLimit(2).truncationMode(.head)
+                    .help(folder.path(percentEncoded: false))
+                Text("Each component and page is written here as HTML and CSS on every save. Edit a colour, a font, padding or words there and it comes back as a step.")
+                    .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
+                    Button("Write Now") { model.keepInStep(with: folder) }
+                    Spacer(minLength: 0)
+                    Button("Stop") { model.keepInStep(with: nil) }
+                }
+                .buttonStyle(.borderless).font(.aeSmall)
+                ForEach(model.syncNotes, id: \.self) { note in
+                    Text(note).font(.aeSmall).foregroundStyle(Color.amber).fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("Keep the design in step with a folder of HTML and CSS — a project's src/components — written on every save and read back when edited there.")
+                    .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Choose a Folder…", action: model.chooseSyncFolder)
+                        .buttonStyle(.borderless).font(.aeSmall)
+                    Spacer(minLength: 0)
+                }
+                InspectorRow("Or a path") {
+                    CommitField(title: "Sync folder path", value: "", prompt: "src/components") { typed in
+                        let path = typed.trimmingCharacters(in: .whitespaces)
+                        guard !path.isEmpty else { return }
+                        let url = path.hasPrefix("/") ? URL(fileURLWithPath: path) : document.url.appending(path: path)
+                        model.keepInStep(with: url)
+                    }
                 }
             }
         }

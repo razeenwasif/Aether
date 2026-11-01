@@ -49,17 +49,29 @@ pub fn markup(page: &Page, components: &BTreeMap<String, Component>, id: &str, b
 /// The rules for `id` and everything in it: each component it places, once;
 /// the page's own; then what each narrower breakpoint changes.
 pub fn css(page: &Page, components: &BTreeMap<String, Component>, id: &str) -> String {
+    let mut out: String = used(page, components, id).iter().filter_map(|c| components.get(c)).map(component_css).collect();
+    out.push_str(&page_css(page, components, id));
+    out
+}
+
+/// The components `id` and everything in it place, in the order they're
+/// first placed.
+pub fn used(page: &Page, components: &BTreeMap<String, Component>, id: &str) -> Vec<String> {
     let page = expand(page, components);
-    let mut out = String::new();
-    let mut used: Vec<&str> = Vec::new();
+    let mut out: Vec<String> = Vec::new();
     for layer in page.subtree(id) {
-        if !layer.component.is_empty() && !used.contains(&layer.component.as_str()) {
-            used.push(&layer.component);
+        if !layer.component.is_empty() && !out.contains(&layer.component) {
+            out.push(layer.component.clone());
         }
     }
-    for c in used.iter().filter_map(|c| components.get(*c)) {
-        out.push_str(&component_css(c));
-    }
+    out
+}
+
+/// The page's own rules for `id` and everything in it, and what each
+/// narrower breakpoint changes: the components it places are theirs.
+pub fn page_css(page: &Page, components: &BTreeMap<String, Component>, id: &str) -> String {
+    let page = expand(page, components);
+    let mut out = String::new();
     for layer in page.subtree(id) {
         block(&mut out, "", &layer.id, &page_rules(&page, layer));
     }
@@ -81,6 +93,24 @@ pub fn css(page: &Page, components: &BTreeMap<String, Component>, id: &str) -> S
             out.push_str("}\n");
         }
     }
+    out
+}
+
+/// The whole page as a document whose rules are files beside it: the theme,
+/// each component it places, and its own, under `styles` (`../`).
+pub fn linked_document(page: &Page, components: &BTreeMap<String, Component>, styles: &str, base: &str) -> String {
+    let mut out = String::new();
+    out.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
+    out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
+    let _ = writeln!(out, "<title>{}</title>", escape(&page.name));
+    let _ = writeln!(out, "<link rel=\"stylesheet\" href=\"{}theme.css\">", escape(styles));
+    for c in used(page, components, &page.root) {
+        let _ = writeln!(out, "<link rel=\"stylesheet\" href=\"{}{c}.css\">", escape(styles));
+    }
+    let _ = writeln!(out, "<link rel=\"stylesheet\" href=\"{}.css\">", escape(&page.id));
+    out.push_str("<style>\n* { box-sizing: border-box; margin: 0; }\nbody { margin: 0; }\n</style>\n</head>\n<body>\n");
+    out.push_str(&markup(page, components, &page.root, base));
+    out.push_str("</body>\n</html>\n");
     out
 }
 

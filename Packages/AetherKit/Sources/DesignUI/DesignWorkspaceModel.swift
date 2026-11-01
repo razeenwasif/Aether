@@ -74,6 +74,15 @@ public final class DesignWorkspaceModel {
     @ObservationIgnored private var listening: Listening?
     /// Pictures being written, one after another.
     @ObservationIgnored private(set) var writing: Task<Void, Never>?
+    /// What the sync folder's files couldn't take the last time one was read
+    /// back, in words.
+    public private(set) var syncNotes: [String] = []
+    /// The look, once a second, for a file of the sync folder edited
+    /// outside Aether.
+    @ObservationIgnored private var watching: Task<Void, Never>?
+    /// What each file of the sync folder held when it was last written or
+    /// read, by where it is in it.
+    @ObservationIgnored private var known: [String: String] = [:]
 
     public init(folder: URL) {
         self.folder = folder
@@ -165,6 +174,10 @@ public final class DesignWorkspaceModel {
             fitRequest &+= 1
             if let problem = doc.view.problems.first { notice = problem }
             syncImages()
+            // Edits made to the folder while the design was closed come in
+            // as steps, before the next save writes over them.
+            checkSync()
+            watch()
         } catch {
             notice = "Couldn’t open \(url.lastPathComponent): \(DesignDocument.describe(error))"
         }
@@ -190,6 +203,10 @@ public final class DesignWorkspaceModel {
             let path = project.path(of: old.url)
             if old.unsaved.isEmpty { project.forget(document: path) } else { project.discard(document: path) }
         }
+        watching?.cancel()
+        watching = nil
+        known = [:]
+        syncNotes = []
         document = next
     }
 
@@ -758,16 +775,123 @@ public final class DesignWorkspaceModel {
         return documentPath.flatMap { project.redoLabel(in: $0) }
     }
 
-    /// ⌘S: every changed file written.
+    /// ⌘S: every changed file written, and the sync folder's with them.
     public func saveNow() {
         guard let document else { return }
         do {
             let written = try document.save()
             if let project, let path = documentPath { project.documentSaved(path) }
-            notice = written.isEmpty ? nil : "Saved \(written.count == 1 ? written[0] : "\(written.count) files")."
-            noticeIsGood = !written.isEmpty
+            let synced = writeSync() ?? []
+            var said = written.isEmpty ? "" : "Saved \(written.count == 1 ? written[0] : "\(written.count) files")"
+            if !synced.isEmpty, let folder = document.syncFolder {
+                said += said.isEmpty ? "Wrote" : ", and wrote"
+                said += " \(synced.count) file\(synced.count == 1 ? "" : "s") to \(folder.lastPathComponent)"
+            }
+            notice = said.isEmpty ? nil : said + "."
+            noticeIsGood = !said.isEmpty
         } catch {
             notice = "Couldn’t save: \(DesignDocument.describe(error))"
+        }
+    }
+
+    // MARK: Sync
+
+    /// The folder of HTML and CSS the design is kept in step with.
+    public var syncFolder: URL? { document?.syncFolder }
+
+    /// Keep the design in step with `folder` — what it already holds of the
+    /// design's read back, its files written now and on every save, and read
+    /// back when they're edited — or with nothing. One step, and a step a
+    /// file it reads back.
+    public func keepInStep(with folder: URL?) {
+        guard let document else { return }
+        let path = folder.map { Self.path(of: $0, from: document.url) }
+        let label = folder.map { "Keep in Step with \($0.lastPathComponent)" } ?? "Stop Keeping in Step"
+        let before = document.steps
+        if document.setSync(path, label: label), document.steps > before { stepped(label) }
+        if let refusal = document.refusal { notice = refusal }
+        known = [:]
+        syncNotes = []
+        // What the folder already holds of the design's comes in first, so
+        // choosing it never writes over edits made there.
+        checkSync()
+        if let written = writeSync(), let folder = document.syncFolder {
+            let wrote = written.isEmpty ? "Kept in step with \(folder.lastPathComponent)" : "Wrote \(written.count) file\(written.count == 1 ? "" : "s") to \(folder.lastPathComponent)"
+            notice = "\(wrote): edits to its files come back to the design."
+            noticeIsGood = true
+        }
+        watch()
+    }
+
+    /// The Open panel for the folder to keep the design in step with.
+    public func chooseSyncFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Keep in Step"
+        panel.message = "Each component and page is written here as HTML and CSS, and edits to them come back to the design."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        keepInStep(with: url)
+    }
+
+    /// `folder` as `design.json` says it: from the design's folder when
+    /// it's near (`../../src/components`), else whole.
+    static func path(of folder: URL, from design: URL) -> String {
+        let to = folder.standardizedFileURL.pathComponents
+        let from = design.standardizedFileURL.pathComponents
+        let shared = zip(to, from).prefix { $0 == $1 }.count
+        // Nothing shared but the disk's root: whole.
+        guard shared > 1 else { return folder.standardizedFileURL.path }
+        return (Array(repeating: "..", count: from.count - shared) + to[shared...]).joined(separator: "/")
+    }
+
+    /// The folder's files written as the design is now, and remembered as
+    /// what they hold; those written, or nil when there's no folder.
+    @discardableResult
+    func writeSync() -> [String]? {
+        guard let document, let folder = document.syncFolder else { return nil }
+        do {
+            let written = try document.syncOut()
+            for rel in document.syncFiles { known[rel] = try? String(contentsOf: folder.appending(path: rel), encoding: .utf8) }
+            return written
+        } catch {
+            notice = "Couldn’t write to \(folder.lastPathComponent): \(DesignDocument.describe(error))"
+            return nil
+        }
+    }
+
+    /// Each file of the folder that holds something other than what Aether
+    /// last wrote or read, read back: a step a file that changes the design.
+    public func checkSync() {
+        guard let document, let folder = document.syncFolder else { return }
+        for rel in document.syncFiles where rel != "theme.css" {
+            guard let text = try? String(contentsOf: folder.appending(path: rel), encoding: .utf8), text != known[rel] else { continue }
+            known[rel] = text
+            guard let read = document.syncIn(rel, text: text) else {
+                if let refusal = document.refusal { notice = "\(rel) couldn’t be read back: \(refusal)" }
+                continue
+            }
+            if read.changed { stepped("From \(rel)") }
+            if !read.notes.isEmpty {
+                syncNotes = read.notes
+                notice = read.notes.count == 1 ? read.notes[0] : "\(read.notes[0]) (and \(read.notes.count - 1) more, in the inspector)"
+            } else if read.changed {
+                syncNotes = []
+            }
+        }
+    }
+
+    /// Look for edits to the folder once a second while the design is open.
+    private func watch() {
+        watching?.cancel()
+        guard document?.syncFolder != nil else { return }
+        watching = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                self?.checkSync()
+            }
         }
     }
 

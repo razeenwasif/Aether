@@ -283,6 +283,8 @@ public struct AetherCommands: Commands {
             Button("Back to the Page") { design.closeComponent() }
                 .disabled(!onDesign || design.component == nil)
             Divider()
+            Button("Keep in Step with a Folder…") { design.chooseSyncFolder() }
+                .disabled(!onDesign)
             Button("All Designs") { design.close() }
                 .disabled(!onDesign)
         }

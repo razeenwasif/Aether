@@ -1450,6 +1450,27 @@ public protocol DesignEditorProtocol: AnyObject, Sendable {
     func setToken(name: String, scope: String, value: String) throws  -> Bool
     
     /**
+     * The files the folder holds, by where they are in it: what to watch.
+     */
+    func syncFiles()  -> [String]
+    
+    /**
+     * The folder the design is kept in step with, whole, if it has one.
+     */
+    func syncFolder()  -> String?
+    
+    /**
+     * File `rel` of the folder, edited to `text`, read back as one step of
+     * the document it's for. JSON: `{target, changed, notes}`.
+     */
+    func syncIn(rel: String, text: String) throws  -> String
+    
+    /**
+     * Write the folder's files as the design is now; those written.
+     */
+    func syncOut() throws  -> [String]
+    
+    /**
      * The theme's text as it is now, saved or not.
      */
     func themeText()  -> String
@@ -1694,6 +1715,57 @@ open func setToken(name: String, scope: String, value: String)throws  -> Bool  {
         FfiConverterString.lower(name),
         FfiConverterString.lower(scope),
         FfiConverterString.lower(value),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The files the folder holds, by where they are in it: what to watch.
+     */
+open func syncFiles() -> [String]  {
+    return try!  FfiConverterSequenceString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_sync_files(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * The folder the design is kept in step with, whole, if it has one.
+     */
+open func syncFolder() -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_sync_folder(
+            self.uniffiCloneHandle(),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * File `rel` of the folder, edited to `text`, read back as one step of
+     * the document it's for. JSON: `{target, changed, notes}`.
+     */
+open func syncIn(rel: String, text: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_sync_in(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(rel),
+        FfiConverterString.lower(text),uniffiCallStatus
+    )
+})
+}
+    
+    /**
+     * Write the folder's files as the design is now; those written.
+     */
+open func syncOut()throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+        uniffiCallStatus in
+    uniffi_aether_diffuse_fn_method_designeditor_sync_out(
+            self.uniffiCloneHandle(),uniffiCallStatus
     )
 })
 }
@@ -5878,6 +5950,18 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_set_token() != 52924) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_sync_files() != 36462) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_sync_folder() != 47926) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_sync_in() != 54983) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_aether_diffuse_checksum_method_designeditor_sync_out() != 44222) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_method_designeditor_theme_text() != 23926) {

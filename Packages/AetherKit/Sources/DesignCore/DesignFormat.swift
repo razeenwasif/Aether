@@ -433,11 +433,15 @@ public struct DesignView: Decodable, Sendable {
     public struct Info: Decodable, Sendable {
         public var name: String
         public var pages: [String]
-        enum CodingKeys: String, CodingKey { case name, pages }
+        /// The folder of HTML and CSS it's kept in step with, as
+        /// `design.json` says it; empty for none.
+        public var sync: String
+        enum CodingKeys: String, CodingKey { case name, pages, sync }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             name = try c.value(.name, "")
             pages = try c.value(.pages, [])
+            sync = try c.value(.sync, "")
         }
     }
 
@@ -483,6 +487,14 @@ public struct DesignFound: Decodable, Sendable, Identifiable {
 
     public var id: String { path }
     public var url: URL { URL(fileURLWithPath: path, isDirectory: true) }
+}
+
+/// What reading a file of the sync folder back did: the document it
+/// changed, whether it did, and what it couldn't take.
+public struct DesignSyncRead: Decodable, Sendable, Equatable {
+    public var target: String
+    public var changed: Bool
+    public var notes: [String]
 }
 
 /// A layer's code: its elements and the rules that style them.

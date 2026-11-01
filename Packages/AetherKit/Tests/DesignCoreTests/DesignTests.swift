@@ -572,3 +572,91 @@ struct DesignComponentTests {
         #expect(model.notice?.contains("Choose a frame") == true)
     }
 }
+
+@MainActor
+struct DesignSyncTests {
+    private func opened() throws -> (DesignWorkspaceModel, ProjectGraph, URL) {
+        let root = FileManager.default.temporaryDirectory.appending(path: "aether-design-sync-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let model = DesignWorkspaceModel(folder: root.appending(path: "Designs", directoryHint: .isDirectory))
+        let project = ProjectGraph(folder: nil)
+        model.project = project
+        model.create()
+        _ = try #require(model.document, "\(model.notice ?? "")")
+        let folder = root.appending(path: "site/src/components", directoryHint: .isDirectory)
+        model.keepInStep(with: folder)
+        return (model, project, folder)
+    }
+
+    private func edit(_ folder: URL, _ rel: String, _ from: String, _ to: String) throws {
+        let file = folder.appending(path: rel)
+        let text = try String(contentsOf: file, encoding: .utf8)
+        let found = try #require(text.range(of: from), "\(rel) has no \(from)")
+        try text.replacingCharacters(in: found, with: to).write(to: file, atomically: true, encoding: .utf8)
+    }
+
+    @Test func aFolderNearTheDesignIsSaidFromIt() {
+        let design = URL(fileURLWithPath: "/Users/a/Lumen.aether/Designs/lumen", isDirectory: true)
+        #expect(DesignWorkspaceModel.path(of: URL(fileURLWithPath: "/Users/a/site/src/components"), from: design) == "../../../site/src/components")
+        #expect(DesignWorkspaceModel.path(of: URL(fileURLWithPath: "/Volumes/Other/site"), from: design) == "/Volumes/Other/site")
+    }
+
+    @Test func keepingInStepWritesTheFolderAsOneStep() throws {
+        let (model, _, folder) = try opened()
+        #expect(model.undoLabel == "Keep in Step with components")
+        #expect(model.syncFolder?.standardizedFileURL == folder.standardizedFileURL)
+        for rel in ["theme.css", "button.css", "button.html", "pages/home.css", "pages/home.html"] {
+            #expect(FileManager.default.fileExists(atPath: folder.appending(path: rel).path), "\(rel)")
+        }
+        // Nothing edited, nothing read back.
+        model.checkSync()
+        #expect(model.undoLabel == "Keep in Step with components")
+        model.keepInStep(with: nil)
+        #expect(model.syncFolder == nil)
+    }
+
+    @Test func aFileEditedOutsideComesBackAsAStepAndUndoes() throws {
+        let (model, project, folder) = try opened()
+        try edit(folder, "button.css", "border: 1px solid var(--color-line);", "border: 1px solid var(--color-ink);")
+        model.checkSync()
+        #expect(model.document?.component("button")?.layers.first?.when["variant=secondary"]?.style.stroke == "--color-ink")
+        #expect(model.undoLabel == "From button.css" && project.history.done.count == 2)
+        try edit(folder, "pages/home.html", "Carry the light through the Hollow Grove.", "Carry the light home.")
+        model.checkSync()
+        #expect(model.page?.layer("title")?.text == "Carry the light home." && model.undoLabel == "From pages/home.html")
+        model.undo()
+        #expect(model.page?.layer("title")?.text == "Carry the light through the Hollow Grove.")
+        // Saving writes the folder as the design now is.
+        model.saveNow()
+        let page = try String(contentsOf: folder.appending(path: "pages/home.html"), encoding: .utf8)
+        #expect(page.contains("Carry the light through the Hollow Grove."))
+        #expect(model.notice?.contains("wrote") == true)
+    }
+
+    @Test func whatAFileSaysThatALayerDoesntIsSaid() throws {
+        let (model, _, folder) = try opened()
+        try edit(folder, "button.css", ".button__label {\n", ".button__label {\n  letter-spacing: 1px;\n")
+        model.checkSync()
+        #expect(model.syncNotes.count == 1 && model.syncNotes[0].contains("letter-spacing"))
+        #expect(model.notice?.contains("letter-spacing") == true)
+    }
+
+    @Test func aFolderChosenAgainIsReadBeforeItsWrittenOver() throws {
+        let (model, _, folder) = try opened()
+        model.keepInStep(with: nil)
+        try edit(folder, "pages/home.html", ">LUMEN<", ">Lumen<")
+        model.keepInStep(with: folder)
+        #expect(model.page?.layer("logo")?.text == "Lumen")
+        let page = try String(contentsOf: folder.appending(path: "pages/home.html"), encoding: .utf8)
+        #expect(page.contains(">Lumen<"), "the edit stands")
+    }
+
+    @Test func editsMadeWhileTheDesignWasClosedComeInWhenItOpens() throws {
+        let (model, _, folder) = try opened()
+        model.saveNow()
+        let url = try #require(model.document?.url)
+        model.close()
+        try edit(folder, "pages/home.html", ">LUMEN<", ">Lumen<")
+        model.open(url)
+        #expect(model.page?.layer("logo")?.text == "Lumen" && model.undoLabel == "From pages/home.html")
+    }
+}

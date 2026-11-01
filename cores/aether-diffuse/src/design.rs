@@ -117,6 +117,28 @@ impl DesignEditor {
         lock(&self.held).make_component(&page, &layer, &id, &name).map_err(failed)
     }
 
+    /// The folder the design is kept in step with, whole, if it has one.
+    pub fn sync_folder(&self) -> Option<String> {
+        lock(&self.held).sync_folder().map(|p| p.to_string_lossy().to_string())
+    }
+
+    /// The files the folder holds, by where they are in it: what to watch.
+    pub fn sync_files(&self) -> Vec<String> {
+        aether_design::sync::files(&lock(&self.held)).into_iter().map(|f| f.rel).collect()
+    }
+
+    /// Write the folder's files as the design is now; those written.
+    pub fn sync_out(&self) -> Result<Vec<String>, DiffuseError> {
+        lock(&self.held).sync_out().map_err(failed)
+    }
+
+    /// File `rel` of the folder, edited to `text`, read back as one step of
+    /// the document it's for. JSON: `{target, changed, notes}`.
+    pub fn sync_in(&self, rel: String, text: String) -> Result<String, DiffuseError> {
+        let read = lock(&self.held).sync_in(&rel, &text).map_err(failed)?;
+        Ok(json(&serde_json::json!({ "target": read.target, "changed": read.changed, "notes": read.notes })))
+    }
+
     /// Instance `layer` of page `page` made plain layers again: one step of
     /// the page.
     pub fn detach(&self, page: String, layer: String) -> Result<(), DiffuseError> {

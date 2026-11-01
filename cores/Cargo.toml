@@ -10,7 +10,9 @@
 # behind, as Aether runs the simulation natively.
 # proton-design came from 9111812^ (the commit before Proton took Design out
 # of its window), less its TypeScript bindings, with its test's fixture:
-# Proton's window at that commit.
+# Proton's window at that commit. Aether added two readers to its markup's
+# layers (an element's whole inner text, and an attribute's value), for
+# Design's sync to read HTML back.
 # aether-poly and aether-layers are Aether's own: Model's Edit mode and
 # material layers, which Proton never had. aether-design is too: Design's
 # pages, laid out natively where Proton drew HTML in a web view.

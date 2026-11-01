@@ -1683,6 +1683,47 @@ Not yet:
   - On screen: the button's six artboards, Focus turned on as a seventh, and clicking its artboard to edit Focus. Disabling Watch the trailer dimmed it. Detaching it left a frame with its label and "Button · 1 use". The fade fix was checked again on screen.
 - **Not yet:** components inside components, and a component's own breakpoints.
 
+**2026-11-01 · Design: two-way sync with a folder of HTML and CSS.** The user said "push and then start the next step". `main` was pushed to GitHub (`15a4297..b4fac9e`). The next step was the board's "Two-way sync · src/components", and the user chose HTML + CSS over React TSX or Tailwind.
+
+- **Out** (`sync::files`, `Design::sync_out`): `design.json`'s `sync` names a folder, from the design's folder or whole. It holds `theme.css`, each component as `<id>.css` (`html::component_css`) and `<id>.html` (an instance at its defaults), and each page as `pages/<id>.css` (its own rules and media queries, now `html::page_css`) and `pages/<id>.html` (linking `../theme.css`, each component's CSS and its own), plus `images/`. Each file says at its head that it's Aether's and what comes back. It's written on choosing the folder and on every save, and a file is written only when its text changed.
+- **Back in** (`sync::read`, `Design::sync_in`): a file edited in an editor becomes one step of the document it's for.
+  - **CSS:** a small reader for rules and `max-width` media queries that ignores comments and doesn't split on `;` or braces inside strings or parentheses. Each selector is found as the layer it's for: a component's root and layers, an option's or a state's rule, a page's layer, and a media query as the breakpoint a pixel under its wider neighbour. Declarations map back to fields:
+    - `background`, `border`'s colour, `border-radius`, `color`, `font`, `text-align`, `opacity` and `object-fit`;
+    - `gap`, `padding`, `flex-direction`, `flex-wrap`, `align-items` and `justify-content`;
+    - `display: none` as hidden;
+    - `var(--x)` as the token, and `px` as points.
+  - **What isn't read:** sizing (`flex`, `width`, `align-self` and the like) stays the inspector's, and an instance's page rule only says where it sits. Anything else is a note, and a rule taken out leaves its layer as it was.
+  - **Overrides:** only what differs from the wider level is kept, since a shorthand like `padding` restates the half it shares.
+  - **HTML:** words, read with Proton's markup parser, which gained two readers: an element's whole inner text, and an attribute's value. That covers a page's text layers, a component's text, and an instance's words, where its component's own words clear its override. `<br>` reads as a new line, entities are decoded, and markup inside is a note.
+- **Workspace:**
+  - The page's inspector has a Sync section: the folder, Choose a Folder…, a path to type, Show in Finder, Write Now, Stop, and the last read-back's notes.
+  - Choosing a folder is a step, reads in what's already there before writing, so edits made there aren't written over, and starts a once-a-second look for files that hold anything other than what Aether last wrote or read.
+  - Opening a design reads in edits made while it was closed.
+  - Each read-back that changes the design is a project step, "From button.css".
+- **Checked:**
+  - Rust: 5 new tests (28):
+    - everything written reads back as no change, with no notes;
+    - a component's CSS edited, including an option's rule, then undone;
+    - a page's padding and a Mobile media rule;
+    - a sizing edit not read;
+    - words for a page's text, an instance (with `<br>` and `&amp;`) and a component, the component's own words clearing an instance's;
+    - what can't be read said: an unknown property, an unknown selector, markup in words, a file that isn't one of the folder's.
+  - Swift: 6 new tests (33 for Design; 225 in all):
+    - a folder said from the design's;
+    - keeping in step writing the folder as one step, with nothing read back unedited;
+    - an edit outside coming back as a step, undone, and the save writing the folder again;
+    - notes;
+    - a folder chosen again read before it's written over;
+    - edits made while closed coming in when the design opens.
+  - On screen:
+    - Typed a scratch folder into the Sync section: it wrote 5 files.
+    - Edited `button.css`'s background in place: within two seconds the Wishlist button turned grey on both artboards, and the Edit menu read "Undo From button.css".
+    - Saving wrote `design.json` with the folder.
+  - Two things found and fixed:
+    - The Sync section didn't show the folder chosen, because it was read from the core, which SwiftUI doesn't observe. It's now read from the observed view.
+    - Choosing a folder that already held edited files wrote over them. It now reads them in first.
+- **Not yet:** sync as React TSX or Tailwind; images' `alt` read back; a rule's sizing read back.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
