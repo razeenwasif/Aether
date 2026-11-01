@@ -1755,7 +1755,28 @@ Not yet:
     - After the fix, the Mobile title small again, and Button "2 uses".
     - The Hero component's artboard drawing its buttons.
     - Clicking one showed its instance inspector.
-- **Not yet:** editing a component's breakpoint values on its own artboards, or reading them back by sync. They're kept, drawn and written, but set only by the page's breakpoints before the frame was made a component.
+- **Not yet:** reading a component's breakpoint values back by sync. (Editing them on its own artboards came next; see below.)
+
+**2026-11-01 · Design: a component's breakpoints, edited on its artboards.** The user said "continue", taking the first item left: editing a component's breakpoint values in place.
+
+- **What changed:** this is Swift only. The core already kept, checked, drew and wrote a component's `at`.
+  - While a component is edited, the inspector has **At**: the breakpoints of the first page that places it (directly, or through a component that does), else of the first page.
+  - The artboards are drawn at that breakpoint, laid over with what it says (`DesignPage.with(breakpoints:)` and `at`). Each is as wide as the breakpoint when the component's root fills, else as wide as it holds up to that, and named "As written · Mobile".
+  - A change at a narrower breakpoint writes that breakpoint's values (`overriding` is `at` there), ahead of an option or a state, and its rows are marked with ↺.
+- **Fixed on the way:**
+  - A colour change's undo name said "Color" where the inspector says "Colour". Step names now follow the inspector.
+  - The canvas didn't redraw when At changed, because it didn't watch the component's breakpoint. It does now.
+- **Checked:**
+  - Swift: 1 new test (35 for Design; 227 in all):
+    - the hero made a component, seen at Desktop and Mobile with Mobile's font kept and marked;
+    - a colour set at Mobile reaching the page's Mobile only;
+    - the breakpoint edited ahead of a state;
+    - reset.
+  - On screen:
+    - The Hero component at Mobile, drawn at 390 with its smaller title and padding.
+    - Its Font row marked.
+    - Centring the title at Mobile centred it on the component's Mobile artboard and the page's, and not on Desktop.
+- **Next for Design:** sync as React or Tailwind, the dark palette drawn, and Pagepilot's layout review.
 
 ## 10. Status and handoff
 

@@ -41,6 +41,10 @@ public final class DesignWorkspaceModel {
     /// (`variant=secondary`); nil is the component as written. Choosing a
     /// layer on an option's artboard edits that option.
     public var variant: String?
+    /// The breakpoint a component is seen and edited at, by the id it has on
+    /// the page that places it; nil, the widest. A narrower one is what's
+    /// edited, ahead of an option.
+    public var componentBreakpoint: String?
     /// The breakpoint the inspector edits, by id; nil is the widest, the
     /// page's own. Choosing a layer on an artboard edits that artboard's.
     public var breakpoint: String?
@@ -99,8 +103,18 @@ public final class DesignWorkspaceModel {
     public var component: DesignComponent? { componentID.flatMap { document?.component($0) } }
     /// The tree as the breakpoint or option being edited has it.
     public var pageHere: DesignPage? {
-        if let component { return component.asPage(variant) }
+        if let component { return component.asPage(variant).with(breakpoints: componentBreakpoints).at(componentBreakpoint) }
         return page?.at(breakpoint)
+    }
+
+    /// The breakpoints a component is seen at, widest first: those of the
+    /// first page that places it, or of the first page.
+    public var componentBreakpoints: [DesignBreakpoint] {
+        guard let document, let componentID else { return [] }
+        let pages = document.view.pages.compactMap { document.page($0.id) }
+        let placing = pages.first { $0.layers.contains { $0.component == componentID } }
+            ?? pages.first { page in page.layers.contains { $0.kind == .instance && document.component($0.component)?.layers.contains { $0.component == componentID } == true } }
+        return (placing ?? pages.first)?.widestFirst ?? []
     }
     /// The chosen layer, as the breakpoint or option being edited has it.
     public var chosen: DesignLayer? { selection.flatMap { pageHere?.layer($0) } }
@@ -111,6 +125,10 @@ public final class DesignWorkspaceModel {
     /// layer's own.
     public var overriding: DesignOverrideTarget? {
         if let component {
+            let points = componentBreakpoints
+            if let at = componentBreakpoint, at != points.first?.id, let point = points.first(where: { $0.id == at }) {
+                return DesignOverrideTarget(field: "at", key: point.id, name: point.name)
+            }
             guard let variant, let option = component.options.first(where: { $0.key == variant }) else { return nil }
             return DesignOverrideTarget(field: "when", key: variant, name: option.name)
         }
@@ -338,6 +356,8 @@ public final class DesignWorkspaceModel {
         case "padH": "Padding"
         case "padV": "Padding"
         case "textAlign": "Alignment"
+        // As the inspector's row says it.
+        case "color": "Colour"
         case "minW": "Narrowest"
         case "w": "Width"
         case "h": "Height"
@@ -448,6 +468,7 @@ public final class DesignWorkspaceModel {
         guard document?.component(id) != nil else { return }
         componentID = id
         variant = nil
+        componentBreakpoint = nil
         selection = nil
         fitRequest &+= 1
     }

@@ -301,6 +301,14 @@ public struct DesignPage: Decodable, Hashable, Sendable, Identifiable {
     /// otherwise.
     public var widestFirst: [DesignBreakpoint] { breakpoints.sorted { $0.width > $1.width } }
 
+    /// The same layers at `points`' widths: a component's, to see it at the
+    /// breakpoints of a page that places it.
+    public func with(breakpoints points: [DesignBreakpoint]) -> DesignPage {
+        var page = self
+        page.breakpoints = points
+        return page
+    }
+
     /// The page as it is at breakpoint `id`: what it and every wider
     /// breakpoint say laid over each layer, as the media queries cascade
     /// (aether-design's `Page::at`).

@@ -129,14 +129,23 @@ final class DesignCanvasView: NSView {
         var drawn: [(key: String?, name: String, page: DesignPage, width: CGFloat)]
         ground = .white
         if let component = model.component {
+            let points = model.componentBreakpoints
+            let at = points.first { $0.id == model.componentBreakpoint }
             let pages = model.document?.view.pages.compactMap { model.document?.page($0.id) } ?? []
             let placed = pages.first { $0.layers.contains { $0.component == component.id } } ?? pages.first
             ground = placed.flatMap { resolver.color($0.layer($0.root)?.style.fill) } ?? .white
-            drawn = ([(nil, "As written")] + component.options.map { ($0.key, $0.name) }).map { key, name in
-                // The components it holds, drawn as they are.
-                let here = model.document?.expandedComponent(component.id, option: key) ?? component.asPage(key)
-                let width = min(1280, max(120, DesignLayout.naturalWidth(of: here, resolver: resolver, images: sizes)))
-                return (key, name, here, width)
+            let options: [(key: String?, name: String)] = [(nil, "As written")] + component.options.map { ($0.key, $0.name) }
+            drawn = options.map { key, name in
+                // The components it holds, drawn as they are, at the
+                // breakpoint it's seen at.
+                let expanded = model.document?.expandedComponent(component.id, option: key) ?? component.asPage(key)
+                let here = expanded.with(breakpoints: points).at(model.componentBreakpoint)
+                // As wide as it holds; as wide as the breakpoint when its
+                // root fills, or holds more.
+                let natural = DesignLayout.naturalWidth(of: here, resolver: resolver, images: sizes)
+                let fills = here.layer(here.root)?.width == .fill
+                let width: CGFloat = at.map { fills ? $0.width : min($0.width, max(120, natural)) } ?? min(1280, max(120, natural))
+                return (key, at.map { "\(name) · \($0.name)" } ?? name, here, width)
             }
         } else {
             let expanded = model.pageID.flatMap { model.document?.expanded[$0] } ?? page

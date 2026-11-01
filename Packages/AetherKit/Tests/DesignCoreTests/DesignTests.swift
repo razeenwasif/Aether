@@ -579,6 +579,30 @@ struct DesignComponentTests {
         #expect(model.document?.expanded["home"]?.at("mobile").layer("hero.title")?.style.font == "--type-display-sm")
     }
 
+    @Test func aComponentIsEditedAtThePagesBreakpoints() throws {
+        let (model, _) = try opened()
+        model.selection = "hero"
+        model.makeComponent()
+        let header = try #require(model.page?.layer("hero")?.component)
+        model.editComponent(header)
+        #expect(model.componentBreakpoints.map(\.name) == ["Desktop", "Mobile"])
+        #expect(model.pageHere?.layer("title")?.style.font == "--type-display")
+        model.componentBreakpoint = "mobile"
+        #expect(model.overriding == DesignOverrideTarget(field: "at", key: "mobile", name: "Mobile"))
+        #expect(model.pageHere?.layer("title")?.style.font == "--type-display-sm", "what Mobile said, kept")
+        #expect(model.says("title", ["style", "font"]))
+        model.setStyle("title", "color", to: "--color-lantern-500")
+        #expect(model.undoLabel == "Colour of Title on Mobile")
+        let drawn = model.document?.expanded["home"]
+        #expect(drawn?.at("mobile").layer("hero.title")?.style.color == "--color-lantern-500")
+        #expect(drawn?.at("desktop").layer("hero.title")?.style.color == "--color-ink")
+        // A narrower breakpoint is what's edited, ahead of an option.
+        model.variant = "state=hover"
+        #expect(model.overriding?.field == "at")
+        model.reset("title", ["style", "color"])
+        #expect(model.document?.expanded["home"]?.at("mobile").layer("hero.title")?.style.color == "--color-ink")
+    }
+
     @Test func aFrameMadeAComponentIsOneStepOnTheProjectsHistory() throws {
         let (model, project) = try opened()
         model.selection = "lantern"

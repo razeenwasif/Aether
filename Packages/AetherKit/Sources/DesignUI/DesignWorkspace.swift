@@ -21,7 +21,7 @@ public struct DesignWorkspace: View {
     public var body: some View {
         ZStack(alignment: .topLeading) {
             if let document = model.document {
-                DesignCanvas(model: model, revision: document.revision &+ model.pictureRevision, pageID: model.componentID.map { "component:\($0)" } ?? model.pageID, selection: model.selection, editing: model.overriding?.key, fitRequest: model.fitRequest,
+                DesignCanvas(model: model, revision: document.revision &+ model.pictureRevision, pageID: model.componentID.map { "component:\($0)@\(model.componentBreakpoint ?? "")" } ?? model.pageID, selection: model.selection, editing: model.overriding?.key, fitRequest: model.fitRequest,
                              insets: (model.navigatorOpen ? 264 : 0, model.inspectorOpen ? 300 : 0, model.codeOpen ? 260 : 72))
                 HStack(alignment: .top, spacing: 0) {
                     DesignNavigator(model: model, document: document)
@@ -421,6 +421,22 @@ private struct DesignInspector: View {
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
                 .help("A change made with an option chosen holds for instances that pick it")
+            }
+            if let component = model.component, model.componentBreakpoints.count > 1 {
+                HStack(spacing: 8) {
+                    Text("At").font(.aeSmall).foregroundStyle(Color.ink2).fixedSize()
+                    Picker("At", selection: Binding(get: { model.componentBreakpoint ?? model.componentBreakpoints.first?.id ?? "" }, set: { id in
+                        model.componentBreakpoint = id == model.componentBreakpoints.first?.id ? nil : id
+                        model.fit()
+                    })) {
+                        ForEach(model.componentBreakpoints) { Text($0.name).tag($0.id) }
+                    }
+                    .labelsHidden().pickerStyle(.segmented).controlSize(.small).fixedSize()
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+                .help("\(component.name) at a page's breakpoint: a change at a narrower one holds there and narrower, ahead of an option")
             } else if model.component == nil, let page = model.page, page.breakpoints.count > 1 {
                 HStack(spacing: 8) {
                     Text("Editing").font(.aeSmall).foregroundStyle(Color.ink2).fixedSize()
