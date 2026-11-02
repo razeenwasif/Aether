@@ -3,6 +3,8 @@
 <!-- Merged with the keys Xcode generates (GENERATE_INFOPLIST_FILE). -->
 <plist version="1.0">
 <dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Aether runs Diffuse flows on forge through atlas's image gateway on your local network.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

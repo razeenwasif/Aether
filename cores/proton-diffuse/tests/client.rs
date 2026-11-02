@@ -246,3 +246,16 @@ fn images_go_up_and_come_down_and_a_run_is_cancelled() {
     assert!(client.events("r8/../x").is_err());
     assert_eq!(fake.seen().len(), 3);
 }
+
+#[test]
+fn a_mac_kept_off_the_local_network_is_told_where_to_allow_it() {
+    let denied = Error::Unreachable(vec!["http://192.168.68.61:7420/img/v1: No route to host (os error 65)".into()]).describe();
+    assert!(denied.starts_with("atlas's gateway does not answer: http://192.168.68.61:7420/img/v1: No route to host (os error 65)"), "{denied}");
+    assert!(denied.contains("System Settings › Privacy & Security › Local Network"), "{denied}");
+    // Tried at home and away, one of them denied: still said.
+    let either = Error::Unreachable(vec!["http://atlas.tail: timed out".into(), "http://192.168.68.61:7420/img/v1: No route to host (os error 65)".into()]).describe();
+    assert!(either.contains("Local Network"), "{either}");
+    // Any other reason is only itself.
+    let off = Error::Unreachable(vec!["http://192.168.68.61:7420/img/v1: Connection refused (os error 61)".into()]).describe();
+    assert_eq!(off, "atlas's gateway does not answer: http://192.168.68.61:7420/img/v1: Connection refused (os error 61)");
+}

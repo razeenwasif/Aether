@@ -78,7 +78,15 @@ pub enum Error {
 impl Error {
     pub fn describe(&self) -> String {
         match self {
-            Error::Unreachable(why) => format!("atlas's gateway does not answer: {}", why.join("; ")),
+            Error::Unreachable(why) => {
+                let said = format!("atlas's gateway does not answer: {}", why.join("; "));
+                // What macOS says to an app it hasn't let onto the local
+                // network, even with atlas up and the Mac beside it.
+                match why.iter().any(|w| w.contains("os error 65")) {
+                    true => format!("{said}. If atlas is on and this Mac is on its network, allow Aether in System Settings › Privacy & Security › Local Network"),
+                    false => said,
+                }
+            }
             Error::Key => "the gateway does not take the key in NEXUS_KEY: check it in Nexus".into(),
             Error::Offline => "forge isn't serving images: start it in Nexus › Inference".into(),
             Error::Invalid { message, nodes } => match (message.is_empty(), nodes.is_empty()) {
