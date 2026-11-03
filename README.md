@@ -15,6 +15,8 @@ xcodebuild -project Aether.xcodeproj -scheme Aether -derivedDataPath build/Deriv
 open build/DerivedData/Build/Products/Debug/Aether.app
 ```
 
+Each build that succeeds also leaves a copy at `~/Applications/Aether.app` (`scripts/keep-app.sh`, the target's last build phase), so the app outlasts a disk cleaner taking `build/` for build output.
+
 Run `./scripts/build-cores.sh` again after any change under `cores/` or to `proton-diffuse`. Run `node scripts/render-icon.mjs` after changing `design/aether-icon.svg`.
 
 Tests:

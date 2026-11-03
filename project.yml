@@ -21,6 +21,13 @@ targets:
     dependencies:
       - package: AetherKit
         product: AetherKit
+    postBuildScripts:
+      - name: Keep a copy of the app
+        script: '"$SRCROOT/scripts/keep-app.sh"'
+        basedOnDependencyAnalysis: false
+        # The log would otherwise hold the build's whole environment, the
+        # gateway key with it.
+        showEnvVars: false
     settings:
       base:
         PRODUCT_NAME: Aether
@@ -41,4 +48,6 @@ targets:
         ENABLE_HARDENED_RUNTIME: NO
         # Not sandboxed yet: the gateway key is read from the login shell.
         ENABLE_APP_SANDBOX: NO
+        # keep-app.sh writes to ~/Applications.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         DEAD_CODE_STRIPPING: YES
