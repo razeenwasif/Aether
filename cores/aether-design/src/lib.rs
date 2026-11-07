@@ -29,6 +29,7 @@
 
 pub mod format;
 pub mod html;
+pub mod react;
 pub mod starter;
 pub mod sync;
 pub mod theme;

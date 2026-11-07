@@ -734,6 +734,53 @@ struct DesignSyncTests {
         model.open(url)
         #expect(model.page?.layer("logo")?.text == "Lumen" && model.undoLabel == "From pages/home.html")
     }
+
+    private func exists(_ folder: URL, _ rel: String) -> Bool {
+        FileManager.default.fileExists(atPath: folder.appending(path: rel).path)
+    }
+
+    @Test func writtenAsReactTheHTMLGoesAndTheTSXComesBack() throws {
+        let (model, project, folder) = try opened()
+        #expect(model.syncAs == "html")
+        model.writeSync(as: "react")
+        #expect(model.syncAs == "react" && model.undoLabel == "Write as React" && project.history.done.count == 2)
+        for rel in ["theme.css", "button.css", "Button.tsx", "pages/home.css", "pages/Home.tsx"] {
+            #expect(exists(folder, rel), "\(rel)")
+        }
+        #expect(!exists(folder, "button.html") && !exists(folder, "pages/home.html"), "Aether's HTML taken out")
+        #expect(model.notice?.contains("as React") == true && model.notice?.contains("took out the 2") == true, "\(model.notice ?? "")")
+        // Nothing edited, nothing read back.
+        model.checkSync()
+        #expect(model.undoLabel == "Write as React")
+        // Words and an instance's props, edited in the .tsx, come back.
+        try edit(folder, "pages/Home.tsx", ">Carry the light through the Hollow Grove.<", ">Carry the light home.<")
+        try edit(folder, "pages/Home.tsx", "variant=\"secondary\" ", "")
+        model.checkSync()
+        #expect(model.page?.layer("title")?.text == "Carry the light home." && model.undoLabel == "From pages/Home.tsx")
+        #expect(model.page?.layer("trailer")?.props.isEmpty == true)
+        try edit(folder, "Button.tsx", "label = \"Button\"", "label = \"Go\"")
+        model.checkSync()
+        #expect(model.document?.component("button")?.layers.first { $0.id == "label" }?.text == "Go")
+        // Saving keeps design.json saying so.
+        model.saveNow()
+        let design = try String(contentsOf: try #require(model.document?.url).appending(path: "design.json"), encoding: .utf8)
+        #expect(design.contains("\"syncAs\": \"react\""))
+    }
+
+    @Test func anEditMadeJustBeforeTheFolderChangesKindComesInFirst() throws {
+        let (model, project, folder) = try opened()
+        try edit(folder, "button.html", ">Button<", ">Go<")
+        model.writeSync(as: "react")
+        #expect(model.document?.component("button")?.layers.first { $0.id == "label" }?.text == "Go")
+        #expect(project.history.done.count == 3, "keep in step, from button.html, write as React")
+        #expect(!exists(folder, "button.html"))
+        let button = try String(contentsOf: folder.appending(path: "Button.tsx"), encoding: .utf8)
+        #expect(button.contains("label = \"Go\""))
+        // Back to HTML: the .tsx go, the HTML is written again.
+        model.writeSync(as: "html")
+        #expect(!exists(folder, "Button.tsx") && !exists(folder, "pages/Home.tsx") && exists(folder, "pages/home.html"))
+        #expect(model.syncAs == "html" && model.undoLabel == "Write as HTML and CSS")
+    }
 }
 
 struct DesignReviewTests {

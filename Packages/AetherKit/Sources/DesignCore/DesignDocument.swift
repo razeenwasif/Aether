@@ -127,6 +127,17 @@ public final class DesignDocument {
         apply([.set(["sync"], path ?? "")], target: "design", label: label)
     }
 
+    /// What the folder is written as: `html`, or `react` (a `.tsx` for each
+    /// component and page, styled by the same CSS).
+    public var syncAs: String { view.design.syncAs == "react" ? "react" : "html" }
+
+    /// Write the folder as `kind` (`html` or `react`): one step of
+    /// `design.json`.
+    @discardableResult
+    public func setSyncAs(_ kind: String, label: String) -> Bool {
+        apply([.set(["syncAs"], kind == "react" ? "react" : "")], target: "design", label: label)
+    }
+
     /// Write the folder's files as the design is now; those written.
     public func syncOut() throws -> [String] {
         try editor.syncOut()

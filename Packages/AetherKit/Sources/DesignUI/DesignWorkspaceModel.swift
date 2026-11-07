@@ -88,6 +88,9 @@ public final class DesignWorkspaceModel {
     /// What each file of the sync folder held when it was last written or
     /// read, by where it is in it.
     @ObservationIgnored private var known: [String: String] = [:]
+    /// What the last write took out of the folder, and left there edited.
+    @ObservationIgnored private(set) var cleared: [String] = []
+    @ObservationIgnored private(set) var leftEdited: [String] = []
 
     public init(folder: URL) {
         self.folder = folder
@@ -895,6 +898,30 @@ public final class DesignWorkspaceModel {
         watch()
     }
 
+    /// What the folder is written as: `html` or `react`.
+    public var syncAs: String { document?.syncAs ?? "html" }
+
+    /// Write the folder as `kind` (`html` or `react`) from now on: one step.
+    /// What's been edited there comes in first; then the other kind's files,
+    /// as Aether wrote them, go, and this kind's are written.
+    public func writeSync(as kind: String) {
+        guard let document, document.syncAs != kind else { return }
+        let label = kind == "react" ? "Write as React" : "Write as HTML and CSS"
+        checkSync()
+        let before = document.steps
+        if document.setSyncAs(kind, label: label), document.steps > before { stepped(label) }
+        if let refusal = document.refusal {
+            notice = refusal
+            return
+        }
+        guard let folder = document.syncFolder, let written = writeSync() else { return }
+        var said = "Wrote \(written.count) file\(written.count == 1 ? "" : "s") to \(folder.lastPathComponent) as \(kind == "react" ? "React" : "HTML and CSS")"
+        if !cleared.isEmpty { said += ", and took out the \(cleared.count) Aether wrote before" }
+        if !leftEdited.isEmpty { said += ". \(ListFormatter.localizedString(byJoining: leftEdited)) \(leftEdited.count == 1 ? "was" : "were") edited there, so \(leftEdited.count == 1 ? "it's" : "they're") left" }
+        notice = said + "."
+        noticeIsGood = leftEdited.isEmpty
+    }
+
     /// The Open panel for the folder to keep the design in step with.
     public func chooseSyncFolder() {
         let panel = NSOpenPanel()
@@ -902,7 +929,7 @@ public final class DesignWorkspaceModel {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Keep in Step"
-        panel.message = "Each component and page is written here as HTML and CSS, and edits to them come back to the design."
+        panel.message = "Each component and page is written here as \(syncAs == "react" ? "React" : "HTML and CSS"), and edits to them come back to the design."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         keepInStep(with: url)
     }
@@ -925,7 +952,24 @@ public final class DesignWorkspaceModel {
         guard let document, let folder = document.syncFolder else { return nil }
         do {
             let written = try document.syncOut()
-            for rel in document.syncFiles { known[rel] = try? String(contentsOf: folder.appending(path: rel), encoding: .utf8) }
+            let now = document.syncFiles
+            // Files Aether wrote that the design no longer has — the other
+            // kind's, or a component's taken out — go, as long as they hold
+            // what Aether wrote; one edited since is left.
+            cleared = []
+            leftEdited = []
+            for (rel, text) in known where !now.contains(rel) {
+                let url = folder.appending(path: rel)
+                known[rel] = nil
+                guard let there = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                if there == text {
+                    try? FileManager.default.removeItem(at: url)
+                    cleared.append(rel)
+                } else {
+                    leftEdited.append(rel)
+                }
+            }
+            for rel in now { known[rel] = try? String(contentsOf: folder.appending(path: rel), encoding: .utf8) }
             return written
         } catch {
             notice = "Couldn’t write to \(folder.lastPathComponent): \(DesignDocument.describe(error))"

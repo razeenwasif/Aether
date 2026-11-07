@@ -34,7 +34,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use crate::format::{Component, Kind, Layer, Override, Page, STATE};
-use crate::{html, Design, Target};
+use crate::{html, react, Design, Target};
 
 /// What the head of each CSS file says.
 const CSS_MARK: &str = "/* Written by Aether from a design. Its colours, fonts, radius, opacity and\n   layout come back to the design when this file is saved; how a layer sits\n   in its frame is the design's to say. */\n";
@@ -47,10 +47,28 @@ pub struct File {
     pub text: String,
 }
 
-/// The folder's files as the design is now.
+/// Whether the folder is written as React rather than HTML.
+fn react(design: &Design) -> bool {
+    design.design.get().sync_as == "react"
+}
+
+/// The folder's files as the design is now: HTML and CSS, or React's
+/// `.tsx` and the same CSS.
 pub fn files(design: &Design) -> Vec<File> {
     let components = design.component_map();
     let mut out = vec![File { rel: "theme.css".into(), text: design.theme.text().to_string() }];
+    if react(design) {
+        for c in components.values() {
+            out.push(File { rel: format!("{}.css", c.id), text: format!("{CSS_MARK}{}", html::component_css(c)) });
+            out.push(File { rel: format!("{}.tsx", react::pascal(&c.id)), text: react::component(c, &components) });
+        }
+        for page in &design.pages {
+            let p = page.get();
+            out.push(File { rel: format!("pages/{}.css", p.id), text: format!("{CSS_MARK}{}", html::page_css(p, &components, &p.root)) });
+            out.push(File { rel: format!("pages/{}.tsx", react::pascal(&p.id)), text: react::page(p, &components) });
+        }
+        return out;
+    }
     for c in components.values() {
         out.push(File { rel: format!("{}.css", c.id), text: format!("{CSS_MARK}{}", html::component_css(c)) });
         out.push(File { rel: format!("{}.html", c.id), text: format!("{HTML_MARK}{}", html::component_markup(c, &components, "")) });
@@ -85,6 +103,28 @@ pub fn read(design: &Design, rel: &str, text: &str) -> Result<(Target, Vec<proto
     let (folder, name) = rel.rsplit_once('/').unwrap_or(("", rel));
     let (stem, kind) = name.rsplit_once('.').ok_or_else(|| format!("{rel} is neither HTML nor CSS"))?;
     let mut notes = Vec::new();
+    if kind == "tsx" {
+        if !react(design) {
+            return Err(format!("{rel}: the folder is written as HTML"));
+        }
+        let components = design.component_map();
+        let (target, ops) = match folder {
+            "" => {
+                let c = components.values().find(|c| react::pascal(&c.id) == stem).ok_or_else(|| format!("{rel}: there's no component {stem}"))?;
+                (Target::Component(c.id.clone()), react::read(react::Of::Component(c), &components, text, &mut notes))
+            }
+            "pages" => {
+                let p = design.pages.iter().map(|p| p.get()).find(|p| react::pascal(&p.id) == stem).ok_or_else(|| format!("{rel}: there's no page {stem}"))?;
+                (Target::Page(p.id.clone()), react::read(react::Of::Page(p), &components, text, &mut notes))
+            }
+            _ => return Err(format!("{rel} isn't one of the files a design writes")),
+        };
+        let notes = notes.into_iter().map(|n| format!("{rel}: {n}")).collect();
+        return Ok((target, ops, notes));
+    }
+    if kind == "html" && react(design) {
+        return Err(format!("{rel}: the folder is written as React"));
+    }
     let ops = match (folder, kind) {
         ("", "css") if stem != "theme" => {
             let c = design.component(stem).ok_or_else(|| format!("{rel}: there's no component {stem}"))?.get();

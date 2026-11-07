@@ -444,12 +444,15 @@ public struct DesignView: Decodable, Sendable {
         /// The folder of HTML and CSS it's kept in step with, as
         /// `design.json` says it; empty for none.
         public var sync: String
-        enum CodingKeys: String, CodingKey { case name, pages, sync }
+        /// What that folder is written as: `react`, or empty for HTML.
+        public var syncAs: String
+        enum CodingKeys: String, CodingKey { case name, pages, sync, syncAs }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             name = try c.value(.name, "")
             pages = try c.value(.pages, [])
             sync = try c.value(.sync, "")
+            syncAs = try c.value(.syncAs, "")
         }
     }
 

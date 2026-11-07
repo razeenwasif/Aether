@@ -627,3 +627,118 @@ fn a_component_keeps_what_breakpoints_said_of_its_layers() {
     // Uses inside a component count, by the component.
     assert!(design.uses()["button"].contains(&("component:header".to_string(), "wishlist".to_string())));
 }
+
+/// A design kept in step with a folder written as React.
+fn synced_as_react(name: &str) -> (PathBuf, Design, PathBuf) {
+    let (dir, mut design) = made(name);
+    let folder = dir.join("src/components");
+    let set = ops(json!([
+        {"op": "set", "path": ["sync"], "value": "src/components"},
+        {"op": "set", "path": ["syncAs"], "value": "react"},
+    ]));
+    assert!(design.apply(&Target::Design, &set).unwrap());
+    design.save().unwrap();
+    assert!(std::fs::read_to_string(dir.join("design.json")).unwrap().contains("\"syncAs\": \"react\""));
+    let written = design.sync_out().unwrap();
+    for rel in ["theme.css", "button.css", "Button.tsx", "pages/home.css", "pages/Home.tsx"] {
+        assert!(written.contains(&rel.to_string()), "{rel} not in {written:?}");
+    }
+    assert!(!folder.join("button.html").exists() && !folder.join("pages/home.html").exists());
+    (dir, design, folder)
+}
+
+#[test]
+fn react_components_take_their_options_and_words_as_props() {
+    let (_, mut design, folder) = synced_as_react("react-round");
+    let button = std::fs::read_to_string(folder.join("Button.tsx")).unwrap();
+    assert!(button.contains("import \"./button.css\";"), "{button}");
+    assert!(button.contains("variant?: \"primary\" | \"secondary\";"), "{button}");
+    assert!(button.contains("state?: \"hover\" | \"pressed\" | \"disabled\";"), "{button}");
+    assert!(button.contains("export function Button({ className, as: Root = \"div\", variant = \"primary\", state, label = \"Button\" }: ButtonProps)"), "{button}");
+    assert!(button.contains("<p className=\"button__label\">{label}</p>"), "{button}");
+    assert!(button.contains("aria-disabled={state === \"disabled\" || undefined}"), "{button}");
+    let page = std::fs::read_to_string(folder.join("pages/Home.tsx")).unwrap();
+    assert!(page.contains("import \"../theme.css\";\nimport { Button } from \"../Button\";\nimport \"./home.css\";"), "{page}");
+    assert!(page.contains("export default function HomePage()"), "{page}");
+    assert!(page.contains("<h1 className=\"title\">Carry the light through the Hollow Grove.</h1>"), "{page}");
+    assert!(page.contains("<Button className=\"wishlist\" as=\"a\" label=\"Wishlist now\" />"), "{page}");
+    assert!(page.contains("<Button className=\"trailer\" as=\"a\" variant=\"secondary\" label=\"Watch the trailer\" />"), "{page}");
+    // Every file reads back as no change, with nothing to say.
+    for rel in ["button.css", "Button.tsx", "pages/home.css", "pages/Home.tsx"] {
+        let text = std::fs::read_to_string(folder.join(rel)).unwrap();
+        let read = design.sync_in(rel, &text).unwrap();
+        assert!(!read.changed && read.notes.is_empty(), "{rel}: {:?}", read.notes);
+    }
+    assert!(design.sync_out().unwrap().is_empty());
+    // An HTML file isn't the folder's now.
+    assert!(design.sync_in("button.html", "").is_err());
+}
+
+#[test]
+fn words_and_props_edited_in_react_come_back_as_one_step() {
+    let (_, mut design, folder) = synced_as_react("react-edit");
+    let text = edit(&folder, "pages/Home.tsx", ">Carry the light through the Hollow Grove.<", ">Carry the light {\"&\"} find the way.<");
+    let text = text.replacen("variant=\"secondary\" label=\"Watch the trailer\"", "label={\"See it\\nmove\"}", 1);
+    let text = text.replacen("<Button className=\"wishlist\" as=\"a\" label=\"Wishlist now\" />", "<Button className=\"wishlist\" as=\"a\" state=\"disabled\" />", 1);
+    let read = design.sync_in("pages/Home.tsx", &text).unwrap();
+    assert!(read.changed && read.notes.is_empty() && read.target == "page:home", "{read:?}");
+    let page = home(&design);
+    assert_eq!(page.layer("title").unwrap().text, "Carry the light & find the way.");
+    let trailer = page.layer("trailer").unwrap();
+    assert_eq!(trailer.texts["label"], "See it\nmove");
+    assert!(trailer.props.is_empty(), "variant taken out: the first option again");
+    let wishlist = page.layer("wishlist").unwrap();
+    assert_eq!(wishlist.props["state"], "disabled");
+    assert!(wishlist.texts.is_empty(), "its words taken out: the component's own");
+    // One step, undone whole.
+    assert!(design.undo(&home_target()).unwrap());
+    assert_eq!(home(&design).layer("trailer").unwrap().props["variant"], "secondary");
+    assert_eq!(home(&design).layer("wishlist").unwrap().texts["label"], "Wishlist now");
+    // A component's words are its text props' defaults.
+    let component = edit(&folder, "Button.tsx", "label = \"Button\"", "label = \"Go\"");
+    let read = design.sync_in("Button.tsx", &component).unwrap();
+    assert!(read.changed && read.target == "component:button", "{read:?}");
+    assert_eq!(design.component("button").unwrap().get().layer("label").unwrap().text, "Go");
+    // Written again as the design is now, the page reads back as no change.
+    design.sync_out().unwrap();
+    let page = std::fs::read_to_string(folder.join("pages/Home.tsx")).unwrap();
+    assert!(!design.sync_in("pages/Home.tsx", &page).unwrap().changed);
+}
+
+#[test]
+fn what_react_cant_take_is_said_and_left() {
+    let (_, mut design, folder) = synced_as_react("react-notes");
+    let text = edit(&folder, "pages/Home.tsx", "variant=\"secondary\"", "variant=\"ghost\"");
+    let text = text.replacen(">LUMEN<", "><b>LUMEN</b><", 1);
+    let text = text.replacen("<Button className=\"wishlist\" as=\"a\"", "<Button className=\"wishlist\" as=\"button\" size=\"big\"", 1);
+    let read = design.sync_in("pages/Home.tsx", &text).unwrap();
+    assert!(!read.changed, "{read:?}");
+    let said = read.notes.join("\n");
+    assert!(said.contains("variant can be primary, secondary, not ghost"), "{said}");
+    assert!(said.contains("Logo holds markup"), "{said}");
+    assert!(said.contains("element is the design's to say"), "{said}");
+    assert!(said.contains("has no prop size"), "{said}");
+    let component = edit(&folder, "Button.tsx", "label = \"Button\"", "label");
+    let read = design.sync_in("Button.tsx", &component).unwrap();
+    assert!(!read.changed && read.notes.iter().any(|n| n.contains("label has no default")), "{read:?}");
+    assert!(design.sync_in("Nothing.tsx", "").is_err());
+}
+
+#[test]
+fn a_component_inside_a_component_is_imported_and_its_props_read_back() {
+    let (_, mut design, folder) = synced_as_react("react-nested");
+    design.make_component("home", "hero", "header", "Header").unwrap();
+    design.sync_out().unwrap();
+    let header = std::fs::read_to_string(folder.join("Header.tsx")).unwrap();
+    assert!(header.contains("import { Button } from \"./Button\";"), "{header}");
+    assert!(header.contains("<Button className=\"header__trailer\" as=\"a\" variant=\"secondary\" label=\"Watch the trailer\" />"), "{header}");
+    assert!(header.contains("title = \"Carry the light through the Hollow Grove.\""), "{header}");
+    let page = std::fs::read_to_string(folder.join("pages/Home.tsx")).unwrap();
+    assert!(page.contains("import { Header } from \"../Header\";") && page.contains("<Header className=\"hero\" as=\"header\" />"), "{page}");
+    let read = design.sync_in("Header.tsx", &header).unwrap();
+    assert!(!read.changed && read.notes.is_empty(), "{:?}", read.notes);
+    let edited = header.replacen("label=\"Watch the trailer\"", "label=\"Watch it\"", 1);
+    assert!(design.sync_in("Header.tsx", &edited).unwrap().changed);
+    let trailer = design.component("header").unwrap().get().layer("trailer").unwrap().texts["label"].clone();
+    assert_eq!(trailer, "Watch it");
+}

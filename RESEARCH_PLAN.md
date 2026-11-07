@@ -1863,6 +1863,45 @@ Not yet:
   - A backend that never answers the cancel holds the quit for no more than the wait.
 - **On screen: not yet.** It needs a real run on forge and the app quit while it goes. On 2026-11-07 forge wasn't serving images, so no run could be started.
 
+**2026-11-07 · Design: sync as React.** The user chose React TSX over Tailwind, or both, for the last item on the Design list.
+
+- **The decision:** React components styled by the same CSS files the HTML sync writes, not Tailwind classes. The CSS reader is shared unchanged, and props are where a React project already says an instance's words and options. Tailwind class lists would read back far less.
+- **Format:** `design.json` gains `syncAs`: unsaid for HTML, or `react`. Anything else is a problem of the file.
+- **Out** (`react.rs`, through `sync::files`):
+  - A component is `<Name>.tsx` (its id in PascalCase): `export type ButtonProps` and `export function Button({ className, as: Root = "div", variant = "primary", state, label = "Button" })`.
+    - `className` is where it sits, its page's class. `as` is the element it is, its root's tag by default.
+    - Each prop and `state` is a string union, the first option the default.
+    - Each text layer is a string prop, camelCase of its id, its own words the default.
+    - The root's classes are the HTML's (`button button--variant-${variant}`, `button--state-${state}`), so `<id>.css` styles it unchanged. A disabled state sets `aria-disabled`.
+    - Components it holds are imported and placed with their props, under their class there (`header__wishlist`).
+  - A page is `pages/<Name>.tsx`, `export default function HomePage()`. It imports `../theme.css`, the components it places and `./<id>.css`. Its pictures are imported from `images/`, so a bundler finds them.
+  - Words are JSX text when they read back the same, else `{"…"}`, with `<br />` between lines. Attribute values are quoted, or a string in braces when they hold a quote, a new line or markup characters.
+- **Back in** (`react::read`, as one step of the document, through `sync::read`):
+  - A component: each text prop's default as that layer's words.
+  - A page: a text layer's words from between its tags, read as JSX reads them (lines trimmed and joined, entities decoded, `{"…"}` strings, `<br />`).
+  - Each instance's attributes, on a page or inside a component: its words, its options and its state. One taken out means the component's own again. An option the component doesn't have is a note.
+  - Notes, and left as they were: a tag changed (`as`, or a component's default element), markup in words, a prop the component doesn't have, a text prop with no default, an option's default changed.
+  - The reader is small and Aether-shaped: it reads JSX after `return (`, skipping expressions, and finds elements by their classes.
+- **Workspace:**
+  - The Sync section has As: HTML + CSS · React, before and after a folder is chosen.
+  - Changing it is one step, "Write as React". It reads in what's been edited in the folder first. Then it writes the new kind, and takes out the files Aether wrote of the other kind, as long as they still hold what Aether last wrote or read; one that doesn't is left and said.
+  - Every write now takes out files Aether wrote that the design no longer has, which also covers a component taken out.
+- **Checked:**
+  - Rust: 3 unit tests (words, attributes and names round-trip), and 4 new integration tests (37 in `tests/design.rs`):
+    - everything written reads back as no change, with no notes;
+    - words, an option taken out, a state added and an instance's words taken out come back as one step, undone whole;
+    - a component's words from its default;
+    - a component inside a component, imported, its props read back;
+    - what can't be read said.
+  - The written `.tsx` were parsed by Bun (`bun build --no-bundle`) with no errors. They weren't type-checked: no TypeScript or React types are installed here, and fetching them is a download.
+  - Swift: 2 new tests (`DesignSyncTests`): writing as React takes out Aether's HTML, edits to a page's words, an instance's props and a component's default come back, and `design.json` says `syncAs`; an edit made just before switching comes in first, and switching back takes out the `.tsx`.
+  - On screen, 2026-11-07, with a throwaway Lumen and a scratch folder:
+    - React chosen before the folder, then the path typed: "Wrote 5 files to components", and they were `theme.css`, `button.css`, `Button.tsx`, `pages/home.css` and `pages/Home.tsx`.
+    - `pages/Home.tsx` edited outside: the title's words changed and the trailer's `variant="secondary"` taken out. Within two seconds both artboards showed "Carry the light home." and the trailer as the filled primary button.
+    - `Button.tsx`'s `label = "Button"` changed to `"Go"`: the Edit menu read "Undo From Button.tsx", and Button was marked edited.
+    - Back to HTML + CSS: "Wrote 2 files to components as HTML and CSS, and took out the 2 Aether wrote before." The folder held only HTML and CSS, with the new title and "Go" in them.
+- **Not yet:** sync as Tailwind; multi-line words given as a prop render on one line unless the CSS says `white-space: pre-line`.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

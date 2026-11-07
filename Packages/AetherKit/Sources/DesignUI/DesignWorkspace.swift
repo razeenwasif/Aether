@@ -685,9 +685,9 @@ private struct LayerInspector: View {
     }
 }
 
-/// The folder of HTML and CSS the design is kept in step with: where it is,
-/// a way to choose or type another, and what the last file read back
-/// couldn't take.
+/// The folder the design is kept in step with, as HTML and CSS or React:
+/// where it is, a way to choose or type another, and what the last file
+/// read back couldn't take.
 private struct SyncSection: View {
     let model: DesignWorkspaceModel
     let document: DesignDocument
@@ -697,7 +697,10 @@ private struct SyncSection: View {
             if let folder = model.syncFolder {
                 Text(verbatim: folder.path(percentEncoded: false)).font(.aeMono).foregroundStyle(Color.ink).lineLimit(2).truncationMode(.head)
                     .help(folder.path(percentEncoded: false))
-                Text("Each component and page is written here as HTML and CSS on every save. Edit a colour, a font, padding or words there and it comes back as a step.")
+                kind
+                Text(model.syncAs == "react"
+                    ? "Each component is written here as a .tsx whose props are its options and words, and each page as a .tsx placing them, styled by the same CSS, on every save. Edit words, an instance's props or the CSS there and it comes back as a step."
+                    : "Each component and page is written here as HTML and CSS on every save. Edit a colour, a font, padding or words there and it comes back as a step.")
                     .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
@@ -710,7 +713,8 @@ private struct SyncSection: View {
                     Text(note).font(.aeSmall).foregroundStyle(Color.amber).fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                Text("Keep the design in step with a folder of HTML and CSS — a project's src/components — written on every save and read back when edited there.")
+                kind
+                Text("Keep the design in step with a folder — a project's src/components — written on every save and read back when edited there.")
                     .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("Choose a Folder…", action: model.chooseSyncFolder)
@@ -727,6 +731,11 @@ private struct SyncSection: View {
                 }
             }
         }
+    }
+
+    /// What the folder is written as.
+    private var kind: some View {
+        WordPicker(label: "As", value: model.syncAs, options: [("html", "HTML + CSS"), ("react", "React")]) { model.writeSync(as: $0) }
     }
 }
 
