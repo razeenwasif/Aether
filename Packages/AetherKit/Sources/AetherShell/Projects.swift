@@ -104,11 +104,18 @@ extension AppModel {
         askAboutUnsaved(before: "opening \(name)") != .stay
     }
 
-    /// Whether to quit: asked as switching projects is, when anything isn't
-    /// saved. A save that fails stays, having said why. Dropped, the links
-    /// made with what's dropped go too, as they do when a project is left, or
-    /// the project would be saved with links to layers that never were.
+    /// Whether to quit. A run still going is asked about first: quitting
+    /// stops it. Then what isn't saved, as switching projects asks. A save
+    /// that fails stays, having said why. Dropped, the links made with what's
+    /// dropped go too, as they do when a project is left, or the project
+    /// would be saved with links to layers that never were.
     public func shouldQuit() -> Bool {
+        let running = diffuse.queue.live
+        if !running.isEmpty {
+            var flows: [String] = []
+            for run in running where !flows.contains(run.flowName) { flows.append(run.flowName) }
+            guard askAboutRuns(flows) else { return false }
+        }
         let answer = askAboutUnsaved(before: "quitting")
         guard answer != .stay else { return false }
         guard answer == .drop else { return true }
@@ -139,6 +146,32 @@ extension AppModel {
         return saved ? .save : .stay
     }
 
+    /// Stop the runs still going, as quitting does, waiting at most
+    /// `seconds` for their backends to hear it: forge may be away, and
+    /// quitting shouldn't hang on it.
+    public func stopRuns(waiting seconds: Double = 3) async {
+        guard !diffuse.queue.live.isEmpty else { return }
+        let stopped = Flag()
+        let queue = diffuse.queue
+        Task {
+            await queue.cancelAll()
+            stopped.up = true
+        }
+        let end = ContinuousClock.now + .seconds(seconds)
+        while !stopped.up, ContinuousClock.now < end {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
+    static func alertAboutRuns(_ flows: [String]) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Quit while \(ListFormatter.localizedString(byJoining: flows)) \(flows.count == 1 ? "is" : "are") running?"
+        alert.informativeText = "Quitting stops \(flows.count == 1 ? "it" : "them"). What hasn’t been made yet is lost."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Quit").hasDestructiveAction = true
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
     static func alertAboutUnsaved(_ unsaved: [String], _ doing: String) -> LeaveAnswer {
         let alert = NSAlert()
         alert.messageText = "Save the changes to \(ListFormatter.localizedString(byJoining: unsaved)) before \(doing)?"
@@ -163,6 +196,12 @@ extension AppModel {
     }
 }
 
+/// Set once something done elsewhere is done.
+@MainActor
+private final class Flag {
+    var up = false
+}
+
 /// What to do with changes not saved before another project opens or the
 /// app quits.
 enum LeaveAnswer: Sendable {
@@ -184,18 +223,25 @@ public final class AetherAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Quitting, by the menu, the Dock, a restart or closing the window, asks
-    /// about what isn't saved. A field with the keys commits what's typed in
-    /// it when it lets them go, so they're let go first and the question comes
-    /// a moment later. Closing the window has already closed it by now, so
-    /// staying brings it back.
+    /// about runs still going and what isn't saved, and stops the runs. A
+    /// field with the keys commits what's typed in it when it lets them go,
+    /// so they're let go first and the question comes a moment later.
+    /// Closing the window has already closed it by now, so staying brings it
+    /// back.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model else { return .terminateNow }
         sender.keyWindow?.makeFirstResponder(nil)
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                let quit = model.shouldQuit()
-                if !quit, !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) { model.reopenWindow?() }
-                NSApp.reply(toApplicationShouldTerminate: quit)
+                guard model.shouldQuit() else {
+                    if !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) { model.reopenWindow?() }
+                    NSApp.reply(toApplicationShouldTerminate: false)
+                    return
+                }
+                Task {
+                    await model.stopRuns()
+                    NSApp.reply(toApplicationShouldTerminate: true)
+                }
             }
         }
         return .terminateLater

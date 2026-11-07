@@ -1850,6 +1850,19 @@ Not yet:
     - Unsaved Canvas and Diffuse documents, and a failed save, are covered by tests only. Quitting during a Diffuse run still doesn't warn.
 - **Not covered:** quitting during a Diffuse run still doesn't warn; the run just stops.
 
+**2026-11-07 · Quitting during a Diffuse run asks, and stops the run.** The user said "do the remaining items": this, and sync as React.
+
+- **The gap:** a run on forge went on after Aether quit, with nobody to keep what it made, and nothing said so.
+- **What it does:**
+  - `RunQueue.live` lists the runs being sent, queued or running. `cancelAll()` tells each run's backend to stop it, and is done when they've all answered. A run still being sent has no id to stop yet.
+  - `shouldQuit` asks about live runs before anything else: "Quit while Untitled is running? Quitting stops it. What hasn't been made yet is lost." Cancel is the default button, and Quit is marked destructive. Cancel stops there, before the unsaved question.
+  - Once both questions say quit, the delegate runs `stopRuns()`, which waits at most three seconds for the backends to hear (forge may be away), then lets the app go.
+- **Checked:** Swift, 3 tests (`QuitDuringARunTests`), with a backend whose run never ends until it's cancelled:
+  - Cancel leaves the run going and asks nothing more; Quit goes on to what isn't saved, then stops the run on its backend.
+  - Nothing running asks nothing about runs.
+  - A backend that never answers the cancel holds the quit for no more than the wait.
+- **On screen: not yet.** It needs a real run on forge and the app quit while it goes. On 2026-11-07 forge wasn't serving images, so no run could be started.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

@@ -38,6 +38,9 @@ public final class AppModel {
     /// the app quits: what isn't saved, and what's about to happen (`opening
     /// Two`, `quitting`). An alert; tests answer.
     @ObservationIgnored var askAboutUnsaved: @MainActor ([String], String) -> LeaveAnswer = AppModel.alertAboutUnsaved
+    /// How to ask about runs still going before quitting: the flows they're
+    /// of. True quits. An alert; tests answer.
+    @ObservationIgnored var askAboutRuns: @MainActor ([String]) -> Bool = AppModel.alertAboutRuns
     /// Open the window again: staying after closing it to quit.
     @ObservationIgnored public var reopenWindow: (() -> Void)?
     @ObservationIgnored private var quitting: (any NSObjectProtocol)?

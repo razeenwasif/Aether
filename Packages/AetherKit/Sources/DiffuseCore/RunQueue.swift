@@ -91,6 +91,24 @@ public final class RunQueue {
 
     public var active: RunItem? { runs.first { $0.phase.isLive } }
 
+    /// The runs still going: being sent, queued or running.
+    public var live: [RunItem] { runs.filter(\.phase.isLive) }
+
+    /// Stop every run still going, done when each backend has heard it, as
+    /// quitting does: a run on forge would otherwise go on with nobody to
+    /// keep what it makes. A run still being sent has no id to stop yet.
+    public func cancelAll() async {
+        let sent = runs.compactMap { item -> (backend: any ImageBackend, run: String)? in
+            guard item.phase.isLive, let run = item.runID else { return nil }
+            return (item.backend, run)
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for (backend, run) in sent {
+                group.addTask { try? await backend.cancel(run: run) }
+            }
+        }
+    }
+
     public func use(_ backend: any ImageBackend) {
         self.backend = backend
         health = .looking
