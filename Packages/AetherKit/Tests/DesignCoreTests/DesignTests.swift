@@ -735,3 +735,141 @@ struct DesignSyncTests {
         #expect(model.page?.layer("logo")?.text == "Lumen" && model.undoLabel == "From pages/home.html")
     }
 }
+
+struct DesignReviewTests {
+    private func one(_ json: String, tokens: [DesignToken] = []) throws -> [DesignFinding] {
+        DesignReview.review(try page(json), tokens: tokens, measure: Blocks())
+    }
+
+    @Test func contrastIsWCAGs() throws {
+        let white = try #require(DesignResolver.color(css: "#ffffff"))
+        let black = try #require(DesignResolver.color(css: "#000000"))
+        #expect(abs(DesignReview.ratio(white, black) - 21) < 0.01)
+        #expect(abs(DesignReview.ratio(white, white) - 1) < 0.01)
+    }
+
+    @Test func wordsTooFaintAreFoundAgainstWhatsBehindThem() throws {
+        let found = try one("""
+        {"id": "p", "name": "P", "root": "root", "breakpoints": [{"id": "d", "name": "Desktop", "width": 400}], "layers": [
+          {"id": "root", "tag": "main", "children": ["card"], "style": {"fill": "#ffffff"}},
+          {"id": "card", "children": ["faint", "fine", "big", "ghost"], "style": {"fill": "#00000000"}},
+          {"id": "faint", "kind": "text", "tag": "h1", "text": "faint", "style": {"color": "#f2b84b", "font": "15px/18px system-ui"}},
+          {"id": "fine", "kind": "text", "text": "fine", "style": {"color": "#222222", "font": "15px/18px system-ui"}},
+          {"id": "big", "kind": "text", "text": "big", "style": {"color": "#8a8a8a", "font": "700 30px/32px system-ui"}},
+          {"id": "ghost", "kind": "text", "text": "ghost", "style": {"color": "#222222", "font": "15px/18px system-ui", "opacity": 0.2}}
+        ]}
+        """)
+        let faint = found.filter { $0.kind == "contrast" }
+        #expect(Set(faint.map(\.layer)) == ["faint", "ghost"], "\(faint.map(\.said))")
+        #expect(faint.first { $0.layer == "faint" }?.said.contains("1.8:1") == true, "\(faint.map(\.said))")
+        #expect(faint.first?.level == .problem && faint.first?.breakpoint == nil, "the same at every breakpoint: said for the page")
+    }
+
+    @Test func aNameTwoLayersShareIsSaidWithItsFrame() throws {
+        let found = try one("""
+        {"id": "p", "name": "P", "root": "root", "breakpoints": [{"id": "d", "name": "Desktop", "width": 400}], "layers": [
+          {"id": "root", "name": "Page", "tag": "main", "children": ["t", "one", "two"], "style": {"fill": "#ffffff"}},
+          {"id": "t", "name": "Title", "kind": "text", "tag": "h1", "text": "title", "style": {"color": "#fafafa", "font": "15px/18px system-ui"}},
+          {"id": "one", "name": "First", "children": ["a"]},
+          {"id": "two", "name": "Second", "children": ["b"]},
+          {"id": "a", "name": "Body", "kind": "text", "text": "a", "style": {"color": "#fafafa", "font": "15px/18px system-ui"}},
+          {"id": "b", "name": "Body", "kind": "text", "text": "b", "style": {"color": "#fafafa", "font": "15px/18px system-ui"}}
+        ]}
+        """)
+        let said = found.map(\.said)
+        #expect(said.contains { $0.hasPrefix("Title's words") }, "\(said)")
+        #expect(said.contains { $0.hasPrefix("Body (First)'s words") } && said.contains { $0.hasPrefix("Body (Second)'s words") }, "\(said)")
+    }
+
+    @Test func aSchemeIsReviewedOnItsOwnPalette() throws {
+        let tokens = [
+            DesignToken(name: "--ground", value: "#000000", scope: ":root", line: 1),
+            DesignToken(name: "--ink", value: "#ffffff", scope: ":root", line: 2),
+            DesignToken(name: "--ground", value: "#ffffff", scope: DesignResolver.scope(of: "light"), line: 3),
+        ]
+        let found = try one("""
+        {"id": "p", "name": "P", "root": "root", "breakpoints": [{"id": "d", "name": "Desktop", "width": 400}], "layers": [
+          {"id": "root", "children": ["t"], "style": {"fill": "--ground"}},
+          {"id": "t", "kind": "text", "tag": "h1", "text": "words", "style": {"color": "--ink", "font": "15px/18px system-ui"}}
+        ]}
+        """, tokens: tokens)
+        #expect(found.map(\.scheme) == ["light"], "\(found.map(\.said))")
+    }
+
+    @Test func whatRunsOutOfItsFrameIsMeasured() throws {
+        let found = try one("""
+        {"id": "p", "name": "P", "root": "root", "breakpoints": [{"id": "d", "name": "Desktop", "width": 500}, {"id": "m", "name": "Mobile", "width": 300}], "layers": [
+          {"id": "root", "name": "Page", "children": ["row", "tight"], "style": {"fill": "#fff"}},
+          {"id": "row", "name": "Row", "children": ["a", "b"], "layout": {"direction": "row"}},
+          {"id": "a", "name": "A", "kind": "rect", "w": 200, "h": 10},
+          {"id": "b", "name": "B", "kind": "rect", "w": 150, "h": 10},
+          {"id": "tight", "name": "Tight", "kind": "text", "tag": "h1", "text": "twenty-five letters long.", "h": 10, "w": "fill", "style": {"color": "#000", "font": "10px/12px system-ui"}}
+        ]}
+        """)
+        let over = found.filter { $0.kind == "overflow" }
+        #expect(over.contains { $0.layer == "b" && $0.breakpoint == "m" && $0.said == "B runs 50 pt past Row at Mobile." }, "\(over.map(\.said))")
+        #expect(!over.contains { $0.layer == "b" && $0.breakpoint == "d" }, "it fits at 500")
+        #expect(over.contains { $0.layer == "tight" && $0.said == "Tight's words need 12 pt at Mobile, and it's set to 10 pt." }, "\(over.map(\.said))")
+    }
+
+    @Test func targetsHeadingsPicturesSmallTextAndRawValues() throws {
+        let tokens = [DesignToken(name: "--gold", value: "#f2b84b", scope: ":root", line: 1)]
+        let found = try one("""
+        {"id": "p", "name": "Home", "root": "root", "breakpoints": [{"id": "d", "name": "Desktop", "width": 1000}, {"id": "m", "name": "Mobile", "width": 400}], "layers": [
+          {"id": "root", "name": "Page", "children": ["link", "second", "third", "pic", "tiny", "raw"], "style": {"fill": "#fff"}},
+          {"id": "link", "name": "Link", "kind": "text", "tag": "a", "text": "go", "style": {"color": "#000", "font": "15px/18px system-ui"}},
+          {"id": "second", "name": "Second", "kind": "text", "tag": "h2", "text": "second", "style": {"color": "#000", "font": "15px/18px system-ui"}},
+          {"id": "third", "name": "Fourth", "kind": "text", "tag": "h4", "text": "fourth", "style": {"color": "#000", "font": "15px/18px system-ui"}},
+          {"id": "pic", "name": "Pic", "kind": "image", "src": "images/a.png"},
+          {"id": "tiny", "name": "Tiny", "kind": "text", "text": "tiny", "style": {"color": "#000", "font": "9px/11px system-ui"}},
+          {"id": "raw", "name": "Raw", "kind": "rect", "style": {"fill": "#F2B84B"}}
+        ]}
+        """, tokens: tokens)
+        let said = found.map(\.said)
+        #expect(found.contains { $0.kind == "touch" && $0.layer == "link" && $0.breakpoint == "m" }, "\(said)")
+        #expect(!found.contains { $0.kind == "touch" && $0.breakpoint == "d" }, "a desktop has no fingers")
+        #expect(said.contains("Home has no h1: nothing says what the page is."))
+        #expect(said.contains("Fourth is an h4 after an h2: a level is skipped for someone reading by headings."))
+        #expect(said.contains("Pic doesn't say what it shows, for someone who can't see it."))
+        #expect(found.contains { $0.kind == "small" && $0.layer == "tiny" })
+        #expect(said.contains("Raw says #F2B84B where --gold says the same: with the token, it follows the palette."))
+        // Most serious first.
+        #expect(found.map(\.level) == found.map(\.level).sorted())
+    }
+}
+
+@MainActor
+struct DesignReviewWorkspaceTests {
+    private func opened() throws -> DesignWorkspaceModel {
+        let designs = FileManager.default.temporaryDirectory.appending(path: "aether-design-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let model = DesignWorkspaceModel(folder: designs)
+        model.create()
+        _ = try #require(model.document, "\(model.notice ?? "")")
+        return model
+    }
+
+    @Test func theStarterHasOnlyItsSmallNavLinksToFix() throws {
+        let model = try opened()
+        let found = model.findings
+        #expect(found.allSatisfy { $0.kind == "touch" && $0.breakpoint == "mobile" }, "\(found.map(\.said))")
+        #expect(Set(found.map(\.layer)) == ["story", "world", "press"], "\(found.map(\.said))")
+    }
+
+    @Test func aFindingFollowsTheEditAndLeadsToWhereItShows() throws {
+        let model = try opened()
+        let before = model.findings.count
+        // The old lantern on paper: too faint, in the light scheme only.
+        let lantern = try #require(model.document?.tokens.first { $0.name == "--color-lantern-500" && $0.scope == DesignResolver.scope(of: "light") })
+        model.setToken(lantern, to: "#f2b84b")
+        let faint = try #require(model.findings.first { $0.kind == "contrast" && $0.layer == "eyebrow" })
+        #expect(faint.scheme == "light" && faint.breakpoint == nil && model.findings.first?.level == .problem)
+        model.show(faint)
+        #expect(model.selection == "eyebrow" && model.scheme == "light")
+        model.undo()
+        #expect(model.findings.count == before)
+        let touch = try #require(model.findings.first)
+        model.scheme = nil
+        model.show(touch)
+        #expect(model.selection == touch.layer && model.breakpoint == "mobile" && model.scheme == nil)
+    }
+}

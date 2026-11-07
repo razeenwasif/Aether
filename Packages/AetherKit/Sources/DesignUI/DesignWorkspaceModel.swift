@@ -18,6 +18,7 @@ public struct DesignOverrideTarget: Equatable, Sendable {
 public enum DesignNavigatorTab: String, CaseIterable, Sendable {
     case layers = "Layers"
     case tokens = "Tokens"
+    case review = "Review"
 }
 
 /// The Design workspace's state: the designs in the project's `Designs/`,
@@ -801,6 +802,24 @@ public final class DesignWorkspaceModel {
         document.setToken(token, to: value, coalescing: coalescing)
         if let refusal = document.refusal { notice = refusal }
         if document.steps > before { stepped("Set \(token.name)") }
+    }
+
+    // MARK: Review
+
+    /// Pagepilot's findings on the page on screen, as it now stands, most
+    /// serious first.
+    public var findings: [DesignFinding] {
+        guard let document, let pageID, let page = document.expanded[pageID] else { return [] }
+        return DesignReview.review(page, tokens: document.tokens, images: { [weak self] in self?.imageSize($0) })
+    }
+
+    /// Go to where a finding shows: its layer chosen, at its breakpoint, in
+    /// its scheme. On a page, from a component being edited too.
+    public func show(_ finding: DesignFinding) {
+        closeComponent()
+        if let point = finding.breakpoint { breakpoint = point }
+        if finding.scheme != nil { scheme = finding.scheme }
+        selection = finding.layer
     }
 
     // MARK: Undo, save, preview

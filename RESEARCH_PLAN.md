@@ -1798,6 +1798,35 @@ Not yet:
     - The ◐ menu gave `--color-ground` a Dark value, and Dark joined Appearance.
 - **Next for Design:** Pagepilot's layout review, and sync as React or Tailwind.
 
+**2026-11-02 · Design: Review (Pagepilot).** The user said "continue with the next step". Proton never built Pagepilot; it's one line in its design doc ("reviews the layout rather than generating it"), and this is built from that line.
+
+- **The decision:** it measures, and uses no model. `DesignReview` (Swift, in `DesignCore`) lays the expanded page out with `DesignLayout` at each breakpoint and resolves it in each scheme, as the artboards do. So the same page always gets the same answer, it needs no network, and it never changes the design.
+- **What it finds**, most serious first:
+  - Problems: a layer past its frame or the page, by how much; words taller than a set height; contrast under WCAG AA (4.5:1, or 3:1 for large text), against the fills actually behind the words, with opacity counted and a disabled instance excused; a picture with no description.
+  - Warnings: a link or button under 44 pt on a breakpoint under 768; text under 12 pt; no `h1`, a second one, or a skipped heading level.
+  - Notes: a raw colour where a `:root` token says the same.
+  - A contrast the same at every breakpoint is said once, for the page.
+- **Workspace:** Review is the navigator's third tab, worked out only while it's open because it lays the whole page out. A click chooses the layer, at its breakpoint and in its scheme.
+- **Starter:** the review's own findings changed it. Its cards' titles are `h2` (they skipped from `h1` to `h3`), and its buttons are 47 pt tall (padding 16, up from 12). Its three nav links stay small on Mobile, the one thing left for it to find.
+- **Checked:**
+  - Swift: 8 new tests (44 for Design; 236 in all):
+    - WCAG's ratio;
+    - faint words against what's behind them, with an alpha fill and opacity;
+    - a scheme reviewed on its own palette;
+    - overflow measured per breakpoint, and words past a set height;
+    - targets, headings, pictures, small text and raw values;
+    - the starter finding only its nav links;
+    - a finding following an edit, undone, and leading to its layer, breakpoint and scheme;
+    - a name two layers share said with its frame.
+  - Rust: 33 still pass, with the starter changed.
+  - On screen:
+    - The starter's only findings were its three nav links.
+    - Clicking one chose it, outlined on both artboards, with Editing on Mobile.
+    - Setting `--color-ink-muted` to `#333333` raised eight contrast problems, 1.5:1 on the ground and 1.3:1 on the surface, above the warnings. Undo cleared them at once.
+    - Fixed from it: three findings all read "Body's words", so a name layers share now says its frame ("Body (Painted by hand)"). That wording is covered by a test, and wasn't seen on screen.
+- **An incident during the check:** Aether was quit and relaunched for a rebuild without checking whether it was in use. It was: the user was running Diffuse. A later quit, after the user said the app was free, dropped the unsaved Untitled flow's prompt, because Aether doesn't ask about unsaved changes on quit (only `modeling.saveNow()` and the project's save run then). The pictures were saved, each with its graph, so "Open its graph" brings the flow back. Asking before quitting is proposed as its own task.
+- **Next for Design:** sync as React or Tailwind.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.

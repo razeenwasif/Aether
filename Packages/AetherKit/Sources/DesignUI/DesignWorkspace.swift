@@ -145,6 +145,7 @@ private struct DesignNavigator: View {
             switch model.navigatorTab {
             case .layers: layers
             case .tokens: TokensList(model: model, document: document)
+            case .review: ReviewList(model: model)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -229,6 +230,76 @@ private struct DesignNavigator: View {
             if model.component == nil, !document.view.components.isEmpty {
                 ComponentsList(model: model, rows: document.view.components)
             }
+        }
+    }
+}
+
+/// Pagepilot: what's wrong with the page, measured at each breakpoint in
+/// each scheme, most serious first. A click goes to where it shows. Only
+/// worked out while this tab is open: it lays the whole page out each time.
+private struct ReviewList: View {
+    let model: DesignWorkspaceModel
+
+    var body: some View {
+        let found = model.findings
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Measured at each breakpoint and in each scheme, not generated: nothing here changes the design.")
+                .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14).padding(.bottom, 8)
+            if found.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.live).accessibilityHidden(true)
+                    Text("Nothing found: no overflow, faint words, small targets or skipped headings.")
+                        .font(.aeBody).foregroundStyle(Color.ink).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(found) { finding in
+                        Button { model.show(finding) } label: {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Image(systemName: symbol(finding.level)).font(.system(size: 10)).foregroundStyle(tint(finding.level)).frame(width: 12)
+                                    .accessibilityLabel(word(finding.level))
+                                Text(finding.said).font(.aeSmall).foregroundStyle(Color.ink).multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: 6).fill(model.selection == finding.layer ? Color.white.opacity(0.08) : .clear))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 4)
+                        .help("Go to it")
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    private func symbol(_ level: DesignFindingLevel) -> String {
+        switch level {
+        case .problem: "exclamationmark.triangle.fill"
+        case .warning: "exclamationmark.circle"
+        case .note: "info.circle"
+        }
+    }
+
+    private func tint(_ level: DesignFindingLevel) -> Color {
+        switch level {
+        case .problem: Color.coral
+        case .warning: Color.amber
+        case .note: Color.ink2
+        }
+    }
+
+    private func word(_ level: DesignFindingLevel) -> String {
+        switch level {
+        case .problem: "Problem"
+        case .warning: "Warning"
+        case .note: "Note"
         }
     }
 }

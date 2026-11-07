@@ -151,7 +151,8 @@ fn button() -> Component {
                     "button",
                     "Button",
                     &["label"],
-                    Layout { direction: Some("row".into()), pad_h: Some(Val::Num(20.0)), pad_v: Some(Val::Num(12.0)), align: Some("center".into()), ..Layout::default() },
+                    // Tall enough for a finger: 15 of label and 32 of padding.
+                    Layout { direction: Some("row".into()), pad_h: Some(Val::Num(20.0)), pad_v: Some(Val::Num(16.0)), align: Some("center".into()), ..Layout::default() },
                     Style { fill: Some("--color-lantern-500".into()), radius: token("--radius-full"), ..Style::default() },
                 )
             },
@@ -194,7 +195,7 @@ fn feature(id: &str, title: &str, body: &str) -> [Layer; 3] {
                 Style { fill: Some("--color-surface".into()), radius: token("--radius-md"), ..Style::default() },
             )
         },
-        Layer { tag: "h3".into(), ..text(&format!("{id}-title"), "Title", title, "--type-title", "--color-ink") },
+        Layer { tag: "h2".into(), ..text(&format!("{id}-title"), "Title", title, "--type-title", "--color-ink") },
         Layer { w: Some(Val::Text("fill".into())), ..text(&format!("{id}-body"), "Body", body, "--type-body", "--color-ink-muted") },
     ]
 }
