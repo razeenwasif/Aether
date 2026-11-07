@@ -12,6 +12,7 @@ import SwiftUI
 /// The window: the 32 pt rail, then the active workspace edge to edge.
 public struct RootView: View {
     @Bindable var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     public init(model: AppModel) {
         self.model = model
@@ -49,6 +50,7 @@ public struct RootView: View {
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
         .background(WindowChrome())
+        .onAppear { model.reopenWindow = { [openWindow] in openWindow(id: "main") } }
     }
 }
 

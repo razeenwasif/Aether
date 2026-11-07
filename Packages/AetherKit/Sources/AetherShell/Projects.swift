@@ -101,30 +101,47 @@ extension AppModel {
     /// Changes not saved in the canvas and the flow open: saved, dropped, or
     /// the switch called off. Answers whether to go on.
     func askToLeave(for name: String) -> Bool {
+        askAboutUnsaved(before: "opening \(name)") != .stay
+    }
+
+    /// Whether to quit: asked as switching projects is, when anything isn't
+    /// saved. A save that fails stays, having said why. Dropped, the links
+    /// made with what's dropped go too, as they do when a project is left, or
+    /// the project would be saved with links to layers that never were.
+    public func shouldQuit() -> Bool {
+        let answer = askAboutUnsaved(before: "quitting")
+        guard answer != .stay else { return false }
+        guard answer == .drop else { return true }
+        for path in [canvas.document?.state.dirty == true ? canvas.documentPath : nil, diffuse.hasUnsavedEdits ? diffuse.flowPath : nil, design.document?.unsaved.isEmpty == false ? design.documentPath : nil].compactMap({ $0 }) {
+            project.discard(document: path)
+        }
+        return true
+    }
+
+    /// Ask, when anything isn't saved, and do what's answered: `.save` when
+    /// it was all saved or there was nothing to save, `.drop` to leave it,
+    /// `.stay` when asked to, or when a save failed, having said why.
+    private func askAboutUnsaved(before doing: String) -> LeaveAnswer {
         var unsaved: [String] = []
         if let document = canvas.document, document.state.dirty { unsaved.append(document.name) }
         if let editor = diffuse.editor, diffuse.hasUnsavedEdits { unsaved.append(editor.name) }
         if let document = game.document, !document.unsaved.isEmpty { unsaved.append(document.name) }
         if let document = design.document, !document.unsaved.isEmpty { unsaved.append(document.name) }
-        guard !unsaved.isEmpty else { return true }
-        switch askAboutUnsaved(unsaved, name) {
-        case .save:
-            if canvas.document?.state.dirty == true { canvas.save() }
-            if diffuse.hasUnsavedEdits { diffuse.save() }
-            if game.document?.unsaved.isEmpty == false { game.saveNow() }
-            if design.document?.unsaved.isEmpty == false { design.saveNow() }
-            // A save that failed has said why; stay.
-            return canvas.document?.state.dirty != true && !diffuse.hasUnsavedEdits && game.document?.unsaved.isEmpty != false && design.document?.unsaved.isEmpty != false
-        case .stay:
-            return false
-        case .drop:
-            return true
-        }
+        guard !unsaved.isEmpty else { return .save }
+        let answer = askAboutUnsaved(unsaved, doing)
+        guard answer == .save else { return answer }
+        if canvas.document?.state.dirty == true { canvas.save() }
+        if diffuse.hasUnsavedEdits { diffuse.save() }
+        if game.document?.unsaved.isEmpty == false { game.saveNow() }
+        if design.document?.unsaved.isEmpty == false { design.saveNow() }
+        // A save that failed has said why; stay.
+        let saved = canvas.document?.state.dirty != true && !diffuse.hasUnsavedEdits && game.document?.unsaved.isEmpty != false && design.document?.unsaved.isEmpty != false
+        return saved ? .save : .stay
     }
 
-    static func alertAboutUnsaved(_ unsaved: [String], _ name: String) -> LeaveAnswer {
+    static func alertAboutUnsaved(_ unsaved: [String], _ doing: String) -> LeaveAnswer {
         let alert = NSAlert()
-        alert.messageText = "Save the changes to \(ListFormatter.localizedString(byJoining: unsaved)) before opening \(name)?"
+        alert.messageText = "Save the changes to \(ListFormatter.localizedString(byJoining: unsaved)) before \(doing)?"
         alert.informativeText = "If you don’t save them, they’re lost."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
@@ -146,7 +163,8 @@ extension AppModel {
     }
 }
 
-/// What to do with changes not saved when another project opens.
+/// What to do with changes not saved before another project opens or the
+/// app quits.
 enum LeaveAnswer: Sendable {
     case save, stay, drop
 }
@@ -163,6 +181,24 @@ public final class AetherAppDelegate: NSObject, NSApplicationDelegate {
     public func application(_ application: NSApplication, open urls: [URL]) {
         waiting += urls
         openWaiting()
+    }
+
+    /// Quitting, by the menu, the Dock, a restart or closing the window, asks
+    /// about what isn't saved. A field with the keys commits what's typed in
+    /// it when it lets them go, so they're let go first and the question comes
+    /// a moment later. Closing the window has already closed it by now, so
+    /// staying brings it back.
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        sender.keyWindow?.makeFirstResponder(nil)
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                let quit = model.shouldQuit()
+                if !quit, !NSApp.windows.contains(where: { $0.isVisible && $0.canBecomeMain }) { model.reopenWindow?() }
+                NSApp.reply(toApplicationShouldTerminate: quit)
+            }
+        }
+        return .terminateLater
     }
 
     private func openWaiting() {

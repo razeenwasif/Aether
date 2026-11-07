@@ -62,6 +62,8 @@ The rules are RESEARCH_PLAN.md §6.4a.
 
 **One history.** `⌘Z` undoes the newest step of the document on screen, whether it's the document's own or a project step made in it (keeping a version, unlinking). A step and the link made with it, like a layer placed from an asset, undo together. A new step, of either kind, drops what could be redone. The Edit menu names the step. A link belongs to its document as saved: closing without saving takes back the links made since.
 
+**Quitting** asks about anything not saved, in any workspace, by the menu, the Dock or closing the window: Save, Cancel or Don't Save. A save that fails stays, and says why. Cancel after closing the window brings it back. Don't Save takes back the links made with what's dropped.
+
 **The window** moves by the rail's empty space; a double-click there zooms it, or does what the Mac's title-bar double-click setting says.
 
 **The omnibar** (`⌘K`, or Search in the rail) lists tools, actions, assets and places to go, the workspace's own first. Type a few letters in order ("cf" finds Copy the Frame). `↑` `↓` choose, `↩` runs (only once something is typed or chosen), `⇥` narrows to one group, and esc closes. In a flow it can add any node. An asset is placed as a layer in a canvas, or taken by a Load Image in a flow.

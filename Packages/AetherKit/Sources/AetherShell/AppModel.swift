@@ -34,9 +34,12 @@ public final class AppModel {
     public internal(set) var recentProjects: [URL] = []
     /// Where settings kept between launches go; tests use their own.
     @ObservationIgnored let defaults: UserDefaults
-    /// How to ask about changes not saved before another project opens:
-    /// what isn't saved, and the project's name. An alert; tests answer.
+    /// How to ask about changes not saved before another project opens or
+    /// the app quits: what isn't saved, and what's about to happen (`opening
+    /// Two`, `quitting`). An alert; tests answer.
     @ObservationIgnored var askAboutUnsaved: @MainActor ([String], String) -> LeaveAnswer = AppModel.alertAboutUnsaved
+    /// Open the window again: staying after closing it to quit.
+    @ObservationIgnored public var reopenWindow: (() -> Void)?
     @ObservationIgnored private var quitting: (any NSObjectProtocol)?
 
     /// The project last open (or `~/Documents/Aether`), its workspaces

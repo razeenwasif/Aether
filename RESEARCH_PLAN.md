@@ -1827,6 +1827,29 @@ Not yet:
 - **An incident during the check:** Aether was quit and relaunched for a rebuild without checking whether it was in use. It was: the user was running Diffuse. A later quit, after the user said the app was free, dropped the unsaved Untitled flow's prompt, because Aether doesn't ask about unsaved changes on quit (only `modeling.saveNow()` and the project's save run then). The pictures were saved, each with its graph, so "Open its graph" brings the flow back. Asking before quitting is proposed as its own task.
 - **Next for Design:** sync as React or Tailwind.
 
+**2026-11-02 · Aether asks before quitting with unsaved changes.** Asked as "do this task here", after a quit for a rebuild dropped the user's unsaved flow (see Review, above).
+
+- **The gap:** quitting ran only `modeling.saveNow()` and the project's save. An unsaved flow, canvas, game or design went with no question, and the project was saved with any links made with them.
+- **What it does:**
+  - `AppModel.shouldQuit()` asks through the prompt project switching uses, worded "before quitting". `askAboutUnsaved`'s second argument is now what's about to happen. Save, Cancel and Don't Save behave as they do there, and a failed save stays and says why.
+  - Don't Save also discards the project's links made with what's dropped, as leaving a project does.
+  - `AetherAppDelegate.applicationShouldTerminate` lets go of the keys first, so a field commits what's typed, then asks a moment later (`terminateLater`).
+  - Closing the window quits this app with the window already gone, so staying reopens it (`reopenWindow`, from `openWindow`).
+- **Checked:**
+  - Swift: 4 new tests (240 in all):
+    - nothing to ask with an untouched flow;
+    - a never-saved flow edited: staying cancels, Save writes the file where there was none, Don't Save quits;
+    - a canvas, a game and a design all named;
+    - a failed save cancelling the quit;
+    - Don't Save taking back a link.
+  - On screen, 2026-11-07, with a throwaway Lumen whose Title had "Carry the light home." typed and not committed:
+    - Quit Aether asked "Save the changes to Lumen before quitting?" with Save, Don't Save and Cancel. The field committed first.
+    - Cancel kept the app and the edit.
+    - Closing the last window asked the same. Cancel brought the window back, edit intact.
+    - Don't Save quit. The page on disk still had the starter title.
+    - Unsaved Canvas and Diffuse documents, and a failed save, are covered by tests only. Quitting during a Diffuse run still doesn't warn.
+- **Not covered:** quitting during a Diffuse run still doesn't warn; the run just stops.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
