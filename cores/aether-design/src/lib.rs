@@ -32,6 +32,7 @@ pub mod html;
 pub mod react;
 pub mod starter;
 pub mod sync;
+pub mod tailwind;
 pub mod theme;
 
 use std::path::{Path, PathBuf};

@@ -898,15 +898,25 @@ public final class DesignWorkspaceModel {
         watch()
     }
 
-    /// What the folder is written as: `html` or `react`.
+    /// What the folder is written as: `html`, `react` or `tailwind`.
     public var syncAs: String { document?.syncAs ?? "html" }
 
-    /// Write the folder as `kind` (`html` or `react`) from now on: one step.
+    /// What `kind` is called.
+    static func syncName(_ kind: String) -> String {
+        switch kind {
+        case "react": "React"
+        case "tailwind": "React and Tailwind"
+        default: "HTML and CSS"
+        }
+    }
+
+    /// Write the folder as `kind` (`html`, `react` or `tailwind`) from now
+    /// on: one step.
     /// What's been edited there comes in first; then the other kind's files,
     /// as Aether wrote them, go, and this kind's are written.
     public func writeSync(as kind: String) {
         guard let document, document.syncAs != kind else { return }
-        let label = kind == "react" ? "Write as React" : "Write as HTML and CSS"
+        let label = "Write as \(Self.syncName(kind))"
         checkSync()
         let before = document.steps
         if document.setSyncAs(kind, label: label), document.steps > before { stepped(label) }
@@ -915,7 +925,7 @@ public final class DesignWorkspaceModel {
             return
         }
         guard let folder = document.syncFolder, let written = writeSync() else { return }
-        var said = "Wrote \(written.count) file\(written.count == 1 ? "" : "s") to \(folder.lastPathComponent) as \(kind == "react" ? "React" : "HTML and CSS")"
+        var said = "Wrote \(written.count) file\(written.count == 1 ? "" : "s") to \(folder.lastPathComponent) as \(Self.syncName(kind))"
         if !cleared.isEmpty { said += ", and took out the \(cleared.count) Aether wrote before" }
         if !leftEdited.isEmpty { said += ". \(ListFormatter.localizedString(byJoining: leftEdited)) \(leftEdited.count == 1 ? "was" : "were") edited there, so \(leftEdited.count == 1 ? "it's" : "they're") left" }
         notice = said + "."
@@ -929,7 +939,7 @@ public final class DesignWorkspaceModel {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = "Keep in Step"
-        panel.message = "Each component and page is written here as \(syncAs == "react" ? "React" : "HTML and CSS"), and edits to them come back to the design."
+        panel.message = "Each component and page is written here as \(Self.syncName(syncAs)), and edits to them come back to the design."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         keepInStep(with: url)
     }

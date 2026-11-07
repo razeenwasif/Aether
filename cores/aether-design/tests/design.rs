@@ -742,3 +742,122 @@ fn a_component_inside_a_component_is_imported_and_its_props_read_back() {
     let trailer = design.component("header").unwrap().get().layer("trailer").unwrap().texts["label"].clone();
     assert_eq!(trailer, "Watch it");
 }
+
+/// A design kept in step with a folder written as React styled by Tailwind.
+fn synced_as_tailwind(name: &str) -> (PathBuf, Design, PathBuf) {
+    let (dir, mut design) = made(name);
+    let folder = dir.join("src/components");
+    let set = ops(json!([
+        {"op": "set", "path": ["sync"], "value": "src/components"},
+        {"op": "set", "path": ["syncAs"], "value": "tailwind"},
+    ]));
+    assert!(design.apply(&Target::Design, &set).unwrap());
+    let written = design.sync_out().unwrap();
+    assert_eq!(written, vec!["theme.css", "Button.tsx", "pages/Home.tsx"], "no CSS beside them");
+    (dir, design, folder)
+}
+
+#[test]
+fn tailwind_classes_are_the_css_and_read_back_as_no_change() {
+    let (_, mut design, folder) = synced_as_tailwind("tw-round");
+    let theme = std::fs::read_to_string(folder.join("theme.css")).unwrap();
+    assert!(theme.starts_with("@import \"tailwindcss\";") && theme.contains("@theme static {\n  --color-ground: #0f1412;"), "{theme}");
+    assert!(theme.contains("@media (prefers-color-scheme: light) {\n  :root {"), "the light scheme stays: {theme}");
+    let button = std::fs::read_to_string(folder.join("Button.tsx")).unwrap();
+    assert!(!button.contains("import \"./button.css\""), "{button}");
+    assert!(button.contains("button: \"group/button flex flex-row py-[16px] px-[20px] items-center rounded-full hover:opacity-[0.85] active:opacity-[0.7] data-[state=disabled]:opacity-[0.4]\","), "{button}");
+    assert!(button.contains("primary: { button: \"bg-lantern-500\", label: \"text-lantern-ink\" },"), "{button}");
+    assert!(button.contains("secondary: { button: \"bg-transparent border border-line\", label: \"text-ink\" },"), "{button}");
+    assert!(button.contains("look.button, byVariant[variant].button, className]") && button.contains("data-state={state}"), "{button}");
+    let page = std::fs::read_to_string(folder.join("pages/Home.tsx")).unwrap();
+    assert!(page.contains("<h1 className=\"title flex-none self-stretch max-w-full text-ink [font:var(--type-display)] max-[1279px]:[font:var(--type-display-sm)]\">"), "{page}");
+    assert!(page.contains("<Button className=\"wishlist flex-none\" as=\"a\" label=\"Wishlist now\" />"), "{page}");
+    assert!(!page.contains("./home.css"), "nothing a page's classes can't say: {page}");
+    for rel in ["Button.tsx", "pages/Home.tsx"] {
+        let text = std::fs::read_to_string(folder.join(rel)).unwrap();
+        let read = design.sync_in(rel, &text).unwrap();
+        assert!(!read.changed && read.notes.is_empty(), "{rel}: {:?}", read.notes);
+    }
+    assert!(design.sync_out().unwrap().is_empty());
+}
+
+#[test]
+fn a_pages_classes_and_a_breakpoints_come_back_as_one_step() {
+    let (_, mut design, folder) = synced_as_tailwind("tw-page");
+    let text = edit(&folder, "pages/Home.tsx", "py-(--space-16) px-(--space-8)", "py-[40px] px-(--space-8)");
+    let text = text.replacen("max-[1279px]:[font:var(--type-display-sm)]", "max-[1279px]:[font:var(--type-title)]", 1);
+    let text = text.replacen("className=\"logo flex-none text-ink", "className=\"logo flex-none text-center text-lantern-500", 1);
+    let text = text.replacen(">Carry the light through the Hollow Grove.<", ">Carry the light home.<", 1);
+    let read = design.sync_in("pages/Home.tsx", &text).unwrap();
+    assert!(read.changed && read.notes.is_empty(), "{read:?}");
+    let page = home(&design);
+    assert_eq!(page.layer("hero").unwrap().layout.pad_v, Some(aether_design::format::Val::Num(40.0)));
+    assert_eq!(page.layer("title").unwrap().at["mobile"].style.font.as_deref(), Some("--type-title"));
+    assert_eq!(page.layer("title").unwrap().text, "Carry the light home.");
+    let logo = page.layer("logo").unwrap();
+    assert_eq!((logo.style.color.as_deref(), logo.style.text_align.as_deref()), (Some("--color-lantern-500"), Some("center")));
+    // One step, undone whole.
+    assert!(design.undo(&home_target()).unwrap());
+    assert_eq!(home(&design).layer("logo").unwrap().style.color.as_deref(), Some("--color-ink"));
+    assert_eq!(home(&design).layer("title").unwrap().text, "Carry the light through the Hollow Grove.");
+}
+
+#[test]
+fn a_components_look_its_options_and_states_come_back() {
+    let (_, mut design, folder) = synced_as_tailwind("tw-component");
+    let text = edit(&folder, "Button.tsx", "border border-line", "border border-ink");
+    let text = text.replacen("label: \"flex-none [font:var(--type-label-md)]\"", "label: \"flex-none text-center [font:var(--type-label-md)]\"", 1);
+    let text = text.replacen("hover:opacity-[0.85]", "hover:opacity-[0.9]", 1);
+    let text = text.replacen("primary: { button: \"bg-lantern-500\"", "primary: { button: \"bg-ink\"", 1);
+    let read = design.sync_in("Button.tsx", &text).unwrap();
+    assert!(read.changed && read.notes.is_empty() && read.target == "component:button", "{read:?}");
+    let button = design.component("button").unwrap().get();
+    let root = button.layer("button").unwrap();
+    assert_eq!(root.style.fill.as_deref(), Some("--color-ink"), "the first option is the component's own");
+    assert_eq!(root.when["variant=secondary"].style.stroke.as_deref(), Some("--color-ink"));
+    assert_eq!(root.when["variant=secondary"].style.fill.as_deref(), Some("transparent"));
+    assert_eq!(root.when["state=hover"].style.opacity, Some(0.9));
+    assert_eq!(button.layer("label").unwrap().style.text_align.as_deref(), Some("center"));
+    // Written again, it reads back as no change.
+    design.sync_out().unwrap();
+    let again = std::fs::read_to_string(folder.join("Button.tsx")).unwrap();
+    assert!(again.contains("primary: { button: \"bg-ink\""), "{again}");
+    let read = design.sync_in("Button.tsx", &again).unwrap();
+    assert!(!read.changed && read.notes.is_empty(), "{read:?}");
+}
+
+#[test]
+fn what_tailwind_cant_take_is_said_and_left() {
+    let (_, mut design, folder) = synced_as_tailwind("tw-notes");
+    let text = edit(&folder, "pages/Home.tsx", "className=\"logo flex-none", "className=\"logo shadow-lg md:p-4 flex-none");
+    let read = design.sync_in("pages/Home.tsx", &text).unwrap();
+    assert!(!read.changed, "{read:?}");
+    let said = read.notes.join("\n");
+    assert!(said.contains("shadow-lg isn't a class Aether reads") && said.contains("md: isn't a breakpoint"), "{said}");
+    let text = edit(&folder, "Button.tsx", "rounded-full", "rounded-full focus:ring-2");
+    let read = design.sync_in("Button.tsx", &text).unwrap();
+    assert!(!read.changed && read.notes.iter().any(|n| n.contains("focus:ring-2")), "{read:?}");
+}
+
+#[test]
+fn a_component_inside_a_component_and_a_breakpoint_of_its_layers_stay_whole() {
+    let (_, mut design, folder) = synced_as_tailwind("tw-nested");
+    design.make_component("home", "hero", "header", "Header").unwrap();
+    let written = design.sync_out().unwrap();
+    assert!(written.contains(&"Header.tsx".to_string()), "{written:?}");
+    let header = std::fs::read_to_string(folder.join("Header.tsx")).unwrap();
+    assert!(header.contains("<Button className={[\"header__wishlist\", look.wishlist].filter(Boolean).join(\" \")} as=\"a\" label=\"Wishlist now\" />"), "{header}");
+    // The title's Mobile font is the header's layer's now: a page's classes
+    // can't reach it, so it's CSS beside the page.
+    let css = std::fs::read_to_string(folder.join("pages/home.css")).unwrap();
+    assert!(css.contains("@media (max-width: 1279px) {") && css.contains(".header__title {") && css.contains("font: var(--type-display-sm);"), "{css}");
+    let page = std::fs::read_to_string(folder.join("pages/Home.tsx")).unwrap();
+    assert!(page.contains("import \"./home.css\";"), "{page}");
+    for rel in ["Header.tsx", "pages/Home.tsx"] {
+        let text = std::fs::read_to_string(folder.join(rel)).unwrap();
+        let read = design.sync_in(rel, &text).unwrap();
+        assert!(!read.changed && read.notes.is_empty(), "{rel}: {:?}", read.notes);
+    }
+    let edited = header.replacen("label=\"Watch the trailer\"", "label=\"Watch it\"", 1);
+    assert!(design.sync_in("Header.tsx", &edited).unwrap().changed);
+}

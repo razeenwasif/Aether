@@ -127,15 +127,16 @@ public final class DesignDocument {
         apply([.set(["sync"], path ?? "")], target: "design", label: label)
     }
 
-    /// What the folder is written as: `html`, or `react` (a `.tsx` for each
-    /// component and page, styled by the same CSS).
-    public var syncAs: String { view.design.syncAs == "react" ? "react" : "html" }
+    /// What the folder is written as: `html`, `react` (a `.tsx` for each
+    /// component and page, styled by the same CSS), or `tailwind` (those
+    /// styled by Tailwind's classes).
+    public var syncAs: String { ["react", "tailwind"].contains(view.design.syncAs) ? view.design.syncAs : "html" }
 
-    /// Write the folder as `kind` (`html` or `react`): one step of
-    /// `design.json`.
+    /// Write the folder as `kind` (`html`, `react` or `tailwind`): one step
+    /// of `design.json`.
     @discardableResult
     public func setSyncAs(_ kind: String, label: String) -> Bool {
-        apply([.set(["syncAs"], kind == "react" ? "react" : "")], target: "design", label: label)
+        apply([.set(["syncAs"], ["react", "tailwind"].contains(kind) ? kind : "")], target: "design", label: label)
     }
 
     /// Write the folder's files as the design is now; those written.

@@ -767,6 +767,24 @@ struct DesignSyncTests {
         #expect(design.contains("\"syncAs\": \"react\""))
     }
 
+    @Test func writtenAsTailwindTheCSSGoesAndAClassComesBack() throws {
+        let (model, project, folder) = try opened()
+        model.writeSync(as: "react")
+        model.writeSync(as: "tailwind")
+        #expect(model.syncAs == "tailwind" && model.undoLabel == "Write as React and Tailwind" && project.history.done.count == 3)
+        #expect(exists(folder, "Button.tsx") && exists(folder, "pages/Home.tsx"))
+        #expect(!exists(folder, "button.css") && !exists(folder, "pages/home.css"), "a component's look is in its classes now")
+        let theme = try String(contentsOf: folder.appending(path: "theme.css"), encoding: .utf8)
+        #expect(theme.hasPrefix("@import \"tailwindcss\";") && theme.contains("@theme static {"))
+        // A class edited there comes back as a step.
+        try edit(folder, "pages/Home.tsx", "className=\"logo flex-none text-ink", "className=\"logo flex-none text-lantern-500")
+        model.checkSync()
+        #expect(model.page?.layer("logo")?.style.color == "--color-lantern-500" && model.undoLabel == "From pages/Home.tsx")
+        #expect(model.syncNotes.isEmpty)
+        model.undo()
+        #expect(model.page?.layer("logo")?.style.color == "--color-ink")
+    }
+
     @Test func anEditMadeJustBeforeTheFolderChangesKindComesInFirst() throws {
         let (model, project, folder) = try opened()
         try edit(folder, "button.html", ">Button<", ">Go<")

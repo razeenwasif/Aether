@@ -444,7 +444,8 @@ public struct DesignView: Decodable, Sendable {
         /// The folder of HTML and CSS it's kept in step with, as
         /// `design.json` says it; empty for none.
         public var sync: String
-        /// What that folder is written as: `react`, or empty for HTML.
+        /// What that folder is written as: `react`, `tailwind`, or empty for
+        /// HTML.
         public var syncAs: String
         enum CodingKeys: String, CodingKey { case name, pages, sync, syncAs }
         public init(from decoder: Decoder) throws {

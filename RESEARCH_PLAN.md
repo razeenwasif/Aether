@@ -1861,7 +1861,7 @@ Not yet:
   - Cancel leaves the run going and asks nothing more; Quit goes on to what isn't saved, then stops the run on its backend.
   - Nothing running asks nothing about runs.
   - A backend that never answers the cancel holds the quit for no more than the wait.
-- **On screen: not yet.** It needs a real run on forge and the app quit while it goes. On 2026-11-07 forge wasn't serving images, so no run could be started.
+- **On screen: not yet.** It needs a real run on forge and the app quit while it goes. Forge wasn't serving images at either check on 2026-11-07 (the second at 17:37). A run on this Mac instead would first prepare a model on its GPU, which is heavy local work, so it wasn't used.
 
 **2026-11-07 · Design: sync as React.** The user chose React TSX over Tailwind, or both, for the last item on the Design list.
 
@@ -1901,6 +1901,39 @@ Not yet:
     - `Button.tsx`'s `label = "Button"` changed to `"Go"`: the Edit menu read "Undo From Button.tsx", and Button was marked edited.
     - Back to HTML + CSS: "Wrote 2 files to components as HTML and CSS, and took out the 2 Aether wrote before." The folder held only HTML and CSS, with the new title and "Go" in them.
 - **Not yet:** sync as Tailwind; multi-line words given as a prop render on one line unless the CSS says `white-space: pre-line`.
+
+**2026-11-07 · Design: sync as Tailwind.** The user said "work on the two open tasks": this, and seeing the run prompt on screen once forge serves.
+
+- **The decision:** the React files, styled by Tailwind's classes instead of CSS files, since that's what Proton's design doc describes (`Dashboard.tsx` bound, and token edits rewriting "the Tailwind theme"). The classes are worked out from the CSS the HTML writer already writes, one declaration at a time, and read back by turning them into that CSS again and reading it with the existing reader. Neither side has its own idea of a layer's look, so the three kinds can't drift.
+- **Format:** `syncAs` gains `tailwind`.
+- **Out** (`tailwind.rs`):
+  - `theme.css` is `@import "tailwindcss";` and the palette's `:root` as `@theme static`, so every token is a variable whether a class uses it or not. A scheme's `@media` block stays plain CSS on `:root`, which wins over Tailwind's theme layer.
+  - Declarations become classes:
+    - a colour token is its colour (`bg-lantern-500`, `text-ink`, `border border-line`), and a radius token its radius (`rounded-full`);
+    - any other token is a variable (`py-(--space-16)`, `gap-(--space-6)`), and a value of its own is in brackets (`gap-[8px]`, `bg-[#123456]`);
+    - a font, `revert`, and anything with no utility are arbitrary properties (`[font:var(--type-body)]`).
+  - A page's layer is its id and then its classes; a narrower breakpoint's are `max-[1279px]:`.
+  - A component's `.tsx` holds `const look = { button: "…", label: "…" }` and, for each prop that changes anything, `const byVariant = { primary: {…}, secondary: {…} }`.
+    - Each property an option changes leaves `look` for every option's list, since two utilities for one property apply in Tailwind's order rather than the class list's, so an option can't add to the base as an HTML modifier does.
+    - States are `hover:`, `active:`, `focus-visible:` and `data-[state=disabled]:` on the root, which gets `group/button` and `data-state`, and `group-hover/button:` and the like on the layers inside.
+  - What a page says of a component's layers at a breakpoint (a component's `at`) can't be said by the page's classes, which don't reach inside an instance. It stays CSS, in `pages/<id>.css`, written and imported only when there's any.
+- **Back in:** a page's element classes and a component's `look` and `by<Prop>` lists become CSS rules with the selectors the HTML writer uses, and are read by `page_css_ops` and `component_css_ops`. Words and props are read by the React reader, whose class lookup now also takes `{["button__label", look.label].join(" ")}`. A class Aether doesn't write, a variant that isn't a breakpoint or a state, and a key that isn't a layer or an option are notes.
+- **Workspace:** As: HTML + CSS · React · Tailwind. Switching to Tailwind takes out the component and page CSS Aether wrote.
+- **Checked:**
+  - Rust: 3 unit tests (every class written reads back as its declaration, variants split outside brackets, the theme), and 5 integration tests (42 in `tests/design.rs`):
+    - written and read back as no change, with no notes;
+    - a page's padding, a breakpoint's font, a colour and alignment, and words come back as one step, undone whole;
+    - a component's look, an option's border, the first option's fill as the component's own, a hover's opacity;
+    - what can't be read said;
+    - a component inside a component, and its layer's breakpoint kept as CSS beside the page.
+  - The written `.tsx` were parsed by Bun with no errors. Tailwind itself hasn't compiled them: it isn't installed here, and fetching it is a download.
+  - Swift: 1 new test: switching to Tailwind takes out the CSS, writes the theme, and a class edited comes back and undoes.
+  - On screen, 2026-11-07, with a throwaway Lumen and a scratch folder:
+    - Tailwind chosen, then the path typed: "Wrote 3 files to components", `theme.css` with `@theme static`, `Button.tsx` and `pages/Home.tsx`.
+    - The title's `text-ink` changed to `text-lantern-500`, and its `max-[1279px]:` font to `--type-title`: within two seconds the title was lantern on both artboards and set smaller on Mobile.
+    - `byVariant.primary`'s `bg-lantern-500` changed to `bg-surface`: Wishlist now took the surface fill, and the Edit menu read "Undo From Button.tsx".
+    - Found and fixed: the three-way As switch, at "HTML + CSS · React · Tailwind" and its full width, pushed the inspector past the window's edge, cutting off Stop and covering part of the Mobile artboard. It now says HTML · React · Tailwind (each with a tooltip) and may narrow, and the inspector keeps its width.
+- **Not yet:** two options of different props changing the same property apply in Tailwind's order, not as the HTML's cascade does; `hover:` isn't kept off while disabled except by Tailwind putting `data-[state=disabled]:` after it.
 
 ## 10. Status and handoff
 

@@ -34,10 +34,10 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use crate::format::{Component, Kind, Layer, Override, Page, STATE};
-use crate::{html, react, Design, Target};
+use crate::{html, react, tailwind, Design, Target};
 
 /// What the head of each CSS file says.
-const CSS_MARK: &str = "/* Written by Aether from a design. Its colours, fonts, radius, opacity and\n   layout come back to the design when this file is saved; how a layer sits\n   in its frame is the design's to say. */\n";
+pub(crate) const CSS_MARK: &str = "/* Written by Aether from a design. Its colours, fonts, radius, opacity and\n   layout come back to the design when this file is saved; how a layer sits\n   in its frame is the design's to say. */\n";
 /// What the head of each HTML file says.
 const HTML_MARK: &str = "<!-- Written by Aether from a design. The words of its text come back to\n     the design when this file is saved. -->\n";
 
@@ -47,9 +47,14 @@ pub struct File {
     pub text: String,
 }
 
-/// Whether the folder is written as React rather than HTML.
+/// Whether the folder is written as React (styled by CSS or by Tailwind)
+/// rather than HTML.
 fn react(design: &Design) -> bool {
-    design.design.get().sync_as == "react"
+    matches!(design.design.get().sync_as.as_str(), "react" | "tailwind")
+}
+
+fn tailwind(design: &Design) -> bool {
+    design.design.get().sync_as == "tailwind"
 }
 
 /// The folder's files as the design is now: HTML and CSS, or React's
@@ -57,15 +62,31 @@ fn react(design: &Design) -> bool {
 pub fn files(design: &Design) -> Vec<File> {
     let components = design.component_map();
     let mut out = vec![File { rel: "theme.css".into(), text: design.theme.text().to_string() }];
+    if tailwind(design) {
+        out[0].text = tailwind::theme(design.theme.text());
+        for c in components.values() {
+            let look = tailwind::component_look(c);
+            out.push(File { rel: format!("{}.tsx", react::pascal(&c.id)), text: react::component(c, &components, Some(&look)) });
+        }
+        for page in &design.pages {
+            let p = page.get();
+            let look = tailwind::page_look(p, &components);
+            if !look.css.is_empty() {
+                out.push(File { rel: format!("pages/{}.css", p.id), text: look.css.clone() });
+            }
+            out.push(File { rel: format!("pages/{}.tsx", react::pascal(&p.id)), text: react::page(p, &components, Some(&look)) });
+        }
+        return out;
+    }
     if react(design) {
         for c in components.values() {
             out.push(File { rel: format!("{}.css", c.id), text: format!("{CSS_MARK}{}", html::component_css(c)) });
-            out.push(File { rel: format!("{}.tsx", react::pascal(&c.id)), text: react::component(c, &components) });
+            out.push(File { rel: format!("{}.tsx", react::pascal(&c.id)), text: react::component(c, &components, None) });
         }
         for page in &design.pages {
             let p = page.get();
             out.push(File { rel: format!("pages/{}.css", p.id), text: format!("{CSS_MARK}{}", html::page_css(p, &components, &p.root)) });
-            out.push(File { rel: format!("pages/{}.tsx", react::pascal(&p.id)), text: react::page(p, &components) });
+            out.push(File { rel: format!("pages/{}.tsx", react::pascal(&p.id)), text: react::page(p, &components, None) });
         }
         return out;
     }
@@ -111,11 +132,19 @@ pub fn read(design: &Design, rel: &str, text: &str) -> Result<(Target, Vec<proto
         let (target, ops) = match folder {
             "" => {
                 let c = components.values().find(|c| react::pascal(&c.id) == stem).ok_or_else(|| format!("{rel}: there's no component {stem}"))?;
-                (Target::Component(c.id.clone()), react::read(react::Of::Component(c), &components, text, &mut notes))
+                let ops = match tailwind(design) {
+                    true => tailwind::read_component(c, &components, text, &mut notes),
+                    false => react::read(react::Of::Component(c), &components, text, &mut notes),
+                };
+                (Target::Component(c.id.clone()), ops)
             }
             "pages" => {
                 let p = design.pages.iter().map(|p| p.get()).find(|p| react::pascal(&p.id) == stem).ok_or_else(|| format!("{rel}: there's no page {stem}"))?;
-                (Target::Page(p.id.clone()), react::read(react::Of::Page(p), &components, text, &mut notes))
+                let ops = match tailwind(design) {
+                    true => tailwind::read_page(p, &components, text, &mut notes),
+                    false => react::read(react::Of::Page(p), &components, text, &mut notes),
+                };
+                (Target::Page(p.id.clone()), ops)
             }
             _ => return Err(format!("{rel} isn't one of the files a design writes")),
         };
@@ -483,7 +512,7 @@ fn layer_path(id: &str) -> Vec<String> {
 
 /// A component's selector read as the layer it's for, and the option or
 /// state it says what changes for, if any.
-fn component_selector(c: &Component, selector: &str) -> Option<(String, Option<String>)> {
+pub(crate) fn component_selector(c: &Component, selector: &str) -> Option<(String, Option<String>)> {
     let class = |id: &str| match id == c.root {
         true => format!(".{}", c.id),
         false => format!(".{}__{id}", c.id),
@@ -521,7 +550,7 @@ fn component_selector(c: &Component, selector: &str) -> Option<(String, Option<S
     None
 }
 
-fn component_css_ops(c: &Component, text: &str, notes: &mut Vec<String>) -> Vec<proton_game::Op> {
+pub(crate) fn component_css_ops(c: &Component, text: &str, notes: &mut Vec<String>) -> Vec<proton_game::Op> {
     let mut ops = Vec::new();
     for rule in rules(text) {
         let Some((id, key)) = component_selector(c, &rule.selector) else {
@@ -538,7 +567,7 @@ fn component_css_ops(c: &Component, text: &str, notes: &mut Vec<String>) -> Vec<
     ops
 }
 
-fn page_css_ops(page: &Page, components: &BTreeMap<String, Component>, text: &str, notes: &mut Vec<String>) -> Vec<proton_game::Op> {
+pub(crate) fn page_css_ops(page: &Page, components: &BTreeMap<String, Component>, text: &str, notes: &mut Vec<String>) -> Vec<proton_game::Op> {
     let points = page.widest_first();
     let mut ops = Vec::new();
     for rule in rules(text) {

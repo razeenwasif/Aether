@@ -77,8 +77,10 @@ pub struct DesignFile {
     /// folder or whole: a project's `src/components` (see [`crate::sync`]).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub sync: String,
-    /// What the folder is written as: HTML and CSS (unsaid, or `html`), or
-    /// `react`, a `.tsx` for each component and page (see [`crate::react`]).
+    /// What the folder is written as: HTML and CSS (unsaid, or `html`),
+    /// `react`, a `.tsx` for each component and page (see [`crate::react`]),
+    /// or `tailwind`, those styled by Tailwind's classes (see
+    /// [`crate::tailwind`]).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub sync_as: String,
 }
@@ -662,8 +664,8 @@ fn plain_value(value: &str) -> bool {
 impl proton_game::Document for DesignFile {
     fn problems(&self) -> Vec<String> {
         let mut out = ids("page", self.pages.iter().map(String::as_str));
-        if !["", "html", "react"].contains(&self.sync_as.as_str()) {
-            out.push(format!("the folder is written as html or react, not {:?}", self.sync_as));
+        if !["", "html", "react", "tailwind"].contains(&self.sync_as.as_str()) {
+            out.push(format!("the folder is written as html, react or tailwind, not {:?}", self.sync_as));
         }
         out
     }

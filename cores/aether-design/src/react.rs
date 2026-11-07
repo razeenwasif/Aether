@@ -37,6 +37,7 @@ use std::fmt::Write as _;
 use serde_json::{json, Value};
 
 use crate::format::{Component, Kind, Layer, Page, STATE, STATES};
+use crate::tailwind::{ComponentLook, PageLook};
 
 /// What the head of each `.tsx` says.
 const TSX_MARK: &str = "/* Written by Aether from a design. The words of its text, and the props\n   an instance is given, come back to the design when this file is saved;\n   its look is in the CSS beside it. */\n";
@@ -66,7 +67,8 @@ pub fn text_prop(c: &Component, id: &str) -> String {
 }
 
 /// A component's `.tsx`; `components` names the words of those it holds.
-pub fn component(c: &Component, components: &BTreeMap<String, Component>) -> String {
+/// With `look`, styled by Tailwind's classes rather than its CSS file.
+pub fn component(c: &Component, components: &BTreeMap<String, Component>, look: Option<&ComponentLook>) -> String {
     let mut out = String::from(TSX_MARK);
     out.push_str("import type { ElementType } from \"react\";\n");
     for inner in held(c) {
@@ -75,7 +77,27 @@ pub fn component(c: &Component, components: &BTreeMap<String, Component>) -> Str
     for (name, src) in images(&c.layers) {
         let _ = writeln!(out, "import {name} from \"./{src}\";");
     }
-    let _ = writeln!(out, "import \"./{}.css\";\n", c.id);
+    match look {
+        None => {
+            let _ = writeln!(out, "import \"./{}.css\";\n", c.id);
+        }
+        Some(look) => {
+            out.push('\n');
+            out.push_str("/** Each layer's classes. What an option changes is in its own list\n    below, one of which always applies. */\nconst look = {\n");
+            for (id, list) in &look.base {
+                let _ = writeln!(out, "  {}: {},", key(id), string(list));
+            }
+            out.push_str("};\n\n");
+            for (prop, lists) in &look.by {
+                let _ = writeln!(out, "/** What each {prop} says instead. */\nconst {} = {{", crate::tailwind::by(prop));
+                for (option, list) in lists {
+                    let inner: Vec<String> = list.iter().map(|(id, l)| format!("{}: {}", key(id), string(l))).collect();
+                    let _ = writeln!(out, "  {}: {{ {} }},", key(option), inner.join(", "));
+                }
+                out.push_str("};\n\n");
+            }
+        }
+    }
 
     let name = pascal(&c.id);
     let texts: Vec<&Layer> = c.layers.iter().filter(|l| l.kind == Kind::Text).collect();
@@ -116,15 +138,20 @@ pub fn component(c: &Component, components: &BTreeMap<String, Component>) -> Str
     if !states.is_empty() {
         classes.push(format!("{STATE} && `{}--{STATE}-${{{STATE}}}`", c.id));
     }
+    classes.extend(look.map(|l| looked(l, &c.root)).unwrap_or_default());
     classes.push("className".into());
     out.push_str("  return (\n");
-    let disabled = if states.contains(&"disabled") { format!(" aria-disabled={{{STATE} === \"disabled\" || undefined}}") } else { String::new() };
+    let mut disabled = if states.contains(&"disabled") { format!(" aria-disabled={{{STATE} === \"disabled\" || undefined}}") } else { String::new() };
+    if look.is_some() && !states.is_empty() {
+        // What `data-[state=disabled]:` and the group's states look at.
+        disabled = format!(" data-{STATE}={{{STATE}}}{disabled}");
+    }
     let class = format!("{{[{}].filter(Boolean).join(\" \")}}", classes.join(", "));
     match root {
         Some(root) if !root.children.is_empty() && root.kind == Kind::Frame => {
             let _ = writeln!(out, "    <Root className={class}{disabled}>");
             for child in &root.children {
-                component_element(c, components, child, 3, &mut out);
+                component_element(c, components, look, child, 3, &mut out);
             }
             out.push_str("    </Root>\n");
         }
@@ -139,8 +166,9 @@ pub fn component(c: &Component, components: &BTreeMap<String, Component>) -> Str
     out
 }
 
-/// A page's `.tsx`.
-pub fn page(p: &Page, components: &BTreeMap<String, Component>) -> String {
+/// A page's `.tsx`. With `look`, styled by Tailwind's classes, and its own
+/// CSS imported only when it holds anything.
+pub fn page(p: &Page, components: &BTreeMap<String, Component>, look: Option<&PageLook>) -> String {
     let mut out = String::from(TSX_MARK);
     out.push_str("import \"../theme.css\";\n");
     let mut placed: Vec<String> = Vec::new();
@@ -156,10 +184,15 @@ pub fn page(p: &Page, components: &BTreeMap<String, Component>) -> String {
     for (name, src) in images(&own) {
         let _ = writeln!(out, "import {name} from \"../{src}\";");
     }
-    let _ = writeln!(out, "import \"./{}.css\";\n", p.id);
+    match look {
+        Some(look) if look.css.is_empty() => out.push('\n'),
+        _ => {
+            let _ = writeln!(out, "import \"./{}.css\";\n", p.id);
+        }
+    }
     let _ = writeln!(out, "export default function {}Page() {{", pascal(&p.id));
     out.push_str("  return (\n");
-    page_element(p, components, &p.root, 2, &mut Vec::new(), &mut out);
+    page_element(p, components, look, &p.root, 2, &mut Vec::new(), &mut out);
     out.push_str("  );\n}\n");
     out
 }
@@ -201,63 +234,100 @@ fn image_name(layers: &[Layer], src: &str) -> Option<String> {
     images(layers).into_iter().find(|(_, s)| s == src).map(|(n, _)| n)
 }
 
-fn component_element(c: &Component, components: &BTreeMap<String, Component>, id: &str, depth: usize, out: &mut String) {
+/// A layer's classes in a component styled by Tailwind: its own list and,
+/// for each prop that changes it, its option's.
+fn looked(look: &ComponentLook, id: &str) -> Vec<String> {
+    let mut out = vec![format!("look{}", access(id))];
+    for (prop, lists) in &look.by {
+        if lists.iter().any(|(_, list)| list.iter().any(|(l, _)| l == id)) {
+            out.push(format!("{}[{prop}]{}", crate::tailwind::by(prop), access(id)));
+        }
+    }
+    out
+}
+
+/// A key of an object: bare when it can be.
+fn key(id: &str) -> String {
+    match id.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        true => id.to_string(),
+        false => string(id),
+    }
+}
+
+fn access(id: &str) -> String {
+    match key(id) == id {
+        true => format!(".{id}"),
+        false => format!("[{}]", string(id)),
+    }
+}
+
+fn component_element(c: &Component, components: &BTreeMap<String, Component>, look: Option<&ComponentLook>, id: &str, depth: usize, out: &mut String) {
     let Some(layer) = c.layer(id) else { return };
     let indent = "  ".repeat(depth);
-    let class = format!("{}__{}", c.id, layer.id);
+    let plain = format!("{}__{}", c.id, layer.id);
+    // `className="button__label"`, or with Tailwind its classes after it.
+    let class = match look {
+        None => format!("\"{plain}\""),
+        Some(look) => format!("{{[{}].filter(Boolean).join(\" \")}}", [string(&plain)].into_iter().chain(looked(look, &layer.id)).collect::<Vec<_>>().join(", ")),
+    };
     match layer.kind {
         Kind::Text => {
-            let _ = writeln!(out, "{indent}<{0} className=\"{class}\">{{{1}}}</{0}>", tag(layer), text_prop(c, &layer.id));
+            let _ = writeln!(out, "{indent}<{0} className={class}>{{{1}}}</{0}>", tag(layer), text_prop(c, &layer.id));
         }
         Kind::Image => {
             let src = image_name(&c.layers, &layer.src).map(|n| format!("{{{n}}}")).unwrap_or_else(|| string(&layer.src));
-            let _ = writeln!(out, "{indent}<img className=\"{class}\" src={src} alt={} />", string(&layer.text));
+            let _ = writeln!(out, "{indent}<img className={class} src={src} alt={} />", string(&layer.text));
         }
         Kind::Instance => {
             let _ = writeln!(out, "{indent}{}", instance(layer, &class, components));
         }
         _ if layer.children.is_empty() => {
-            let _ = writeln!(out, "{indent}<{0} className=\"{class}\" />", tag(layer));
+            let _ = writeln!(out, "{indent}<{0} className={class} />", tag(layer));
         }
         _ => {
-            let _ = writeln!(out, "{indent}<{} className=\"{class}\">", tag(layer));
+            let _ = writeln!(out, "{indent}<{} className={class}>", tag(layer));
             for child in &layer.children {
-                component_element(c, components, child, depth + 1, out);
+                component_element(c, components, look, child, depth + 1, out);
             }
             let _ = writeln!(out, "{indent}</{}>", tag(layer));
         }
     }
 }
 
-fn page_element(p: &Page, components: &BTreeMap<String, Component>, id: &str, depth: usize, path: &mut Vec<String>, out: &mut String) {
+fn page_element(p: &Page, components: &BTreeMap<String, Component>, look: Option<&PageLook>, id: &str, depth: usize, path: &mut Vec<String>, out: &mut String) {
     let Some(layer) = p.layer(id) else { return };
     if path.iter().any(|seen| seen == id) {
         return;
     }
+    // Its id, and with Tailwind its classes after it.
+    let class = match look.and_then(|l| l.classes.get(id)).filter(|c| !c.is_empty()) {
+        Some(classes) => format!("{id} {classes}"),
+        None => id.to_string(),
+    };
     let indent = "  ".repeat(depth);
     match layer.kind {
         Kind::Text => {
-            let _ = writeln!(out, "{indent}<{0} className=\"{1}\">{2}</{0}>", tag(layer), layer.id, words(&layer.text));
+            let _ = writeln!(out, "{indent}<{0} className=\"{1}\">{2}</{0}>", tag(layer), class, words(&layer.text));
         }
         Kind::Image => {
             let own: Vec<Layer> = p.subtree(&p.root).into_iter().cloned().collect();
             let src = image_name(&own, &layer.src).map(|n| format!("{{{n}}}")).unwrap_or_else(|| string(&layer.src));
-            let _ = writeln!(out, "{indent}<img className=\"{}\" src={src} alt={} />", layer.id, string(&layer.text));
+            let _ = writeln!(out, "{indent}<img className=\"{class}\" src={src} alt={} />", string(&layer.text));
         }
         Kind::Instance if components.contains_key(&layer.component) => {
-            let _ = writeln!(out, "{indent}{}", instance(layer, &layer.id, components));
+            let _ = writeln!(out, "{indent}{}", instance(layer, &format!("\"{class}\""), components));
         }
         Kind::Instance => {
             let _ = writeln!(out, "{indent}{{/* {}: no component {} */}}", layer.id, layer.component);
         }
         _ if layer.children.is_empty() => {
-            let _ = writeln!(out, "{indent}<{0} className=\"{1}\" />", tag(layer), layer.id);
+            let _ = writeln!(out, "{indent}<{0} className=\"{1}\" />", tag(layer), class);
         }
         _ => {
-            let _ = writeln!(out, "{indent}<{} className=\"{}\">", tag(layer), layer.id);
+            let _ = writeln!(out, "{indent}<{} className=\"{class}\">", tag(layer));
             path.push(id.to_string());
             for child in &layer.children {
-                page_element(p, components, child, depth + 1, path, out);
+                page_element(p, components, look, child, depth + 1, path, out);
             }
             path.pop();
             let _ = writeln!(out, "{indent}</{}>", tag(layer));
@@ -268,7 +338,7 @@ fn page_element(p: &Page, components: &BTreeMap<String, Component>, id: &str, de
 /// An instance as its component's element: where it sits, the element it
 /// is when it says, then what it chooses and the words it gives.
 fn instance(layer: &Layer, class: &str, components: &BTreeMap<String, Component>) -> String {
-    let mut out = format!("<{} className=\"{class}\"", pascal(&layer.component));
+    let mut out = format!("<{} className={class}", pascal(&layer.component));
     if !layer.tag.is_empty() {
         let _ = write!(out, " as={}", attribute(&layer.tag));
     }
@@ -699,19 +769,57 @@ struct Element {
 }
 
 impl Element {
+    /// Its classes: a quoted list, or the first string of a list in
+    /// braces, as `{["button__label", look.label].join(" ")}`.
     fn classes(&self) -> Vec<String> {
-        self.attrs
-            .iter()
-            .find(|(n, _)| n == "className")
-            .and_then(|(_, v)| v.as_deref())
-            .and_then(|v| v.trim().strip_prefix('"').and_then(|r| r.strip_suffix('"')))
-            .map(|v| v.split_whitespace().map(str::to_string).collect())
-            .unwrap_or_default()
+        let Some(v) = self.attrs.iter().find(|(n, _)| n == "className").and_then(|(_, v)| v.as_deref()) else { return Vec::new() };
+        let v = v.trim();
+        let said = match v.strip_prefix("{[") {
+            Some(list) => split_top(list, ',').first().and_then(|first| js_string(first)),
+            None => v.strip_prefix('"').and_then(|r| r.strip_suffix('"')).map(str::to_string),
+        };
+        said.map(|v| v.split_whitespace().map(str::to_string).collect()).unwrap_or_default()
     }
 
     fn inner<'a>(&self, text: &'a str) -> Option<&'a str> {
         self.inner.map(|(a, b)| &text[a..b])
     }
+}
+
+/// Each element's classes, by its first: a layer's id, or a component's
+/// class for it.
+pub fn class_lists(text: &str) -> Vec<(String, Vec<String>)> {
+    elements(text)
+        .iter()
+        .map(|e| e.classes())
+        .filter_map(|all| Some((all.first()?.clone(), all)))
+        .collect()
+}
+
+/// The keys of the object after `head` (`const look = `), each with its
+/// value: a string's words, or anything else's source.
+pub fn object(text: &str, head: &str) -> Option<Vec<(String, String)>> {
+    let start = text.find(head)? + head.len();
+    let open = start + text[start..].find('{')?;
+    if !text[start..open].trim().is_empty() {
+        return None;
+    }
+    let close = closing(text, open)?;
+    let mut out = Vec::new();
+    for part in split_top(&text[open + 1..close], ',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let pieces = split_top(part, ':');
+        let (Some(name), true) = (pieces.first(), pieces.len() > 1) else { continue };
+        let name = name.trim();
+        let name = js_string(name).unwrap_or_else(|| name.to_string());
+        let value = pieces[1..].join(":");
+        let value = value.trim();
+        out.push((name, js_string(value).unwrap_or_else(|| value.to_string())));
+    }
+    Some(out)
 }
 
 /// The JSX elements after the first `return (`, in order.

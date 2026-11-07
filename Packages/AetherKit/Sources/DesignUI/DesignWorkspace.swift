@@ -698,9 +698,7 @@ private struct SyncSection: View {
                 Text(verbatim: folder.path(percentEncoded: false)).font(.aeMono).foregroundStyle(Color.ink).lineLimit(2).truncationMode(.head)
                     .help(folder.path(percentEncoded: false))
                 kind
-                Text(model.syncAs == "react"
-                    ? "Each component is written here as a .tsx whose props are its options and words, and each page as a .tsx placing them, styled by the same CSS, on every save. Edit words, an instance's props or the CSS there and it comes back as a step."
-                    : "Each component and page is written here as HTML and CSS on every save. Edit a colour, a font, padding or words there and it comes back as a step.")
+                Text(Self.says[model.syncAs] ?? Self.says["html"]!)
                     .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder]) }
@@ -733,10 +731,26 @@ private struct SyncSection: View {
         }
     }
 
-    /// What the folder is written as.
+    /// What the folder is written as: short words, and free to narrow, so
+    /// three choices fit the inspector's width.
     private var kind: some View {
-        WordPicker(label: "As", value: model.syncAs, options: [("html", "HTML + CSS"), ("react", "React")]) { model.writeSync(as: $0) }
+        InspectorRow("As") {
+            Picker("As", selection: Binding(get: { model.syncAs }, set: { model.writeSync(as: $0) })) {
+                Text("HTML").tag("html").help("HTML and CSS")
+                Text("React").tag("react").help("React, styled by CSS files")
+                Text("Tailwind").tag("tailwind").help("React, styled by Tailwind's classes")
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+        }
     }
+
+    private static let says = [
+        "html": "Each component and page is written here as HTML and CSS on every save. Edit a colour, a font, padding or words there and it comes back as a step.",
+        "react": "Each component is written here as a .tsx whose props are its options and words, and each page as a .tsx placing them, styled by the same CSS, on every save. Edit words, an instance's props or the CSS there and it comes back as a step.",
+        "tailwind": "Each component and page is written here as a .tsx styled by Tailwind's classes, with the palette as its @theme, on every save. Edit a class, words or an instance's props there and it comes back as a step.",
+    ]
 }
 
 /// An instance: its component, the option it picks of each prop, its words
