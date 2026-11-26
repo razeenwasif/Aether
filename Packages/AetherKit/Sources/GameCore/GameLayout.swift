@@ -160,6 +160,60 @@ public struct GameArt {
 }
 
 extension GameScene {
+    /// What stands, in the order an isometric ground is seen: the furthest
+    /// up the screen first, so what's nearer is drawn over it. Two at one
+    /// height keep the order they came in.
+    public static func byDepth(_ standing: [GameStanding]) -> [GameStanding] {
+        standing.enumerated().sorted { ($0.element.at.y, $0.offset) < ($1.element.at.y, $1.offset) }.map(\.element)
+    }
+
+    /// The ways a line is drawn with Shift held: on an isometric ground,
+    /// across, up and down, and along the 2:1 diagonals; side-on, across,
+    /// up and down, and at 45°.
+    public static func ways(isometric: Bool) -> [CGVector] {
+        let diagonal = isometric ? CGVector(dx: 2, dy: 1) : CGVector(dx: 1, dy: 1)
+        return [CGVector(dx: 1, dy: 0), CGVector(dx: 0, dy: 1), diagonal, CGVector(dx: -diagonal.dx, dy: diagonal.dy)]
+    }
+
+    /// `p` brought onto the nearest of `ways` from `from`: as far along it
+    /// as `p` is.
+    public static func snap(_ p: CGPoint, from: CGPoint, isometric: Bool) -> CGPoint {
+        let d = CGVector(dx: p.x - from.x, dy: p.y - from.y)
+        var best = (CGPoint.zero, -Double.infinity)
+        for way in ways(isometric: isometric) {
+            let length = hypot(way.dx, way.dy)
+            let along = (d.dx * way.dx + d.dy * way.dy) / length
+            // The nearer the way, the more of `d` lies along it.
+            if abs(along) > best.1 {
+                best = (CGPoint(x: from.x + way.dx / length * along, y: from.y + way.dy / length * along), abs(along))
+            }
+        }
+        return CGPoint(x: best.0.x.rounded(), y: best.0.y.rounded())
+    }
+
+    /// An isometric ground's grid over a room `size` big: lines along the
+    /// two 2:1 diagonals, a flag 128 across and 64 deep, from the room's
+    /// corner. Each a pair of ends.
+    public static func grid(_ size: CGSize, across: Double = 128) -> [(CGPoint, CGPoint)] {
+        let deep = across / 2
+        var out: [(CGPoint, CGPoint)] = []
+        // y = k·deep − x/2 and y = k·deep + x/2, over the room.
+        let lowest = Int((-size.width / 2 / deep).rounded(.down)), highest = Int(((size.height + size.width / 2) / deep).rounded(.up))
+        for k in lowest...highest {
+            let c = Double(k) * deep
+            for slope in [-0.5, 0.5] {
+                // Where it crosses x = 0 and x = width, clipped to the room's height.
+                var ends: [CGPoint] = []
+                for x in [0.0, size.width] { ends.append(CGPoint(x: x, y: c + slope * x)) }
+                for y in [0.0, size.height] { ends.append(CGPoint(x: (y - c) / slope, y: y)) }
+                let inside = ends.filter { $0.x >= -0.5 && $0.x <= size.width + 0.5 && $0.y >= -0.5 && $0.y <= size.height + 0.5 }
+                guard let first = inside.min(by: { $0.x < $1.x }), let last = inside.max(by: { $0.x < $1.x }), last.x - first.x > 0.5 else { continue }
+                out.append((first, last))
+            }
+        }
+        return out
+    }
+
     /// Everything a room draws, back to front, in world pixels, for the game
     /// camera centred at `center`: each plane's art shifted by its parallax
     /// and hazed, what stands on the play plane in front of its art, a lit
@@ -169,10 +223,13 @@ extension GameScene {
     /// nil), and `sparks` are bursts begun by what happened, flying on the
     /// play plane in front of what stands there. `snap` keeps pixel art on
     /// whole pixels. `tick` is the run's ticks a second, which a
-    /// skeleton's frames are counted in.
+    /// skeleton's frames are counted in. `depth` draws what stands in
+    /// order of its feet, the furthest up the screen first, as an
+    /// isometric game's ground is seen.
     public static func layout(_ room: GameRoom, focal: Double, view: CGSize, center: CGPoint, art: GameArt,
                               standing: [GameStanding] = [], time: Double? = nil, air: Double? = nil, sparks: [GameSpark] = [],
-                              snap: Bool = false, tick: Int = 60) -> [GameSprite] {
+                              snap: Bool = false, tick: Int = 60, depth: Bool = false) -> [GameSprite] {
+        let standing = depth ? Self.byDepth(standing) : standing
         let corner = corner(room, view: view, center: center)
         var out: [GameSprite] = []
         for plane in room.planes {

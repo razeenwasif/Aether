@@ -275,7 +275,7 @@ mod tests {
         let dir = Scratch(std::env::temp_dir().join(format!("aether-game-import-{name}-{}", std::process::id())));
         let _ = std::fs::remove_dir_all(dir.path());
         std::fs::create_dir_all(dir.path()).unwrap();
-        crate::game::game_create(dir.path().to_string_lossy().into(), "Lumen".into()).unwrap();
+        crate::game::game_create(dir.path().to_string_lossy().into(), "Lumen".into(), "metroidvania".into()).unwrap();
         let editor = GameEditor::open(dir.path().to_string_lossy().into()).unwrap();
         (dir, editor)
     }

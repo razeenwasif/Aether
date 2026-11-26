@@ -172,8 +172,9 @@ public final class GameDocument {
         (try? JSONDecoder().decode([GameFound].self, from: Data(gameFound(folder: folder.path).utf8))) ?? []
     }
 
-    /// A new game called `name` in `folder`, from Proton's template.
-    public nonisolated static func create(named name: String, in folder: URL) throws {
-        try gameCreate(dir: folder.path, name: name)
+    /// A new game called `name` in `folder`, from a template: `kind` is
+    /// `metroidvania` (side-on) or `isometric`.
+    public nonisolated static func create(named name: String, in folder: URL, kind: String = "metroidvania") throws {
+        try gameCreate(dir: folder.path, name: name, kind: kind)
     }
 }

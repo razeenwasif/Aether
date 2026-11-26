@@ -3,7 +3,7 @@
 Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **Design approved and Q1–Q5 settled 27 Oct; Diffuse and Canvas are built, and M1's project graph links them; Model is built in part, Game for side-on games, and Design's first slice is in (see §10a); Video is designed and waiting**
 
 Design canvas (12 boards, click-through prototype): https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv
-Status & Plan (run order with live statuses, renders of every board): https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7
+Status & Plan (run order with statuses and workspace summary): [docs/status-and-plan.html](docs/status-and-plan.html) (legacy read-only Claude copy: https://claude.ai/artifact/TwC8opexFRczYqjag3V8P7)
 
 ---
 
@@ -628,7 +628,7 @@ Proton saw the same four: `proton-game`'s `Niche` names Metroidvania, Roguelite,
 |---|---|---|---|---|---|
 | Metroidvania | Hollow Knight | Side-on, many parallax planes | Hand-drawn and painted, smooth sampling | Platforming: gravity, wall-cling, dash; rooms joined into a map, gated by abilities | Built (Game slices 1–2) |
 | Roguelite | Dead Cells | Side-on | Pixel art lit like a modern game (normal maps), sampled nearest, camera snapped to the pixel | Platforming as above; each run assembled from authored rooms, and death ends it | The platforming and the `nearest` filter; no runs, no pixel snapping, no lighting |
-| Isometric | Hades | Angled from above, fixed | Painted sprites over painted ground | Moving on the ground in 8 directions, with a dash; no jump; depth by ground position | Nothing |
+| Isometric | Hades | Angled from above, fixed | Painted sprites over painted ground | Moving on the ground in 8 directions, with a dash; no jump; depth by ground position | The ground's moving, pits, depth order, the grid and its template (2026-11-07); not 8-way sprites, shadows or stairs |
 | Lowpoly | Tunic, Monument Valley | Real 3D under an orthographic, fixed-angle camera | Low-poly, soft light, tilt-shift blur | Tunic: walking on terrain. Monument Valley: paths that join by how they look from the camera | Nothing in Game; Model has scenes and a Metal renderer |
 
 **What follows for the engine:**
@@ -641,11 +641,11 @@ Proton saw the same four: `proton-game`'s `Niche` names Metroidvania, Roguelite,
 
 **Proposed order** (each a slice, each needing the user's go-ahead):
 1. ~~The Metal stage, side-on first: lit planes with normal maps, ambience, bloom, grade, vignette, and the pixel mode. Serves Hollow Knight and Dead Cells.~~ Done, see §10a (Game, third slice).
-2. Isometric: top-down movement in the simulation, the angled camera, depth sorting, and editing ground rooms. Serves Hades.
+2. ~~Isometric: top-down movement in the simulation, the angled camera, depth sorting, and editing ground rooms. Serves Hades.~~ First slice done, see §10a (2026-11-07).
 3. Low-poly: Model scenes as rooms, the orthographic 3D camera, walking on the scene. Serves Tunic; Monument Valley's paths after.
 4. When wanted, between these: roguelite runs, and Model → sprite sheets.
 
-Before isometric, by the user's choice (30 Oct): side-on finished first. ~~The importers, Send to Game and particles~~ and ~~sound, skeletons drawn, squash, stretch and shake~~: done, see §10a. Side-on is finished; the isometric slice is next.
+Before isometric, by the user's choice (30 Oct): side-on finished first. ~~The importers, Send to Game and particles~~ and ~~sound, skeletons drawn, squash, stretch and shake~~: done, see §10a. Side-on is finished; isometric's first slice is done (§10a).
 
 **Still not goals:** a free or first-person 3D camera, streamed open worlds, networked play.
 
@@ -1935,6 +1935,38 @@ Not yet:
     - Found and fixed: the three-way As switch, at "HTML + CSS · React · Tailwind" and its full width, pushed the inspector past the window's edge, cutting off Stop and covering part of the Mobile artboard. It now says HTML · React · Tailwind (each with a tooltip) and may narrow, and the inspector keeps its width.
 - **Not yet:** two options of different props changing the same property apply in Tailwind's order, not as the HTML's cascade does; `hover:` isn't kept off while disabled except by Tailwind putting `data-[state=disabled]:` after it.
 
+**2026-11-07 · Game: the isometric slice.** Asked as "do this task here" (§9b, 2, proposed as its own session). The user chose the ground in room pixels over ground units projected, and the whole slice over one without foes.
+
+- **The decision:** an isometric room stays in its own pixels, as side-on rooms are, and the angle is in the painted art, as most 2D isometric games do it. Moving up the screen is moving away, at the ground's depth; depth is the feet's height on the screen. The editor, picking, collision and art work as they did; nothing is projected.
+- **Format** (`proton-game`): `game.json` gains `ground.depth` (default 0.5, unsaid when it is), read when `niche` is `isometric`. The cooked world carries it as `ground` out of 256, 0 for a side-on game, and is written only when not 0, so Proton's recorded worlds read as they were.
+- **The simulation** (`sim/mod.rs`, `sim/fight.rs`): `step` now moves by `platform` (side-on, the code as it was) or `walk` (the ground).
+  - Eight directions from the stick; a diagonal at 181/256 of the speed, so no faster than a straight line; up and down at the depth. Acceleration and slowing as side-on runs, the up-and-down rates at the depth.
+  - A dash along the way last walked (`State.aim`), in the eight directions; no jump, no gravity, always on the ground.
+  - What moves through lines is the patch the feet stand on, as wide as the body and half as deep; blows still land on the whole body. Every line but a hazard's is a wall, one-way lines too. `slide_ground` takes each step and, when it meets a wall at a slant, nudges it along (up to ¾ of a step across, 2½ up or down, as a 2:1 wall needs and a little over), so a wall is slid along, not stuck on.
+  - A hazard is a pit: it sends the player back to where they last stood clear of one and costs health, as side-on hazards do.
+  - Swings go four ways (down no longer needs the air). A thing struck is thrown straight away from the player; no pogo. A blow on the player throws them across, not up.
+  - Crawlers and chargers on the ground come for the player while they see them (their `sight`), at their speed (at once when no `accel` is said), sliding along walls; flyers and turrets are as they were.
+  - Side-on is untouched: Proton's four recorded replays still end in the same hashes, and every one of proton-game's tests passes.
+- **The template** (`isometric`): a courtyard 2400 by 1600 and its art drawn in code, the same bytes every time.
+  - A floor of stone flags 128 by 64, laid 2:1 in a diamond 2048 across, its corners on the editor's grid, darkening to its edge, with a pit dug in.
+  - The walls are a closed line a few pixels inside the floor's edge. A pillar is a still thing with a small wall under its foot, so it's walked behind and around, not through. Also a crawler (`sight` 700, `damage` 1), a brazier, motes, and a void past the edge.
+  - Made in about half a second (release).
+- **Bridge:** `game_create(dir, name, kind)`.
+- **Swift:**
+  - New Game offers Side-on · Isometric. The room inspector's Kind sets `niche` as one step ("Make It Isometric", "Make It Side-On").
+  - `GameScene.layout(depth:)` draws what stands by its feet, the furthest up the screen first, a tie keeping its order: in the editor and in Play.
+  - The editor lays a faint 2:1 grid over an isometric room (`GameScene.grid`). Shift keeps the next point of a line being drawn across, up and down, or along the diagonals (`GameScene.snap`): the grid's 2:1 in an isometric game, 45° side-on.
+  - The camera already followed both ways: the simulation's `follow` is unchanged.
+- **Checked:**
+  - Rust: 7 tests (`tests/ground.rs`): the template's bytes, images and cooking, and a side-on game's ground of 0; walking eight ways at the depth and never falling; walls every way and a slanted one slid along; a dash the way last walked; a pit; the crawler coming and a swing landing; the same input making the same run. 503 Rust tests pass.
+  - Swift: 5 tests (`GameIsometricTests`): the courtyard read whole; depth order, and the layout keeping order unless asked; Shift's snapping; the grid; the kind as one step, and Play walking up at half speed, across, and the replay check. Every Swift test passes.
+  - On screen, 2026-11-07, in a throwaway game (deleted after):
+    - New Game ▸ Isometric made the courtyard. In the editor: the flags on the grid, the pit's art under its outline, the pillar on its base, the brazier, crawler and spawn, and Kind showing Isometric.
+    - Play drew it lit and letterboxed with the player standing on the ground, and Stop replayed 5913 ticks to the same state.
+    - Synthetic clicks and key holds don't reach Game's Metal stage, so the user played it: eight ways at the ground's depth, behind and in front of the pillar, sliding along the walls, the pit, the crawler, a swing and a dash, the replay check, and a line drawn with Shift onto the grid. "Done, it all works."
+    - Fixed from it: Play's hint said "Z or Space jumps" in an isometric game; it now says "Arrows or WASD walk, X swings, C or Shift dashes".
+- **Not yet:** sprites facing eight ways (left and right only, flipped); shadows under what stands; raised floors and stairs; foes cleverer than coming straight on (they don't path round walls); a bench, door or gate placed in an isometric room hasn't been tried; the parallax planes still shift by depth, which an isometric room has little use for.
+
 ## 10. Status and handoff
 
 - Done (PI): Proton survey, UX architecture, Velvet Obsidian system, app icon, a 12-board click-through prototype, this plan, and the five decisions recorded in §9.
@@ -1988,4 +2020,6 @@ Then ~~the local Core ML backend (Q3's default)~~: done, see §10a. ~~The Canvas
 
 ~~Sound, skeletons drawn, squash, stretch and shake: side-on finished~~: done, see §10a.
 
-**Next, proposed:** Game's isometric slice (§9b, 2). Launch time (§7b) stays open.
+~~Game's isometric slice (§9b, 2)~~: first slice done, see §10a.
+
+**Next, proposed:** isometric's second slice (8-way sprites, shadows, raised floors), or low-poly (§9b, 3). Launch time (§7b) stays open.

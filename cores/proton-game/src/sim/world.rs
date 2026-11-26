@@ -288,6 +288,11 @@ pub struct World {
     /// How far ahead of the player the camera looks, the way they face.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub look: Fx,
+    /// An isometric game's ground, out of 256: moving away up the screen
+    /// covers this much of what moving across does. 0 for a side-on game,
+    /// which falls and jumps.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub ground: Fx,
 }
 
 fn is_zero(v: &Fx) -> bool {
@@ -547,6 +552,10 @@ impl World {
             actors,
             flags,
             look: fx(game.feel.lookahead.max(0) as f64),
+            ground: match game.niche {
+                crate::format::Niche::Isometric => (game.ground.depth.clamp(0.125, 1.0) * 256.0).round() as Fx,
+                _ => 0,
+            },
         })
     }
 }

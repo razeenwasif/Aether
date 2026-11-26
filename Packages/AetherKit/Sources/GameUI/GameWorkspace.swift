@@ -102,7 +102,15 @@ private struct GameHome: View {
                 TextField("Name", text: $model.newName, prompt: Text("Lumen"))
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(model.create)
-                Text("A Metroidvania from Proton's template: two rooms, a player, a crawler, a bench and a gate, their art drawn in code.")
+                Picker("Kind", selection: $model.newKind) {
+                    Text("Side-on").tag("metroidvania")
+                    Text("Isometric").tag("isometric")
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                Text(model.newKind == "isometric"
+                    ? "Isometric, seen from above at an angle: a courtyard to walk in eight ways, with a pit, a pillar to walk behind and a crawler, their art drawn in code."
+                    : "A Metroidvania from Proton's template: two rooms, a player, a crawler, a bench and a gate, their art drawn in code.")
                     .font(.aeSmall).foregroundStyle(Color.ink2).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
@@ -483,6 +491,19 @@ private struct FeelAndSound: View {
     var body: some View {
         let feel = view.game.feel, audio = view.game.audio
         let files = model.audioFiles
+        PanelSection("Kind") {
+            Picker("Kind", selection: Binding(get: { view.game.isIsometric ? "isometric" : "metroidvania" }, set: { model.setKind($0) })) {
+                Text("Side-on").tag("metroidvania")
+                Text("Isometric").tag("isometric")
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            Text(view.game.isIsometric
+                ? "The whole game's: walking on the ground in eight ways, away up the screen at half speed, with a dash and no jumping. What stands is drawn by its feet, nearer over further."
+                : "The whole game's: side-on, running, jumping and falling, with walls to cling to.")
+                .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
+        }
         PanelSection("Feel") {
             Text("The whole game's: the camera leading the player the way they face, the screen shaking at a blow, a body stretching as it jumps and squashing as it lands.")
                 .font(.aeSmall).foregroundStyle(Color.ink3).fixedSize(horizontal: false, vertical: true)
@@ -662,7 +683,8 @@ private struct PlayHUD: View {
                 .accessibilityLabel("Health \(model.health.now) of \(model.health.most)")
                 Divider().frame(height: 14)
             }
-            Text("Arrows or WASD move, Z or Space jumps, X swings, C or Shift dashes").font(.aeSmall).foregroundStyle(Color.ink)
+            Text(model.isIsometric ? "Arrows or WASD walk, X swings, C or Shift dashes" : "Arrows or WASD move, Z or Space jumps, X swings, C or Shift dashes")
+                .font(.aeSmall).foregroundStyle(Color.ink)
             Button("Stop  ⎋", action: model.stop).controlSize(.small)
         }
         .padding(.horizontal, 14)

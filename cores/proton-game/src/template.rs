@@ -22,12 +22,16 @@ pub struct File {
 }
 
 /// The kinds of game a template can be made for, and what each is called.
-pub const TEMPLATES: &[(&str, &str)] = &[("metroidvania", "Metroidvania — side view, rooms joined into one map")];
+pub const TEMPLATES: &[(&str, &str)] = &[
+    ("metroidvania", "Metroidvania — side view, rooms joined into one map"),
+    ("isometric", "Isometric — angled from above, walking on the ground"),
+];
 
 /// The files of a new game called `name`, made from the template `kind`.
 pub fn files(kind: &str, name: &str) -> Result<Vec<File>, String> {
     match kind {
         "metroidvania" => Ok(metroidvania(name)),
+        "isometric" => Ok(isometric(name)),
         other => Err(format!("there is no {other} template yet")),
     }
 }
@@ -109,6 +113,215 @@ fn metroidvania(name: &str) -> Vec<File> {
     .into_iter()
     .chain(sounds())
     .collect()
+}
+
+/// An isometric game: one courtyard, a floor of stone laid 2:1 and walled
+/// at its edges, a pit, a pillar to walk behind, and a crawler that comes
+/// for the player when it sees them.
+fn isometric(name: &str) -> Vec<File> {
+    let game = GameFile {
+        name: name.to_string(),
+        niche: Niche::Isometric,
+        input: default_input(),
+        start: Start { room: "courtyard".into(), spawn: "start".into() },
+        audio: Audio { sounds: SOUNDS.iter().map(|(event, file, _)| (event.to_string(), format!("audio/{file}.wav"))).collect(), ..Audio::default() },
+        ..GameFile::default()
+    };
+    let world = World {
+        areas: vec![Area { id: "ruin".into(), name: "Sunken Ruin".into(), color: "#7a6b99".into(), music: None }],
+        rooms: vec![RoomRef { id: "courtyard".into(), area: "ruin".into(), at: [0, 0], file: "rooms/courtyard.room.json".into() }],
+        ..World::default()
+    };
+    let player = Prefab {
+        id: "player".into(),
+        name: "Player".into(),
+        sprite: Some("art/player.png".into()),
+        pivot: [24, 80],
+        size: [36, 72],
+        health: Some(5),
+        behaviour: Behaviour { kind: BehaviourKind::Player, params: Default::default() },
+        ..Prefab::default()
+    };
+    let crawler = Prefab {
+        id: "crawler".into(),
+        name: "Crawler".into(),
+        sprite: Some("art/crawler.png".into()),
+        pivot: [32, 40],
+        size: [56, 34],
+        health: Some(2),
+        behaviour: Behaviour {
+            kind: BehaviourKind::Crawler,
+            params: [("speed".to_string(), 140.0), ("sight".to_string(), 700.0), ("damage".to_string(), 1.0)].into_iter().collect(),
+        },
+        ..Prefab::default()
+    };
+    let pillar = Prefab {
+        id: "pillar".into(),
+        name: "Pillar".into(),
+        sprite: Some("art/pillar.png".into()),
+        pivot: [48, 250],
+        size: [64, 240],
+        behaviour: Behaviour { kind: BehaviourKind::Still, params: Default::default() },
+        ..Prefab::default()
+    };
+    vec![
+        text(crate::project::GAME, &game),
+        text(crate::project::WORLD, &world),
+        text("rooms/courtyard.room.json", &courtyard()),
+        text("prefabs/player.prefab.json", &player),
+        text("prefabs/crawler.prefab.json", &crawler),
+        text("prefabs/pillar.prefab.json", &pillar),
+        File { rel: "art/void.png".into(), bytes: void().png() },
+        File { rel: "art/floor.png".into(), bytes: floor().png() },
+        File { rel: "art/pillar.png".into(), bytes: pillar_art().png() },
+        File { rel: "art/player.png".into(), bytes: figure().png() },
+        File { rel: "art/crawler.png".into(), bytes: crawler_art().png() },
+    ]
+    .into_iter()
+    .chain(sounds())
+    .collect()
+}
+
+/// Where the courtyard's floor is laid, and its middle: a 2:1 diamond
+/// 2048 across and 1024 deep, its flags on the editor's grid (128 by 64
+/// from the room's corner).
+const FLOOR_AT: [i32; 2] = [192, 288];
+const FLOOR_MIDDLE: [i32; 2] = [1216, 800];
+/// The pit's middle in the room, and its half width and depth.
+const PIT: [i32; 4] = [1520, 860, 130, 65];
+
+/// A diamond about `at`, `half` wide and half as deep, as points.
+fn diamond(at: [i32; 2], half: i32) -> Vec<[i32; 2]> {
+    let [x, y] = at;
+    vec![[x, y - half / 2], [x + half, y], [x, y + half / 2], [x - half, y]]
+}
+
+fn courtyard() -> Room {
+    let floor = Plane {
+        id: "main".into(),
+        name: "Ground".into(),
+        gameplay: true,
+        lit: true,
+        items: vec![Item { id: "floor".into(), image: "art/floor.png".into(), at: FLOOR_AT, ..Item::default() }],
+        ..Plane::default()
+    };
+    let void = Plane {
+        id: "void".into(),
+        name: "Void".into(),
+        depth: 100000.0,
+        parallax: Some(0.0),
+        items: vec![Item { id: "void".into(), image: "art/void.png".into(), at: [0, 0], scale: 5.0, ..Item::default() }],
+        ..Plane::default()
+    };
+    let [px, py, pw, _] = PIT;
+    Room {
+        id: "courtyard".into(),
+        size: [2400, 1600],
+        planes: vec![void, floor],
+        collision: vec![
+            // The courtyard's edge, a few pixels inside the floor's.
+            Shape { id: "walls".into(), kind: ShapeKind::Solid, closed: true, points: diamond(FLOOR_MIDDLE, 1000) },
+            Shape { id: "pit".into(), kind: ShapeKind::Hazard, closed: true, points: diamond([px, py], pw) },
+            // What stops the player walking through the pillar.
+            Shape { id: "pillar_base".into(), kind: ShapeKind::Solid, closed: true, points: diamond([880, 720], 44) },
+        ],
+        entities: vec![
+            Entity { id: "pillar".into(), prefab: "pillar".into(), at: Some([880, 720]), ..Entity::default() },
+            Entity { id: "crawler_1".into(), prefab: "crawler".into(), at: Some([1700, 620]), ..Entity::default() },
+        ],
+        lights: vec![Light { id: "brazier".into(), plane: "main".into(), at: [1180, 640], radius: 900, color: "#ffcf96".into(), intensity: 1.3, flicker: 0.1, glow: 0.3, ..Light::default() }],
+        spawns: vec![Spawn { id: "start".into(), at: [1000, 960] }],
+        ambience: Ambience { ambient: Some("#8a86a0".into()), particles: vec![Emitter { preset: "motes".into(), plane: "main".into() }], fog: None },
+        ..Room::default()
+    }
+}
+
+/// A dim violet dark, for past the courtyard's edge.
+fn void() -> Canvas {
+    let mut c = Canvas::new(480, 320);
+    for y in 0..c.height {
+        let t = y as f64 / (c.height - 1) as f64;
+        let rgb = mix([20.0, 18.0, 30.0], [34.0, 28.0, 46.0], t);
+        for x in 0..c.width {
+            let grain = (ridge(5, x as f64 + y as f64 * 5.0, 30.0) - 0.5) * 6.0;
+            c.blend(x as i64, y as i64, [rgb[0] + grain, rgb[1] + grain, rgb[2] + grain], 1.0);
+        }
+    }
+    c
+}
+
+/// The courtyard's floor: stone flags 128 by 64, laid 2:1, each its own
+/// shade, darkening into the walls at the edge, with the pit dug into it.
+fn floor() -> Canvas {
+    let (w, h) = (2048u32, 1024u32);
+    let mut c = Canvas::new(w, h);
+    let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
+    let pit = [(PIT[0] - FLOOR_AT[0]) as f64, (PIT[1] - FLOOR_AT[1]) as f64, PIT[2] as f64];
+    for y in 0..h {
+        for x in 0..w {
+            let (fx, fy) = (x as f64 + 0.5 - cx, y as f64 + 0.5 - cy);
+            // How far toward the edge, 0 in the middle and 1 at it.
+            let edge = fx.abs() / cx + fy.abs() / cy;
+            if edge > 1.0 {
+                continue;
+            }
+            // Which flag, along the two ways the floor runs.
+            let a = (fx / 64.0 + fy / 32.0) / 2.0;
+            let b = (fy / 32.0 - fx / 64.0) / 2.0;
+            let (ta, tb) = (a.floor() as i64, b.floor() as i64);
+            let shade = hash(83, ta * 977 + tb) * 16.0;
+            let grain = (ridge(89, x as f64 * 1.3 + y as f64 * 9.0, 18.0) - 0.5) * 12.0;
+            let base = [92.0 + shade + grain, 86.0 + shade + grain, 98.0 + shade * 1.1 + grain];
+            let seam = (a - a.floor()).min(1.0 - (a - a.floor())).min((b - b.floor()).min(1.0 - (b - b.floor())));
+            let mut rgb = match seam < 0.035 {
+                true => mix(base, [48.0, 44.0, 56.0], 0.7),
+                false => base,
+            };
+            // Worn darker toward the walls.
+            rgb = mix(rgb, [36.0, 32.0, 46.0], ((edge - 0.86) / 0.14).clamp(0.0, 1.0));
+            // The pit: dark, deeper toward its middle.
+            let p = (x as f64 + 0.5 - pit[0]).abs() / pit[2] + (y as f64 + 0.5 - pit[1]).abs() / (pit[2] / 2.0);
+            if p < 1.06 {
+                let deep = (1.0 - p).clamp(0.0, 1.0);
+                rgb = mix([30.0, 26.0, 36.0], [6.0, 5.0, 9.0], deep.sqrt());
+            }
+            c.blend(x as i64, y as i64, rgb, ((1.0 - edge) * 400.0).clamp(0.0, 1.0));
+        }
+    }
+    c
+}
+
+/// A worn column on its plinth, lit from the left.
+fn pillar_art() -> Canvas {
+    let mut c = Canvas::new(96, 256);
+    let stone = [132.0, 124.0, 140.0];
+    // Plinth.
+    c.ellipse(48.0, 244.0, 42.0, 12.0, [70.0, 64.0, 80.0], 1.5);
+    for y in 214..244 {
+        for x in 8..88 {
+            let lit = 1.0 - (x as f64 - 8.0) / 80.0 * 0.5;
+            c.blend(x, y, [stone[0] * lit * 0.8, stone[1] * lit * 0.8, stone[2] * lit * 0.8], 1.0);
+        }
+    }
+    // Shaft, fluted.
+    for y in 36..214 {
+        for x in 18..78 {
+            let t = (x as f64 - 18.0) / 60.0;
+            let lit = 1.05 - t * 0.55;
+            let flute = 0.92 + 0.08 * ((x as f64 - 18.0) / 6.0 * std::f64::consts::PI).cos().abs();
+            let wear = (ridge(97, x as f64 + y as f64 * 11.0, 14.0) - 0.5) * 14.0;
+            c.blend(x, y, [stone[0] * lit * flute + wear, stone[1] * lit * flute + wear, stone[2] * lit * flute + wear], 1.0);
+        }
+    }
+    // Capital.
+    for y in 14..36 {
+        for x in 6..90 {
+            let lit = 1.0 - (x as f64 - 6.0) / 84.0 * 0.5;
+            c.blend(x, y, [stone[0] * lit * 1.05, stone[1] * lit * 1.05, stone[2] * lit * 1.05], 1.0);
+        }
+    }
+    c.ellipse(48.0, 14.0, 42.0, 8.0, [150.0, 142.0, 158.0], 1.5);
+    c
 }
 
 /// The planes every template room shares, sized to a room `width` wide whose

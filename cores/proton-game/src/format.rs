@@ -57,6 +57,30 @@ pub struct GameFile {
     pub combat: Combat,
     pub feel: Feel,
     pub audio: Audio,
+    /// An isometric game's ground: how it's seen from the camera's angle.
+    /// Unsaid when it's as the default is.
+    #[serde(skip_serializing_if = "Ground::is_default")]
+    pub ground: Ground,
+}
+
+/// How an isometric game's ground is seen: moving away up the screen
+/// covers `depth` of what moving across does (a half, for a 2:1 view).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Ground {
+    pub depth: f64,
+}
+
+impl Default for Ground {
+    fn default() -> Ground {
+        Ground { depth: 0.5 }
+    }
+}
+
+impl Ground {
+    pub fn is_default(&self) -> bool {
+        *self == Ground::default()
+    }
 }
 
 impl Default for GameFile {
@@ -76,6 +100,7 @@ impl Default for GameFile {
             combat: Combat::default(),
             feel: Feel::default(),
             audio: Audio::default(),
+            ground: Ground::default(),
         }
     }
 }

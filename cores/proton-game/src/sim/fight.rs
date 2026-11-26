@@ -157,9 +157,14 @@ impl Sim {
         }
     }
 
+    /// A thing as something that moves through lines: its box, or on an
+    /// isometric game's ground the patch it stands on.
     fn shape_of(&self, f: &Foe) -> Shape {
         let b = &self.actor(f).body;
-        Shape { half: b.half, height: b.height, drop: false }
+        match self.world.ground > 0 {
+            true => Shape { half: b.half, height: b.half.max(PX), drop: false },
+            false => Shape { half: b.half, height: b.height, drop: false },
+        }
     }
 
     /// Whether there is ground under `x` within `depth` below `y`: one-way
@@ -209,8 +214,26 @@ impl Sim {
             match a.does {
                 Does::Flyer => f.vel = [approach(f.vel[0], 0, a.accel.max(1)), approach(f.vel[1], 0, a.accel.max(1))],
                 Does::Still | Does::Turret => f.vel = [0, 0],
+                _ if self.world.ground > 0 => f.vel = [approach(f.vel[0], 0, decel / 4), approach(f.vel[1], 0, decel / 4)],
                 _ if f.grounded => f.vel[0] = approach(f.vel[0], 0, decel / 4),
                 _ => {}
+            }
+        } else if walks && self.world.ground > 0 {
+            // On the ground: toward the player while it sees them, else still.
+            let depth = self.world.ground;
+            let me = [f.pos[0], f.pos[1] - a.body.height / 2];
+            let d = [p[0] - me[0], p[1] - me[1]];
+            let want = if self.sees(&f, a.sight) && (d[0].abs() > 2 * PX || d[1].abs() > 2 * PX) {
+                let w = toward(d, a.speed);
+                [w[0], w[1] * depth / 256]
+            } else {
+                [0, 0]
+            };
+            // With no acceleration said, at its speed at once.
+            let rate = if a.accel > 0 { a.accel } else { a.speed.max(1) };
+            f.vel = [approach(f.vel[0], want[0], rate), approach(f.vel[1], want[1], (rate * depth / 256).max(1))];
+            if d[0] != 0 && want != [0, 0] {
+                f.facing = d[0].signum() as i8;
             }
         } else {
             match a.does {
@@ -254,7 +277,16 @@ impl Sim {
             }
         }
         // Moving through the room's lines, across and then down.
-        if a.does != Does::Still && a.does != Does::Turret {
+        if self.world.ground > 0 && a.does != Does::Still && a.does != Does::Turret {
+            let (pos, hit) = self.slide_ground(shape, f.pos, f.vel);
+            f.pos = pos;
+            for i in 0..2 {
+                if hit[i] {
+                    f.vel[i] = 0;
+                }
+            }
+            f.grounded = true;
+        } else if a.does != Does::Still && a.does != Does::Turret {
             let was_grounded = f.grounded;
             let (pos, hit) = self.slide_x(shape, f.pos, f.vel[0]);
             f.pos = pos;
@@ -471,7 +503,7 @@ impl Sim {
         let s = &self.state;
         let found = self.anim_boxes(self.world.player.anim, &s.anim, 1, s.pos, s.facing);
         if found.is_empty() {
-            vec![self.bbox(s.pos)]
+            vec![self.body(s.pos)]
         } else {
             found
         }
@@ -539,7 +571,7 @@ impl Sim {
                 let dir = if self.state.attack_dir == 0 || f.pos[0] == self.state.pos[0] { self.state.facing as Fx } else { (f.pos[0] - self.state.pos[0]).signum() };
                 let f = &mut self.state.foes[i];
                 f.struck = swing;
-                bounced |= self.state.attack_dir == 1;
+                bounced |= self.state.attack_dir == 1 && self.world.ground == 0;
                 // Nothing hurts what has no health: a swing only rings off it.
                 if a.health == 0 {
                     continue;
@@ -554,6 +586,14 @@ impl Sim {
                     1 => [dir * fight.knockback[0] / 2, fight.knockback[1]],
                     _ => [dir * fight.knockback[0], -fight.knockback[1]],
                 };
+                if self.world.ground > 0 {
+                    // On the ground: straight away from the player.
+                    let away = toward([f.pos[0] - self.state.pos[0], f.pos[1] - self.state.pos[1]], fight.knockback[0]);
+                    f.vel = [away[0], away[1] * self.world.ground / 256];
+                    if away == [0, 0] {
+                        f.vel = [dir * fight.knockback[0], 0];
+                    }
+                }
                 if a.does == Does::Still || a.does == Does::Turret {
                     f.vel = [0, 0];
                 }
@@ -623,6 +663,11 @@ impl Sim {
         s.dash = 0;
         s.rising = false;
         s.grounded = false;
+        if self.world.ground > 0 {
+            // On the ground there's no up to be thrown: only away.
+            s.vel[1] = 0;
+            s.grounded = true;
+        }
         s.stop = fight.hitstop;
         self.happened.push(Happened::Hurt);
         if fight.health > 0 {

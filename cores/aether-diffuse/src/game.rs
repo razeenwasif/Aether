@@ -68,12 +68,13 @@ pub fn game_found(folder: String) -> String {
     json(&found)
 }
 
-/// A new game called `name` in `dir`, from Proton's metroidvania template:
-/// two rooms, a player, a crawler and their art, drawn in code. Refused if
-/// `dir` already holds a game.
+/// A new game called `name` in `dir`, from one of proton-game's templates:
+/// `metroidvania` (two side-on rooms, a player, a crawler and their art) or
+/// `isometric` (a courtyard on the ground, a pit, a pillar and a crawler),
+/// drawn in code. Refused if `dir` already holds a game.
 #[uniffi::export]
-pub fn game_create(dir: String, name: String) -> Result<(), DiffuseError> {
-    let files = proton_game::template::files("metroidvania", &name).map_err(failed)?;
+pub fn game_create(dir: String, name: String, kind: String) -> Result<(), DiffuseError> {
+    let files = proton_game::template::files(&kind, &name).map_err(failed)?;
     proton_game::template::write(Path::new(&dir), &files).map_err(failed)
 }
 
@@ -434,8 +435,8 @@ mod tests {
     fn a_new_game_opens_edits_undoes_and_plays() {
         let dir = std::env::temp_dir().join(format!("aether-game-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        game_create(dir.to_string_lossy().into(), "Lumen".into()).unwrap();
-        assert!(game_create(dir.to_string_lossy().into(), "Lumen".into()).is_err(), "not over an old one");
+        game_create(dir.to_string_lossy().into(), "Lumen".into(), "metroidvania".into()).unwrap();
+        assert!(game_create(dir.to_string_lossy().into(), "Lumen".into(), "metroidvania".into()).is_err(), "not over an old one");
         let found: serde_json::Value = serde_json::from_str(&game_found(dir.parent().unwrap().to_string_lossy().into())).unwrap();
         assert!(found.as_array().unwrap().iter().any(|g| g["name"] == "Lumen"));
 

@@ -5673,15 +5673,17 @@ public func designFound(folder: String) -> String  {
 })
 }
 /**
- * A new game called `name` in `dir`, from Proton's metroidvania template:
- * two rooms, a player, a crawler and their art, drawn in code. Refused if
- * `dir` already holds a game.
+ * A new game called `name` in `dir`, from one of proton-game's templates:
+ * `metroidvania` (two side-on rooms, a player, a crawler and their art) or
+ * `isometric` (a courtyard on the ground, a pit, a pillar and a crawler),
+ * drawn in code. Refused if `dir` already holds a game.
  */
-public func gameCreate(dir: String, name: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
+public func gameCreate(dir: String, name: String, kind: String)throws   {try rustCallWithError(FfiConverterTypeDiffuseError_lift) {
         uniffiCallStatus in
     uniffi_aether_diffuse_fn_func_game_create(
         FfiConverterString.lower(dir),
-        FfiConverterString.lower(name),uniffiCallStatus
+        FfiConverterString.lower(name),
+        FfiConverterString.lower(kind),uniffiCallStatus
     )
 }
 }
@@ -5776,7 +5778,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_aether_diffuse_checksum_func_design_found() != 15366) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_aether_diffuse_checksum_func_game_create() != 33738) {
+    if (uniffi_aether_diffuse_checksum_func_game_create() != 49433) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_aether_diffuse_checksum_func_game_found() != 53735) {

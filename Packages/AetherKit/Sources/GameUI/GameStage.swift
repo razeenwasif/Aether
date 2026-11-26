@@ -272,7 +272,8 @@ final class GameStageView: NSView {
         var job = GameRenderer.Job(sprites: [], camera: GameCamera(center: center, zoom: zoom * scale), pixelArt: pixelArt)
         if let room = previewRoom ?? drawnRoom {
             // The room's air held still, as a paused run shows it.
-            job.sprites = GameScene.layout(room, focal: focal, view: gameView, center: center, art: model.images.art, standing: resting(room), air: 0)
+            job.sprites = GameScene.layout(room, focal: focal, view: gameView, center: center, art: model.images.art, standing: resting(room), air: 0,
+                                           depth: model.isIsometric)
             job.lighting = GameScene.lighting(room, focal: focal, view: gameView, center: center)
             if finish { job.post = model.document?.view.game.post }
         }
@@ -298,6 +299,22 @@ final class GameStageView: NSView {
     /// what's chosen picked out.
     private func buildOverlay(_ room: GameRoom) {
         let chosen = model?.selection
+        // An isometric ground's grid, faint, under everything: walls drawn
+        // along it read as the floor's edges.
+        if model?.isIsometric == true {
+            let grid = CAShapeLayer()
+            let path = CGMutablePath()
+            for (a, b) in GameScene.grid(CGSize(width: room.size.first ?? 0, height: room.size.count > 1 ? room.size[1] : 0)) {
+                path.move(to: a)
+                path.addLine(to: b)
+            }
+            grid.path = path
+            grid.fillColor = nil
+            grid.strokeColor = NSColor(white: 1, alpha: 0.09).cgColor
+            grid.setValue(1.0, forKey: "aeWidth")
+            overlay.addSublayer(grid)
+            lines.append(grid)
+        }
         for shape in room.collision where shape.points.count >= 2 {
             let selected = chosen == .shape(shape.id)
             let line = CAShapeLayer()
@@ -509,7 +526,7 @@ final class GameStageView: NSView {
             if event.clickCount >= 2 {
                 finishDraft()
             } else {
-                draft.append(p)
+                draft.append(snapped(p, event))
                 drawDraft()
             }
             return
@@ -640,8 +657,15 @@ final class GameStageView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         guard tool == .draw, !draft.isEmpty else { return }
-        pointer = roomPoint(event)
+        pointer = snapped(roomPoint(event), event)
         drawDraft()
+    }
+
+    /// With Shift held, a line's next point brought onto the nearest way
+    /// from its last: across, up and down, or the ground's diagonals.
+    private func snapped(_ p: CGPoint, _ event: NSEvent) -> CGPoint {
+        guard event.modifierFlags.contains(.shift), let last = draft.last else { return p }
+        return GameScene.snap(p, from: last, isometric: model?.isIsometric ?? false)
     }
 
     /// The line being drawn, made: two points at least.
@@ -852,7 +876,7 @@ final class GameStageView: NSView {
         var eye = GameCamera(center: camera, zoom: picture.width / view.width)
         if pixelArt { eye = eye.snapped(target: picture) }
         var job = GameRenderer.Job(sprites: GameScene.layout(room, focal: focal, view: view, center: eye.center, art: art, standing: standing, time: time,
-                                                             air: time, sparks: sparks, snap: pixelArt, tick: player.info.tick),
+                                                             air: time, sparks: sparks, snap: pixelArt, tick: player.info.tick, depth: model.isIsometric),
                                    camera: eye, post: model.document?.view.game.post, pixelArt: pixelArt, pictureSize: pixelArt ? view : nil)
         job.lighting = GameScene.lighting(room, focal: focal, view: view, center: eye.center, time: time)
         guard let drawable = metal.nextDrawable() else { return }

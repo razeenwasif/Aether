@@ -66,6 +66,9 @@ public final class GameWorkspaceModel {
     public private(set) var noticeIsGood = false
     /// The name the home page's form makes a game with.
     public var newName = "Lumen"
+    /// What kind the next new game is: `metroidvania` (side-on) or
+    /// `isometric`.
+    public var newKind = "metroidvania"
     /// Play, while it runs.
     public private(set) var player: GamePlayer?
     /// The player's health and most, for the HUD, as they change.
@@ -125,7 +128,7 @@ public final class GameWorkspaceModel {
         }
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try GameDocument.create(named: name, in: dir)
+            try GameDocument.create(named: name, in: dir, kind: newKind)
             refreshList()
             open(dir)
         } catch {
@@ -410,6 +413,18 @@ public final class GameWorkspaceModel {
     public func setPlaneLit(_ plane: String, _ lit: Bool) {
         guard let target = roomTarget else { return }
         apply([.set(["planes", "#\(plane)", "lit"], lit)], to: target, label: lit ? "Light \(planeName(plane))" : "Unlight \(planeName(plane))")
+    }
+
+    // MARK: Kind
+
+    /// Whether the game open walks on the ground, seen from above at an angle.
+    public var isIsometric: Bool { document?.view.game.isIsometric ?? false }
+
+    /// What kind of game it is, set in `game.json` as one step: side-on
+    /// (`metroidvania`) or `isometric`.
+    public func setKind(_ kind: String) {
+        guard let game = document?.view.game, game.niche != kind else { return }
+        apply([.set(["niche"], kind)], to: "game", label: kind == "isometric" ? "Make It Isometric" : "Make It Side-On")
     }
 
     // MARK: Feel and sound

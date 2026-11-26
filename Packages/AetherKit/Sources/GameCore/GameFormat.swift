@@ -25,9 +25,19 @@ public struct GameFile: Decodable, Equatable, Sendable {
     /// How it feels to hold, and what it sounds like.
     public var feel: GameFeel
     public var audio: GameAudioSettings
+    /// What kind of game it is (`metroidvania`, `isometric`, …): an
+    /// isometric one walks on the ground, seen from above at an angle.
+    public var niche: String
+    /// How far up the screen moving away covers, of moving across, on an
+    /// isometric game's ground.
+    public var groundDepth: Double
+
+    /// Whether it walks on the ground, seen from above at an angle.
+    public var isIsometric: Bool { niche == "isometric" }
 
     private struct Ability: Decodable { var id: String }
-    enum CodingKeys: String, CodingKey { case name, view, input, abilities, post, feel, audio }
+    private struct Ground: Decodable { var depth: Double? }
+    enum CodingKeys: String, CodingKey { case name, view, input, abilities, post, feel, audio, niche, ground }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = try c.value(.name, "")
@@ -37,6 +47,8 @@ public struct GameFile: Decodable, Equatable, Sendable {
         post = try c.value(.post, GamePost())
         feel = try c.value(.feel, GameFeel())
         audio = try c.value(.audio, GameAudioSettings())
+        niche = try c.value(.niche, "metroidvania")
+        groundDepth = try c.decodeIfPresent(Ground.self, forKey: .ground)?.depth ?? 0.5
     }
 }
 

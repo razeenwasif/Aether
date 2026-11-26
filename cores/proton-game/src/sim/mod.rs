@@ -167,6 +167,9 @@ pub struct State {
     pub foes: Vec<Foe>,
     pub shots: Vec<Shot>,
     pub shots_made: u32,
+    /// On an isometric game's ground, the way last walked: what a dash
+    /// goes along.
+    pub aim: [i8; 2],
 }
 
 /// A run of the game.
@@ -275,12 +278,13 @@ impl Sim {
             foes: Vec::new(),
             shots: Vec::new(),
             shots_made: 0,
+            aim: [1, 0],
         };
         state.cam = camera_target(&world, &state);
         let boxed = world.player.anim.and_then(|a| world.anims.get(a as usize)).is_some_and(|a| a.boxes.iter().any(|b| b.1 == 0));
         let mut sim = Sim { world, state, happened: Vec::new(), boxed };
         sim.enter();
-        sim.state.grounded = sim.on_ground();
+        sim.state.grounded = sim.world.ground > 0 || sim.on_ground();
         // Starting in the air is not having just left the ground.
         if !sim.state.grounded {
             sim.state.air = sim.world.moves.coyote + 1;
@@ -299,9 +303,20 @@ impl Sim {
         self.player_shape().bbox(pos)
     }
 
-    /// The player as something that moves through lines.
+    /// The player as something that moves through lines: their box, or on
+    /// an isometric game's ground the patch they stand on, as wide as their
+    /// box and half as deep.
     fn player_shape(&self) -> Shape {
-        Shape { half: self.world.player.half, height: self.world.player.height, drop: self.state.drop > 0 }
+        let p = &self.world.player;
+        match self.world.ground > 0 {
+            true => Shape { half: p.half, height: (p.half).max(PX), drop: false },
+            false => Shape { half: p.half, height: p.height, drop: self.state.drop > 0 },
+        }
+    }
+
+    /// The player's whole body, standing: what blows land on.
+    fn body(&self, pos: [Fx; 2]) -> [Fx; 4] {
+        Shape { half: self.world.player.half, height: self.world.player.height, drop: false }.bbox(pos)
     }
 
     fn room(&self) -> &world::Room {
@@ -327,6 +342,8 @@ impl Sim {
         for s in &self.room().segs {
             let solid = match s.kind {
                 Kind::Hazard => false,
+                // On the ground, every line but a pit's is a wall.
+                Kind::Oneway if self.world.ground > 0 => true,
                 Kind::Oneway => match from {
                     Some(was) if !shape.drop => !overlaps(&shape.bbox(was), s),
                     _ => false,
@@ -451,12 +468,15 @@ impl Sim {
         let mut b = self.bbox(self.state.pos);
         b[0] -= margin;
         b[2] += margin;
+        if self.world.ground > 0 {
+            b[1] -= margin;
+            b[3] += margin;
+        }
         self.room().segs.iter().any(|s| s.kind == Kind::Hazard && overlaps(&b, s))
     }
 
     /// One tick, with `held` the input held during it.
     pub fn step(&mut self, held: u32) {
-        let m = self.world.moves.clone();
         self.state.tick += 1;
         // A blow landed: everything holds still a moment. What is pressed
         // meanwhile is seen as pressed after.
@@ -510,6 +530,152 @@ impl Sim {
         let stunned = self.state.stun > 0;
         let (held, pressed) = if stunned { (0, 0) } else { (held, pressed) };
 
+        if self.world.ground > 0 {
+            self.walk(held, pressed, stunned);
+        } else {
+            self.platform(held, pressed, stunned);
+        }
+
+        if self.hazardous() {
+            if self.world.fight.health > 0 {
+                // With health, a hazard costs some, and sends back only
+                // while there is some left.
+                self.state.health -= 1;
+                self.happened.push(Happened::Hurt);
+                if self.state.health <= 0 {
+                    self.die();
+                    self.follow();
+                    return;
+                }
+            } else {
+                self.state.deaths += 1;
+                self.happened.push(Happened::Hurt);
+            }
+            self.state.pos = self.state.safe;
+            self.state.vel = [0, 0];
+            self.state.hurt = HURT;
+            self.state.dash = 0;
+            self.state.attack = 0;
+        }
+        self.things(pressed);
+        self.foes();
+        self.shots();
+        self.fight();
+        self.follow();
+        self.animate();
+    }
+
+    /// An isometric game's tick of moving: on the ground in eight
+    /// directions, away up the screen at the ground's depth, with a dash
+    /// along the way last walked; no jumping and no falling. Every line but
+    /// a pit's is a wall, slid along when met at a slant.
+    fn walk(&mut self, held: u32, pressed: u32, stunned: bool) {
+        let m = self.world.moves.clone();
+        let depth = self.world.ground;
+        let x = ((held & input::RIGHT != 0) as i8) - ((held & input::LEFT != 0) as i8);
+        let y = ((held & input::DOWN != 0) as i8) - ((held & input::UP != 0) as i8);
+        if (x != 0 || y != 0) && self.state.attack == 0 {
+            self.state.aim = [x, y];
+            if x != 0 {
+                self.state.facing = x;
+            }
+        }
+        self.state.dash_rest = self.state.dash_rest.saturating_sub(1);
+        let can_dash = m.dash_ticks > 0 && self.has(m.needs_dash);
+        if pressed & input::DASH != 0 && can_dash && self.state.dash == 0 && self.state.dash_rest == 0 && self.state.attack == 0 {
+            self.state.dash = m.dash_ticks;
+            self.state.dash_rest = m.dash_ticks + m.dash_cooldown;
+            self.happened.push(Happened::Dashed);
+        }
+        let dashing = self.state.dash > 0;
+        if dashing {
+            self.state.dash -= 1;
+            self.state.vel = ground_vel(self.state.aim, m.dash, depth);
+        } else if stunned {
+            // Thrown: the throw carries, slowing.
+            self.state.vel = [approach(self.state.vel[0], 0, m.decel / 4), approach(self.state.vel[1], 0, m.decel * depth / 256 / 4)];
+        } else {
+            let want = ground_vel([x, y], m.run, depth);
+            for i in 0..2 {
+                let v = self.state.vel[i];
+                let rate = if want[i] != 0 && (v == 0 || v.signum() == want[i].signum()) { m.accel } else { m.decel };
+                let rate = if i == 1 { (rate * depth / 256).max(1) } else { rate };
+                self.state.vel[i] = approach(v, want[i], rate);
+            }
+        }
+        if pressed & input::ATTACK != 0 && self.state.attack == 0 && !dashing {
+            self.swing(held);
+        }
+        let (pos, hit) = self.slide_ground(self.player_shape(), self.state.pos, self.state.vel);
+        self.state.pos = pos;
+        for i in 0..2 {
+            if hit[i] {
+                self.state.vel[i] = 0;
+            }
+        }
+        self.state.grounded = true;
+        self.state.air = 0;
+        if !self.hazard_within(SAFE) {
+            self.state.safe = self.state.pos;
+        }
+    }
+
+    /// `shape` at `pos` moved by `vel` on the ground, across a pixel at a
+    /// time and then up or down. A step that meets a wall at a slant goes
+    /// on nudged along it, as far as the slant needs (half a step across
+    /// for each step down a 2:1 wall, two for each step up it, and a little
+    /// over, as where it stands is a fraction off the wall). Where it ends,
+    /// and which way a wall stopped it.
+    fn slide_ground(&self, shape: Shape, mut pos: [Fx; 2], vel: [Fx; 2]) -> ([Fx; 2], [bool; 2]) {
+        let mut hit = [false, false];
+        for axis in 0..2 {
+            let other = 1 - axis;
+            let lean = match vel[other].signum() {
+                0 => -1,
+                s => s,
+            };
+            let mut left = vel[axis];
+            while left != 0 {
+                let step = left.signum() * left.abs().min(PX);
+                let mut next = pos;
+                next[axis] += step;
+                if self.blocked_as(shape, next, Some(pos)).is_none() {
+                    pos = next;
+                    left -= step;
+                    continue;
+                }
+                // Along a slanted wall: the step, nudged across it.
+                let most = if axis == 0 { step.abs() * 3 / 4 } else { step.abs() * 5 / 2 };
+                let mut slid = false;
+                let mut nudge = PX / 4;
+                'tries: while nudge <= most {
+                    for sign in [lean, -lean] {
+                        let mut tried = next;
+                        tried[other] += sign * nudge;
+                        if self.blocked_as(shape, tried, Some(pos)).is_none() {
+                            pos = tried;
+                            slid = true;
+                            break 'tries;
+                        }
+                    }
+                    nudge += PX / 4;
+                }
+                if !slid {
+                    let (dx, dy) = if axis == 0 { (step, 0) } else { (0, step) };
+                    pos = self.close(shape, pos, dx, dy);
+                    hit[axis] = true;
+                    break;
+                }
+                left -= step;
+            }
+        }
+        (pos, hit)
+    }
+
+    /// A side-on game's tick of moving: running, jumping, dashing, falling
+    /// and landing, and walls clung to.
+    fn platform(&mut self, held: u32, pressed: u32, stunned: bool) {
+        let m = self.world.moves.clone();
         let x = ((held & input::RIGHT != 0) as i32) - ((held & input::LEFT != 0) as i32);
         if x != 0 && self.state.wall_lock == 0 && self.state.attack == 0 {
             self.state.facing = x as i8;
@@ -654,33 +820,6 @@ impl Sim {
             }
         }
 
-        if self.hazardous() {
-            if self.world.fight.health > 0 {
-                // With health, a hazard costs some, and sends back only
-                // while there is some left.
-                self.state.health -= 1;
-                self.happened.push(Happened::Hurt);
-                if self.state.health <= 0 {
-                    self.die();
-                    self.follow();
-                    return;
-                }
-            } else {
-                self.state.deaths += 1;
-                self.happened.push(Happened::Hurt);
-            }
-            self.state.pos = self.state.safe;
-            self.state.vel = [0, 0];
-            self.state.hurt = HURT;
-            self.state.dash = 0;
-            self.state.attack = 0;
-        }
-        self.things(pressed);
-        self.foes();
-        self.shots();
-        self.fight();
-        self.follow();
-        self.animate();
     }
 
     /// A swing begun: up with up held, down with down held in the air, else
@@ -691,7 +830,7 @@ impl Sim {
         s.swing += 1;
         s.attack_dir = if held & input::UP != 0 {
             -1
-        } else if held & input::DOWN != 0 && !s.grounded {
+        } else if held & input::DOWN != 0 && (!s.grounded || self.world.ground > 0) {
             1
         } else {
             0
@@ -746,7 +885,7 @@ impl Sim {
             } else {
                 3
             }
-        } else if s.vel[0] != 0 {
+        } else if s.vel[0] != 0 || (self.world.ground > 0 && s.vel[1] != 0) {
             1
         } else {
             0
@@ -935,6 +1074,14 @@ fn camera_target(world: &World, s: &State) -> [Fx; 2] {
     let [bx, by, bw, bh] = room.bounds;
     let hold = |v: Fx, lo: Fx, span: Fx, size: Fx| if span <= size { lo + span / 2 } else { v.clamp(lo + size / 2, lo + span - size / 2) };
     [hold(at[0], bx, bw, view[0]), hold(at[1], by, bh, view[1])]
+}
+
+/// A speed along `dir` (each -1, 0 or 1) on an isometric game's ground:
+/// a diagonal as fast as a straight line, and away up the screen at the
+/// ground's `depth` out of 256.
+fn ground_vel(dir: [i8; 2], speed: Fx, depth: Fx) -> [Fx; 2] {
+    let speed = if dir[0] != 0 && dir[1] != 0 { speed * 181 / 256 } else { speed };
+    [dir[0] as Fx * speed, dir[1] as Fx * speed * depth / 256]
 }
 
 /// `v` moved toward `want` by at most `rate`.
