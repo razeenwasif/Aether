@@ -35,16 +35,16 @@ public struct RootView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if model.omnibar.isOpen {
                     // A click anywhere else closes it.
-                    Color.black.opacity(0.18)
+                    Color.black.opacity(0.55)
                         .contentShape(Rectangle())
                         .onTapGesture { model.omnibar.close() }
                         .transition(.opacity)
                     Omnibar(model: model, omnibar: model.omnibar)
                         .padding(.top, 72)
-                        .transition(.scale(scale: 0.98, anchor: .top).combined(with: .opacity))
+                        .transition(.scale(scale: 0.97, anchor: .top).combined(with: .opacity))
                 }
             }
-            .animation(.spring(response: 0.32, dampingFraction: 0.8), value: model.omnibar.isOpen)
+            .animation(Motion.panel, value: model.omnibar.isOpen)
         }
         .background(Color.obsidian0)
         .ignoresSafeArea()
@@ -74,25 +74,25 @@ struct WorkspaceRail: View {
             .help("\(model.project.name) · \(model.project.folder?.path ?? "not saved") · New Project, Open Project")
             .accessibilityLabel("Project \(model.project.name)")
             .accessibilityHint("Opens the project menu")
-            divider
+            Spacer().frame(height: 14)
             VStack(spacing: 2) {
                 ForEach(Workspace.allCases) { workspace in
-                    RailButton(workspace.title, isOn: model.active == workspace, help: "\(workspace.title)  ⌘\(workspace.shortcut.character)") {
+                    RailButton(workspace.title, isOn: model.active == workspace, accent: accent(for: workspace), help: "\(workspace.title)  ⌘\(workspace.shortcut.character)") {
                         model.active = workspace
                     }
                 }
             }
             Spacer(minLength: 12)
             runButton
-            divider
+            Spacer().frame(height: 14)
             VStack(spacing: 2) {
                 RailButton("Search", style: .field, isOn: model.omnibar.isOpen, help: "Tools, actions, assets, go to  ⌘K") {
                     model.toggleOmnibar()
                 }
-                RailButton(model.active.navigatorLabel, isOn: model.navigatorOpen, help: "\(model.active.navigatorLabel)  ⌘0") {
+                RailButton(model.active.navigatorLabel, isOn: model.navigatorOpen, accent: accent(for: model.active), help: "\(model.active.navigatorLabel)  ⌘0") {
                     model.toggleNavigator()
                 }
-                RailButton("Inspector", isOn: model.inspectorOpen, help: "Inspector  ⌘\\") {
+                RailButton("Inspector", isOn: model.inspectorOpen, accent: accent(for: model.active), help: "Inspector  ⌘\\") {
                     model.toggleInspector()
                 }
             }
@@ -106,11 +106,17 @@ struct WorkspaceRail: View {
                 WindowDragArea()
             }
         }
-        .overlay(alignment: .trailing) { Rectangle().fill(Color.line).frame(width: 1) }
     }
 
-    private var divider: some View {
-        Rectangle().fill(Color.line2).frame(width: 16, height: 1).padding(.vertical, 10)
+    private func accent(for workspace: Workspace) -> Color {
+        switch workspace {
+        case .design: .sky
+        case .model: .ice
+        case .game: .live
+        case .canvas: .coral
+        case .diffuse: .lavender
+        case .video: .amber
+        }
     }
 
     /// One place, one shortcut, a verb per workspace.

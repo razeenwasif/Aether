@@ -35,7 +35,7 @@ struct NodeLibraryPanel: View {
             .padding(.horizontal, 9)
             .frame(height: 28)
             .background(RoundedRectangle(cornerRadius: Radius.button).fill(Color.raise1))
-            .overlay(RoundedRectangle(cornerRadius: Radius.button).strokeBorder(searching ? Color.ice : Color.line2))
+            .overlay(RoundedRectangle(cornerRadius: Radius.button).strokeBorder(searching ? Color.ice.opacity(0.6) : .clear))
             .padding(10)
 
             ScrollView {
@@ -63,7 +63,6 @@ struct NodeLibraryPanel: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 34)
-            .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1) }
         }
         .aeGlass()
         .onChange(of: model.searchRequest) { searching = true }
@@ -95,7 +94,7 @@ private struct LibraryRow: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Color.white.opacity(0.06) : .clear))
+            .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Color.surfaceHover : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -214,7 +214,6 @@ private struct CanvasCard: View {
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: Radius.node).fill(hovering ? Color.raise2 : Color.raise1))
-            .overlay(RoundedRectangle(cornerRadius: Radius.node).strokeBorder(Color.line2))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -450,8 +449,7 @@ struct NewCanvasForm: View {
                 Spacer(minLength: 0)
             }
             .padding(9)
-            .background(RoundedRectangle(cornerRadius: Radius.button).fill(preset == value ? Color.white.opacity(0.07) : .clear))
-            .overlay(RoundedRectangle(cornerRadius: Radius.button).strokeBorder(preset == value ? Color.white.opacity(0.14) : Color.line2))
+            .background(RoundedRectangle(cornerRadius: Radius.button).fill(preset == value ? Color.raise2 : Color.raise1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -513,7 +511,6 @@ private struct CanvasList: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.ink)
-            .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1) }
         }
         .frame(maxHeight: .infinity)
         .aeGlass(.panel)
@@ -545,7 +542,7 @@ private struct CanvasRow: View {
                 Spacer(minLength: 0)
             }
             .padding(6)
-            .background(RoundedRectangle(cornerRadius: Radius.button).fill(isOpen ? Color.white.opacity(0.09) : (hovering ? Color.white.opacity(0.04) : .clear)))
+            .background(RoundedRectangle(cornerRadius: Radius.button).fill(isOpen ? Color.raise2 : (hovering ? Color.surfaceHover : .clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

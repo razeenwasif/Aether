@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Velvet Obsidian: the chrome is grey so the work is the only colour on
-// screen. Values are the design canvas's "Velvet Obsidian" board.
+// Stratus-inspired pitch-black T3 tokens: zero borders, zero pane dividers,
+// pure typographic hierarchy and subtle tonal elevation.
 
 public extension Color {
     init(hex: UInt32, opacity: Double = 1) {
@@ -13,28 +13,33 @@ public extension Color {
             opacity: opacity)
     }
 
-    // Grounds
-    static let obsidian0 = Color(hex: 0x0B0C0E)
-    static let obsidian1 = Color(hex: 0x121316)
-    static let raise1 = Color(hex: 0x16171B)
-    static let raise2 = Color(hex: 0x1E1F24)
-    static let rail = Color(hex: 0x0F1013)
-    // Lines
-    static let line = Color(hex: 0x1F2128)
-    static let line2 = Color(hex: 0x23252D)
+    // Grounds (pure pitch-black ladder)
+    static let obsidian0 = Color(hex: 0x000000)
+    static let rail = Color(hex: 0x030304)
+    static let obsidian1 = Color(hex: 0x060608)
+    static let floatingSurface = Color(hex: 0x0B0B0F)
+    static let raise1 = Color(hex: 0x0B0B0E)
+    static let surfaceHover = Color(hex: 0x111114)
+    static let surfacePill = Color(hex: 0x151519)
+    static let raise2 = Color(hex: 0x16161B)
+    // Ultra-subtle lines (fallback only; prefer borderless tonal elevation)
+    static let line = Color(hex: 0x0E0E12)
+    static let line2 = Color(hex: 0x15151B)
     // Ink
-    static let inkHi = Color(hex: 0xEDEEF0)
-    static let ink = Color(hex: 0xB9BCC4)
-    static let ink2 = Color(hex: 0x8B9099)
-    static let ink3 = Color(hex: 0x5E636D)
+    static let inkHi = Color(hex: 0xF4F4F6)
+    static let ink = Color(hex: 0xC2C2CC)
+    static let ink2 = Color(hex: 0x8E8E99)
+    static let ink3 = Color(hex: 0x585862)
     /// The one bright control: Run and the active tool.
-    static let runFill = Color(hex: 0xE8EAEE)
-    // Signals, always paired with a second cue
-    static let ice = Color(hex: 0x9DB4FF)
-    static let lavender = Color(hex: 0xB9A8FF)
-    static let live = Color(hex: 0x7DD3B0)
-    static let amber = Color(hex: 0xE9C46A)
-    static let coral = Color(hex: 0xFF8A7A)
+    static let runFill = Color(hex: 0xF4F4F6)
+    // Stratus T3 accent palette
+    static let ice = Color(hex: 0x7A89FF)
+    static let lavender = Color(hex: 0xA78BFA)
+    static let live = Color(hex: 0x34D399)
+    static let amber = Color(hex: 0xFBBF24)
+    static let coral = Color(hex: 0xE88255)
+    static let sky = Color(hex: 0x4BC3F7)
+    static let rose = Color(hex: 0xF87171)
 }
 
 public extension Font {
@@ -58,7 +63,6 @@ public enum Radius {
 }
 
 public enum Motion {
-    /// Panels, the dock and the viewport move as one.
-    public static let panel = Animation.spring(response: 0.32, dampingFraction: 0.8)
+    public static let panel = Animation.easeOut(duration: 0.16)
     public static let hover = Animation.easeOut(duration: 0.12)
 }

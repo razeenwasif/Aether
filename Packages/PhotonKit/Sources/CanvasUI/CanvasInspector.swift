@@ -503,10 +503,8 @@ private struct LayersSection: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1) }
             }
         }
-        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1) }
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
@@ -559,7 +557,7 @@ private struct LayersSection: View {
         }
         .padding(.horizontal, 6)
         .frame(height: 30)
-        .background(RoundedRectangle(cornerRadius: Radius.button).fill(isCurrent ? Color.white.opacity(0.09) : .clear))
+        .background(RoundedRectangle(cornerRadius: Radius.button).fill(isCurrent ? Color.raise2 : .clear))
         .contentShape(Rectangle())
         .onTapGesture { model.layer = layer.id }
         .accessibilityElement(children: .contain)

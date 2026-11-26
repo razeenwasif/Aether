@@ -133,7 +133,7 @@ private struct ModelHome: View {
                                         Text(scene.modified, style: .date).font(.aeSmall).foregroundStyle(Color.ink2)
                                     }
                                     .padding(10)
-                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.raise1))
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Open \(scene.name)")
@@ -293,7 +293,7 @@ private struct Outliner: View {
         .padding(.leading, 6 + CGFloat(node.depth) * 14)
         .padding(.trailing, 6)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: Radius.button).fill(chosen ? Color.white.opacity(0.09) : .clear))
+        .background(RoundedRectangle(cornerRadius: Radius.button).fill(chosen ? Color.raise2 : .clear))
         .contentShape(Rectangle())
     }
 }

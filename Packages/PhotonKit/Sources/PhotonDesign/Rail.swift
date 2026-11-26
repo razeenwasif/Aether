@@ -33,10 +33,10 @@ public struct SpineText: View {
     }
 }
 
-/// A rail button: a vertical label in a 24 pt pill.
+/// A rail button: a vertical label in a borderless matte 24 pt pill.
 public struct RailButton: View {
     public enum Style {
-        /// A workspace tab or a toggle: raised when on.
+        /// A workspace tab or a toggle: raised when on, with an active dot.
         case tab
         /// The run control: the one bright thing in the chrome.
         case run
@@ -49,26 +49,35 @@ public struct RailButton: View {
     let title: String
     let style: Style
     let isOn: Bool
+    let accent: Color
     let help: String
     let action: () -> Void
     @State private var hovering = false
 
-    public init(_ title: String, style: Style = .tab, isOn: Bool = false, help: String = "", action: @escaping () -> Void) {
+    public init(_ title: String, style: Style = .tab, isOn: Bool = false, accent: Color = .ice, help: String = "", action: @escaping () -> Void) {
         self.title = title
         self.style = style
         self.isOn = isOn
+        self.accent = accent
         self.help = help
         self.action = action
     }
 
     public var body: some View {
         Button(action: action) {
-            SpineText(title, font: .system(size: 11.5, weight: isRun ? .semibold : .medium))
-                .padding(.vertical, 9)
-                .frame(width: 24)
-                .foregroundStyle(foreground)
-                .background(background)
-                .contentShape(Rectangle())
+            VStack(spacing: 4) {
+                SpineText(title, font: .system(size: 11.5, weight: isRun ? .semibold : .medium))
+                if case .tab = style, isOn {
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 4, height: 4)
+                }
+            }
+            .padding(.vertical, 8)
+            .frame(width: 24)
+            .foregroundStyle(foreground)
+            .background(background)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help.isEmpty ? title : help)
@@ -95,22 +104,21 @@ public struct RailButton: View {
         let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
         switch style {
         case .run:
-            shape.fill(Color.runFill).shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+            shape.fill(Color.runFill)
         case .running(let progress):
             shape.fill(Color.runFill)
                 .overlay(alignment: .bottom) {
                     GeometryReader { geo in
-                        Rectangle().fill(Color(hex: 0xC3C8D3))
+                        Rectangle().fill(Color.ink2.opacity(0.35))
                             .frame(height: geo.size.height * max(0, min(1, progress)))
                             .frame(maxHeight: .infinity, alignment: .bottom)
                     }
                 }
                 .clipShape(shape)
         case .field:
-            shape.fill(Color.raise1).overlay(shape.strokeBorder(Color.line2, lineWidth: 1))
+            shape.fill(hovering ? Color.surfaceHover : Color.raise1)
         case .tab:
-            shape.fill(isOn ? Color.raise2 : (hovering ? Color.white.opacity(0.06) : .clear))
-                .overlay(shape.strokeBorder(Color.white.opacity(isOn ? 0.08 : 0), lineWidth: 1))
+            shape.fill(isOn ? Color.raise2 : (hovering ? Color.surfaceHover : .clear))
         }
     }
 }

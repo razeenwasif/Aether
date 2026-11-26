@@ -87,7 +87,7 @@ private struct GameHome: View {
                                         Text(verbatim: "\(game.rooms) room\(game.rooms == 1 ? "" : "s")").font(.aeSmall).foregroundStyle(Color.ink2)
                                     }
                                     .padding(10)
-                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.raise1))
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Open \(game.name)")
@@ -223,7 +223,7 @@ private struct GameNavigator: View {
             }
             .padding(.horizontal, 10)
             .frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 6).fill(chosen ? Color.white.opacity(0.08) : .clear))
+            .background(RoundedRectangle(cornerRadius: 6).fill(chosen ? Color.raise2 : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

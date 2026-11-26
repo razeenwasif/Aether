@@ -230,12 +230,15 @@ struct Omnibar: View {
                     .foregroundStyle(omnibar.scope == .all ? Color.ink2 : Color.ice)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.raise2))
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.surfacePill))
                     .help("⇥ narrows the list to one group")
             }
-            .padding(.horizontal, 16)
-            .frame(height: 48)
-            Rectangle().fill(Color.line).frame(height: 1)
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.raise1))
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
             if items.isEmpty {
                 Text("Nothing matches “\(omnibar.query)”").font(.aeBody).foregroundStyle(Color.ink2).frame(maxWidth: .infinity).padding(.vertical, 18)
             } else {
@@ -260,7 +263,6 @@ struct Omnibar: View {
                     }
                 }
             }
-            Rectangle().fill(Color.line).frame(height: 1)
             Text("Type, or ↑↓ to choose · ↩ run · ⇥ \(omnibar.scope == .all ? "narrow" : "next group") · esc close")
                 .font(.aeSmall).foregroundStyle(Color.ink3)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -297,7 +299,7 @@ struct Omnibar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: Radius.button).fill(selected ? Color.white.opacity(0.1) : .clear))
+        .background(RoundedRectangle(cornerRadius: Radius.button).fill(selected ? Color.raise2 : .clear))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])

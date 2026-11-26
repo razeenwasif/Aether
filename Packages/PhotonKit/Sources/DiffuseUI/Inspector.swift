@@ -35,10 +35,9 @@ struct InspectorHeader: View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color(hex: 0xC9D6FF))
+                .foregroundStyle(Color.ice)
                 .frame(width: 30, height: 30)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.ice.opacity(0.12)))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.ice.opacity(0.22)))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.aeTitle).foregroundStyle(Color.inkHi).lineLimit(1)
                 Text(subtitle).font(.aeSmall).foregroundStyle(Color.ink2).lineLimit(1).truncationMode(.middle)
@@ -228,7 +227,7 @@ private struct PictureField: View {
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: Radius.field).fill(Color.raise1))
-        .overlay(RoundedRectangle(cornerRadius: Radius.field).strokeBorder(dropping ? Color.ice : Color.line2))
+        .overlay(RoundedRectangle(cornerRadius: Radius.field).strokeBorder(dropping ? Color.ice : .clear))
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: DiffuseWorkspaceModel.isPicture) else { return false }
             Task { await model.usePictureFile(url, node: node.id, field: field) }
@@ -409,7 +408,7 @@ private struct FieldEditor: View {
                         if !editing { commit(.double(rounded(number))) }
                     })
                     .controlSize(.mini)
-                    .tint(Color(hex: 0xC9CDD6))
+                    .tint(Color.ink)
                 }
                 numberField.frame(width: 64)
             }
@@ -471,7 +470,7 @@ private struct FieldEditor: View {
         RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
             .fill(Color.raise1)
             .overlay(RoundedRectangle(cornerRadius: Radius.field, style: .continuous)
-                .strokeBorder(focused ? Color.ice : Color.line2, lineWidth: 1))
+                .strokeBorder(focused ? Color.ice : .clear, lineWidth: 1))
     }
 
     private func load() {
@@ -579,7 +578,7 @@ private struct FlowInspector: View {
                             .padding(6)
                             .frame(height: 70)
                             .background(RoundedRectangle(cornerRadius: Radius.field).fill(Color.raise1))
-                            .overlay(RoundedRectangle(cornerRadius: Radius.field).strokeBorder(noteFocused ? Color.ice : Color.line2))
+                            .overlay(RoundedRectangle(cornerRadius: Radius.field).strokeBorder(noteFocused ? Color.ice : .clear))
                             .focused($noteFocused)
                     }
                 }
@@ -624,7 +623,6 @@ private struct FlowInspector: View {
             .padding(.horizontal, 8)
             .frame(height: 24)
             .background(RoundedRectangle(cornerRadius: Radius.field).fill(Color.raise1))
-            .overlay(RoundedRectangle(cornerRadius: Radius.field).strokeBorder(Color.line2))
             .onSubmit { model.update(settings: GatewaySettings(home: home, away: away)) }
     }
 

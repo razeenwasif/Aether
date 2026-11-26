@@ -20,6 +20,8 @@ struct WindowChrome: NSViewRepresentable {
             observers.forEach(NotificationCenter.default.removeObserver)
             observers = []
             guard let window else { return }
+            window.backgroundColor = .black
+            window.appearance = NSAppearance(named: .darkAqua)
             // A titled window with its title bar hidden, not SwiftUI's
             // hidden-title-bar style: see WindowDragArea.
             window.styleMask.insert(.fullSizeContentView)

@@ -35,7 +35,7 @@ struct NodeCard: View {
         .frame(width: NodeMetrics.width, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: Radius.node, style: .continuous)
-                .fill(selected ? Color(hex: 0x1C1D23) : Color(hex: 0x1A1B20)))
+                .fill(selected ? Color.raise2 : Color.raise1))
         .overlay(border)
         .overlay(alignment: .topLeading) { ports }
         .shadow(color: .black.opacity(0.35), radius: 12, y: 8)
@@ -112,7 +112,6 @@ struct NodeCard: View {
         }
         .padding(.horizontal, 10)
         .frame(height: NodeMetrics.header)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.white.opacity(0.05)).frame(height: 1) }
         .overlay(alignment: .bottom) { progressBar }
     }
 
@@ -215,9 +214,7 @@ struct NodeCard: View {
             } else if state == .running {
                 shape.strokeBorder(Color.ice.opacity(0.7), lineWidth: 1.2)
             } else if node.isBypassed {
-                shape.strokeBorder(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            } else {
-                shape.strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                shape.strokeBorder(Color.white.opacity(0.16), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
         }
     }
@@ -276,7 +273,7 @@ private struct PortDot: View {
         let color = SocketStyle.color(socket)
         ZStack {
             if glowing { Circle().fill(color.opacity(0.25)).frame(width: 20, height: 20) }
-            Circle().fill(linked ? color : Color(hex: 0x1A1B20)).frame(width: 10, height: 10)
+            Circle().fill(linked ? color : Color.raise1).frame(width: 10, height: 10)
             Circle().strokeBorder(color, lineWidth: 2).frame(width: 10, height: 10)
         }
         .frame(width: NodeMetrics.hitRadius * 2, height: NodeMetrics.hitRadius * 2)
@@ -298,7 +295,7 @@ private struct FieldRow: View {
                 Text(field.name).font(.system(size: 10.5)).foregroundStyle(flagged ? Color.amber : Color.ink2)
                 Text(value?.stringValue ?? "—")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color(hex: 0xD5D8DE))
+                    .foregroundStyle(Color.ink)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }

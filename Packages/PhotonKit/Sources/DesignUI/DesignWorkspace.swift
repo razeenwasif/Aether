@@ -1015,9 +1015,8 @@ private struct CodeDrawer: View {
 
     var body: some View {
         let code = model.code
-        HStack(alignment: .top, spacing: 0) {
+        HStack(alignment: .top, spacing: 12) {
             pane("HTML", code?.html ?? "")
-            Rectangle().fill(Color.line2).frame(width: 1)
             pane("CSS", code?.css ?? "")
         }
         .frame(maxWidth: 980)
