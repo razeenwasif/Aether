@@ -171,9 +171,9 @@ public final class DiffuseWorkspaceModel {
     /// Where new flows go: the project's `Flows/`.
     public private(set) var flowsFolder: URL
 
-    /// `~/Documents/Photon/Flows`, the default project's.
+    /// `~/Pictures/Photon/Flows`, the default project's.
     public nonisolated static var defaultFlowsFolder: URL {
-        URL.documentsDirectory.appending(path: "Photon/Flows", directoryHint: .isDirectory)
+        URL.picturesDirectory.appending(path: "Photon/Flows", directoryHint: .isDirectory)
     }
 
     /// The flow last open in this flows folder: each project has its own.

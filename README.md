@@ -43,7 +43,7 @@ swift test --package-path Packages/PhotonKit       # the graph, flows, canvases,
 
 ## The project
 
-Every workspace views one project. The default is `~/Documents/Photon`, which holds `Canvases/`, `Flows/` and `Models/`; any other is a `Name.photon` package, which the Finder shows as one document.
+Every workspace views one project. The default is `~/Pictures/Photon`, which holds `Canvases/`, `Flows/` and `Models/`; any other is a `Name.photon` package, which the Finder shows as one document.
 - **Making and opening:** File ▸ New Project… makes one, Open Project… (`⌥⌘O`) opens one, and so does double-clicking a `.photon` (or legacy `.aether`). The rail's top slot names the project open, and clicking it opens a menu of the same with the recent projects.
 - **Switching** asks about unsaved changes first, and each project keeps its own last flow. The last project opens at the next launch.
 
@@ -70,7 +70,7 @@ The rules are RESEARCH_PLAN.md §6.4a.
 
 ## Diffuse
 
-Flows are Proton's `.flow.json`, opened and saved as Proton does. Every edit goes to the Rust core as a batch of ops, applied whole or refused whole, one undo step each. New flows go to `~/Documents/Photon/Flows`.
+Flows are Proton's `.flow.json`, opened and saved as Proton does. Every edit goes to the Rust core as a batch of ops, applied whole or refused whole, one undo step each. New flows go to `~/Pictures/Photon/Flows`.
 
 Runs go to Nexus's image server on forge through atlas's gateway: the address comes from Photon's settings, else Proton's `~/.config/proton/settings.json`, else `http://atlas:7420/img/v1`, and the key from `NEXUS_KEY` (Photon's environment, then the login shell's). Save Image outputs land in `outputs/<flow name>/` beside the flow as `<prefix>_<nnnn>.png`, as Proton names them; Preview Image outputs go to a cache the gallery doesn't show. Away from atlas, flows still open and edit against the last catalogue the server served.
 
@@ -95,7 +95,7 @@ Keys: `⌘↩` generate · `⇧⌘↩` run to the selected node · `⇧⌘G` gra
 
 ## Model
 
-Scenes are Proton's `scene.proton.json` format, edited through `proton-scene`, one edit an undo step in the project's one history. They live in `~/Documents/Photon/Models` as `Name.scene.json`, with their meshes beside them as `.obj` files. As in Proton, a scene is saved 300 ms after each edit, so there is no Save to forget. With none open, the home page shows them as cards beside the new-scene form; a new scene starts with a cube.
+Scenes are Proton's `scene.proton.json` format, edited through `proton-scene`, one edit an undo step in the project's one history. They live in `~/Pictures/Photon/Models` as `Name.scene.json`, with their meshes beside them as `.obj` files. As in Proton, a scene is saved 300 ms after each edit, so there is no Save to forget. With none open, the home page shows them as cards beside the new-scene form; a new scene starts with a cube.
 
 **The viewport** is Metal, drawn only when something changes: the grid, each mesh lit by one key light with Proton's metal and rough shading, and lines for what has no surface (a burst for a light, a frustum for a camera, a cross for an empty, a box for a mesh that can't be read). A material's graph is compiled by the core and drawn as a Metal shader, its constants in a buffer. Drag, or two fingers, to turn round; `⇧`-drag, a right or middle drag, or `⇧` with two fingers, to slide; pinch or the wheel to zoom. A click chooses what's under it, tinted and lit round its edge in ice. The status bar shows the objects, the triangles and what the GPU took for the last frame.
 
@@ -172,7 +172,7 @@ Not yet: two options of different props that change the same property, under Tai
 
 ## Canvas
 
-Canvases are Proton's `.canvas` folders (`canvas.json` and a PNG per layer), edited through `proton-raster`, whose maths is whole numbers only, so the same edit always makes the same pixels. They live in `~/Documents/Photon/Canvases`. With none open, the home page shows them as cards beside the new-canvas form: a name, **Pixel** (a small grid, a palette, a pencil; 16–256 px) or **Paint** (a large canvas and soft brushes; 1024–4096 px), and a size. Dropping a PNG, a Photoshop or an Aseprite file there makes a canvas of it, its layers kept. File ▸ Make a Canvas of a Picture (`⇧⌘O`) does the same.
+Canvases are Proton's `.canvas` folders (`canvas.json` and a PNG per layer), edited through `proton-raster`, whose maths is whole numbers only, so the same edit always makes the same pixels. They live in `~/Pictures/Photon/Canvases`. With none open, the home page shows them as cards beside the new-canvas form: a name, **Pixel** (a small grid, a palette, a pencil; 16–256 px) or **Paint** (a large canvas and soft brushes; 1024–4096 px), and a size. Dropping a PNG, a Photoshop or an Aseprite file there makes a canvas of it, its layers kept. File ▸ Make a Canvas of a Picture (`⇧⌘O`) does the same.
 
 A stroke is painted as the pen moves and kept as one undo step. Only the 64 × 64 tiles it touches are composited again. On the right are the colour (the swatch opens the colour panel; the palette and recent colours are below), the tool's settings and the layers: add, remove, reorder, show or hide, lock, lock what's clear, rename (double-click), opacity and blend. A pen's pressure sets the brush's size, and its eraser end erases.
 

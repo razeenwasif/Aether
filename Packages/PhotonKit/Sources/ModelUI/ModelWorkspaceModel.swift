@@ -116,9 +116,9 @@ public final class ModelWorkspaceModel {
         refreshList()
     }
 
-    /// `~/Documents/Photon/Models`, the default project's.
+    /// `~/Pictures/Photon/Models`, the default project's.
     public nonisolated static var defaultFolder: URL {
-        URL.documentsDirectory.appending(path: "Photon/Models", directoryHint: .isDirectory)
+        URL.picturesDirectory.appending(path: "Photon/Models", directoryHint: .isDirectory)
     }
 
     public var selectedNode: SceneNode? { selected.flatMap { document?.node($0) } }

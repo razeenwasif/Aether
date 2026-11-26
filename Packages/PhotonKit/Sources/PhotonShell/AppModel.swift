@@ -45,7 +45,7 @@ public final class AppModel {
     @ObservationIgnored public var reopenWindow: (() -> Void)?
     @ObservationIgnored private var quitting: (any NSObjectProtocol)?
 
-    /// The project last open (or `~/Documents/Photon`), its workspaces
+    /// The project last open (or `~/Pictures/Photon`), its workspaces
     /// pointed at its `Canvases/`, `Flows/` and `Models/`. `connecting` false leaves
     /// Diffuse's gateway alone, for tests.
     public init(project: ProjectGraph? = nil, defaults: UserDefaults = .standard, connecting: Bool = true) {
@@ -94,15 +94,22 @@ public final class AppModel {
         }
     }
 
-    /// `~/Documents/Photon` (falling back to `~/Documents/Aether` if that
-    /// already exists and `Photon` doesn't yet).
+    /// `~/Pictures/Photon` (falling back to `~/Documents/Photon` or `~/Documents/Aether`
+    /// if either already exists and `~/Pictures/Photon` doesn't yet).
     public nonisolated static var defaultProjectFolder: URL {
-        let photon = URL.documentsDirectory.appending(path: "Photon", directoryHint: .isDirectory)
-        let legacy = URL.documentsDirectory.appending(path: "Aether", directoryHint: .isDirectory)
-        if !FileManager.default.fileExists(atPath: photon.path), ProjectGraph.isProject(legacy) {
-            return legacy
+        let pictures = URL.picturesDirectory.appending(path: "Photon", directoryHint: .isDirectory)
+        if FileManager.default.fileExists(atPath: pictures.path) {
+            return pictures
         }
-        return photon
+        let legacyPhoton = URL.documentsDirectory.appending(path: "Photon", directoryHint: .isDirectory)
+        if ProjectGraph.isProject(legacyPhoton) {
+            return legacyPhoton
+        }
+        let legacyAether = URL.documentsDirectory.appending(path: "Aether", directoryHint: .isDirectory)
+        if ProjectGraph.isProject(legacyAether) {
+            return legacyAether
+        }
+        return pictures
     }
 
     /// The project last open, or the default one. One that can't be read is

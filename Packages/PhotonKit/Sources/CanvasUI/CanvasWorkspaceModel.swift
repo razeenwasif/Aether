@@ -155,7 +155,7 @@ public struct CanvasFile: Identifiable, Hashable, Sendable {
 }
 
 /// The Canvas workspace: the canvas open, the tool and its settings, the
-/// layer drawn on, and the canvases in `~/Documents/Photon/Canvases`.
+/// layer drawn on, and the canvases in `~/Pictures/Photon/Canvases`.
 @MainActor
 @Observable
 public final class CanvasWorkspaceModel {
@@ -253,9 +253,9 @@ public final class CanvasWorkspaceModel {
         loadOnion()
     }
 
-    /// `~/Documents/Photon/Canvases`, where canvases go.
+    /// `~/Pictures/Photon/Canvases`, where canvases go.
     public nonisolated static var defaultFolder: URL {
-        URL.documentsDirectory.appending(path: "Photon/Canvases", directoryHint: .isDirectory)
+        URL.picturesDirectory.appending(path: "Photon/Canvases", directoryHint: .isDirectory)
     }
 
     public static let sizes: [CanvasPreset: [(Int, Int)]] = [
