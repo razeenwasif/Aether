@@ -44,45 +44,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aether-design"
-version = "0.1.0"
-dependencies = [
- "proton-design",
- "proton-game",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "aether-diffuse"
-version = "0.1.0"
-dependencies = [
- "aether-design",
- "aether-layers",
- "aether-poly",
- "proton-diffuse",
- "proton-game",
- "proton-mesh",
- "proton-raster",
- "proton-scene",
- "serde",
- "serde_json",
- "uniffi",
-]
-
-[[package]]
-name = "aether-layers"
-version = "0.1.0"
-dependencies = [
- "proton-scene",
- "serde",
-]
-
-[[package]]
-name = "aether-poly"
-version = "0.1.0"
-
-[[package]]
 name = "anstyle"
 version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -837,6 +798,45 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "photon-design"
+version = "0.1.0"
+dependencies = [
+ "proton-design",
+ "proton-game",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "photon-diffuse"
+version = "0.1.0"
+dependencies = [
+ "photon-design",
+ "photon-layers",
+ "photon-poly",
+ "proton-diffuse",
+ "proton-game",
+ "proton-mesh",
+ "proton-raster",
+ "proton-scene",
+ "serde",
+ "serde_json",
+ "uniffi",
+]
+
+[[package]]
+name = "photon-layers"
+version = "0.1.0"
+dependencies = [
+ "proton-scene",
+ "serde",
+]
+
+[[package]]
+name = "photon-poly"
+version = "0.1.0"
 
 [[package]]
 name = "plain"

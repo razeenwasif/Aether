@@ -1,5 +1,5 @@
-# Aether's Rust cores (RESEARCH_PLAN.md §2, Q1): Proton's document crates,
-# brought here when Proton gave its creative modes to Aether, and thin
+# Photon's Rust cores (RESEARCH_PLAN.md §2, Q1): Proton's document crates,
+# brought here when Proton gave its creative modes to Photon, and thin
 # UniFFI skins over them for Swift. proton-diffuse, proton-raster,
 # proton-scene and proton-mesh came from Proton at 1e1aeb7 (the first two
 # last changed there in dca833c), less the TypeScript bindings Proton's web
@@ -7,18 +7,18 @@
 # canvases, scenes — stay Proton's, so both apps read them. proton-game came
 # later, from a551530~1 (the commit before Proton removed it), with its tests'
 # fixtures, less its TypeScript bindings; its WebAssembly runtime stayed
-# behind, as Aether runs the simulation natively.
+# behind, as Photon runs the simulation natively.
 # proton-design came from 9111812^ (the commit before Proton took Design out
 # of its window), less its TypeScript bindings, with its test's fixture:
-# Proton's window at that commit. Aether added two readers to its markup's
+# Proton's window at that commit. Photon added two readers to its markup's
 # layers (an element's whole inner text, and an attribute's value), for
 # Design's sync to read HTML back.
-# aether-poly and aether-layers are Aether's own: Model's Edit mode and
-# material layers, which Proton never had. aether-design is too: Design's
+# photon-poly and photon-layers are Photon's own: Model's Edit mode and
+# material layers, which Proton never had. photon-design is too: Design's
 # pages, laid out natively where Proton drew HTML in a web view.
 [workspace]
 resolver = "2"
-members = ["aether-design", "aether-diffuse", "aether-layers", "aether-poly", "proton-design", "proton-diffuse", "proton-game", "proton-mesh", "proton-raster", "proton-scene", "uniffi-bindgen"]
+members = ["photon-design", "photon-diffuse", "photon-layers", "photon-poly", "proton-design", "proton-diffuse", "proton-game", "proton-mesh", "proton-raster", "proton-scene", "uniffi-bindgen"]
 
 [workspace.package]
 version = "0.1.0"

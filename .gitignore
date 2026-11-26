@@ -1,14 +1,14 @@
 # Generated
-Aether.xcodeproj/
+Photon.xcodeproj/
 build/
 DerivedData/
 .build/
 .swiftpm/
-Packages/AetherKit/.build/
-Packages/AetherKit/.swiftpm/
+Packages/PhotonKit/.build/
+Packages/PhotonKit/.swiftpm/
 
-# Built by scripts/build-cores.sh (38 MB static library)
-Packages/AetherKit/Frameworks/
+# Built by scripts/build-cores.sh (static library xcframework)
+Packages/PhotonKit/Frameworks/
 
 # Rust
 cores/target/
@@ -18,3 +18,7 @@ cores/target/
 # Playwright, for scripts/render-icon.mjs only
 node_modules/
 package-lock.json
+
+# Antigravity local migration & rules
+.antigravity/
+.gemini/

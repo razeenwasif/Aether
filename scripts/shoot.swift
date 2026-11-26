@@ -1,5 +1,5 @@
 // Captures an app's frontmost window to a PNG, for checking the UI.
-//   swift scripts/shoot.swift Aether build/shots/diffuse.png
+//   swift scripts/shoot.swift Photon build/shots/diffuse.png
 import CoreGraphics
 import Foundation
 

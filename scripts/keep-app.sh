@@ -16,7 +16,7 @@ if [[ -e "$kept" && "$(id "$kept")" != "$(id "$built")" ]]; then
 fi
 
 mkdir -p "$HOME/Applications"
-swap="$(mktemp -d "$HOME/Applications/.Aether-keep.XXXXXX")"
+swap="$(mktemp -d "$HOME/Applications/.Photon-keep.XXXXXX")"
 trap 'rm -rf "$swap"' EXIT
 /usr/bin/ditto "$built" "$swap/new.app"
 /usr/bin/codesign --force --deep --sign - "$swap/new.app" 2>/dev/null

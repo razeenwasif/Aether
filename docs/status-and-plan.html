@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Photon Status &amp; Plan</title>
+<style>
+  /* Layout: one reading column under a sticky section bar. Cards sit on the
+     icon's obsidian; the prism's facets (ice, lavender, mint, ember) are the
+     only colour. */
+  :root {
+    --ground: #0b0c0e;
+    --glow-a: rgba(142, 165, 238, 0.16);
+    --glow-b: rgba(185, 168, 255, 0.11);
+    --paper: #131418;
+    --paper-2: #0e0f12;
+    --raise: #1f2026;
+    --ink: #edeef0;
+    --dim: #c3c6cd;
+    --mute: #8f949d;
+    --line: rgba(196, 206, 238, 0.09);
+    --line-strong: rgba(196, 206, 238, 0.2);
+    --accent: #9db4ff;
+    --accent-2: #b9a8ff;
+    --ember: #f2b66d;
+    --on-accent: #0b0c0e;
+    --prism: linear-gradient(100deg, #8ea5ee, #b9a8ff 38%, #7dd3b0 70%, #f2b66d);
+    --ok: #7dd3b0;
+    --ok-soft: rgba(125, 211, 176, 0.12);
+    --doing: #9db4ff;
+    --doing-soft: rgba(157, 180, 255, 0.13);
+    --warn: #e9c46a;
+    --warn-soft: rgba(233, 196, 106, 0.12);
+    --crit: #ff8a7a;
+    --crit-soft: rgba(255, 138, 122, 0.12);
+    --depth: inset 0 1px 0 rgba(240, 244, 255, 0.05), inset 0 -30px 40px -32px rgba(0, 0, 0, 0.6);
+    --shadow: 0 3px 6px -2px rgba(0, 0, 0, 0.5), 0 16px 26px -12px rgba(0, 0, 0, 0.65), 0 38px 64px -30px rgba(0, 0, 0, 0.85);
+    --lift: inset 0 1px 0 rgba(240, 244, 255, 0.07), 0 6px 14px -8px rgba(0, 0, 0, 0.7);
+    --well: inset 0 1px 2px rgba(0, 0, 0, 0.6), inset 0 -1px 0 rgba(240, 244, 255, 0.04);
+    --legend-rim: inset 0 1px 0 rgba(240, 244, 255, 0.06), 0 -3px 8px -3px rgba(0, 0, 0, 0.6);
+    --bar-bg: rgba(11, 12, 14, 0.97);
+    --shot-rim: rgba(196, 206, 238, 0.12);
+    --display: "Newsreader", "Iowan Old Style", Georgia, "Times New Roman", serif;
+    --body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground: #f2f3f6; --glow-a: rgba(63, 91, 217, 0.08); --glow-b: rgba(107, 79, 208, 0.07);
+      --paper: #ffffff; --paper-2: #eef0f4; --raise: #e3e6ed;
+      --ink: #14161b; --dim: #3c414b; --mute: #5c626d;
+      --line: rgba(30, 40, 80, 0.1); --line-strong: rgba(30, 40, 80, 0.22);
+      --accent: #3f5bd9; --accent-2: #6b4fd0; --ember: #9a5a14; --on-accent: #ffffff;
+      --ok: #1d7552; --ok-soft: rgba(29, 117, 82, 0.1); --doing: #3f5bd9; --doing-soft: rgba(63, 91, 217, 0.1);
+      --warn: #85600a; --warn-soft: rgba(133, 96, 10, 0.1); --crit: #b4372a; --crit-soft: rgba(180, 55, 42, 0.1);
+      --depth: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+      --shadow: 0 1px 2px rgba(20, 30, 60, 0.08), 0 10px 24px -12px rgba(20, 30, 60, 0.2), 0 30px 50px -30px rgba(20, 30, 60, 0.22);
+      --lift: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px -6px rgba(20, 30, 60, 0.28);
+      --well: inset 0 1px 2px rgba(20, 30, 60, 0.14);
+      --legend-rim: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 -3px 8px -4px rgba(20, 30, 60, 0.14);
+      --bar-bg: rgba(242, 243, 246, 0.97);
+      --shot-rim: rgba(20, 30, 60, 0.14);
+      color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #f2f3f6; --glow-a: rgba(63, 91, 217, 0.08); --glow-b: rgba(107, 79, 208, 0.07);
+    --paper: #ffffff; --paper-2: #eef0f4; --raise: #e3e6ed;
+    --ink: #14161b; --dim: #3c414b; --mute: #5c626d;
+    --line: rgba(30, 40, 80, 0.1); --line-strong: rgba(30, 40, 80, 0.22);
+    --accent: #3f5bd9; --accent-2: #6b4fd0; --ember: #9a5a14; --on-accent: #ffffff;
+    --ok: #1d7552; --ok-soft: rgba(29, 117, 82, 0.1); --doing: #3f5bd9; --doing-soft: rgba(63, 91, 217, 0.1);
+    --warn: #85600a; --warn-soft: rgba(133, 96, 10, 0.1); --crit: #b4372a; --crit-soft: rgba(180, 55, 42, 0.1);
+    --depth: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    --shadow: 0 1px 2px rgba(20, 30, 60, 0.08), 0 10px 24px -12px rgba(20, 30, 60, 0.2), 0 30px 50px -30px rgba(20, 30, 60, 0.22);
+    --lift: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 4px 10px -6px rgba(20, 30, 60, 0.28);
+    --well: inset 0 1px 2px rgba(20, 30, 60, 0.14);
+    --legend-rim: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 -3px 8px -4px rgba(20, 30, 60, 0.14);
+    --bar-bg: rgba(242, 243, 246, 0.97);
+    --shot-rim: rgba(20, 30, 60, 0.14);
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 72px; }
+  body {
+    margin: 0; padding: 0;
+    background:
+      radial-gradient(1100px 640px at 8% -8%, var(--glow-a), transparent 62%),
+      radial-gradient(900px 700px at 104% 40%, var(--glow-b), transparent 60%),
+      var(--ground);
+    background-attachment: fixed;
+    color: var(--ink);
+    font: 15px/1.6 var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+  .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .column { max-width: 1080px; margin: 0 auto; display: grid; gap: 64px; min-width: 0; }
+  h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
+  p { margin: 0; }
+  ul, ol { margin: 0; padding: 0; list-style: none; }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  code { font-family: var(--mono); font-size: 0.86em; overflow-wrap: anywhere; }
+  .mono { font-family: var(--mono); font-size: 0.92em; }
+  .tab-num { font-variant-numeric: tabular-nums; }
+  .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); }
+  .display { font-family: var(--display); font-weight: 500; letter-spacing: -0.012em; }
+
+  .paper { position: relative; background: var(--paper); border-radius: 18px; box-shadow: var(--depth), var(--shadow); }
+  .legend {
+    position: absolute; top: -10px; left: 20px; max-width: calc(100% - 40px);
+    display: inline-flex; align-items: center; gap: 8px; padding: 0 10px;
+    background: var(--paper); border-radius: 8px 8px 0 0; box-shadow: var(--legend-rim);
+    font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink);
+  }
+
+  /* Section bar */
+  .bar { position: sticky; top: 0; z-index: 20; background: var(--bar-bg); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); border-bottom: 1px solid var(--line); }
+  .bar-inner { display: flex; align-items: center; gap: 18px; min-height: 58px; max-width: 1080px; margin: 0 auto; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); flex: none; }
+  .brand svg { width: 26px; height: 26px; flex: none; }
+  .brand b { font-family: var(--display); font-weight: 500; font-size: 21px; letter-spacing: -0.01em; }
+  .sections { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; min-width: 0; padding: 6px 2px; }
+  .sections::-webkit-scrollbar { display: none; }
+  .sections a { flex: none; text-decoration: none; color: var(--dim); font-weight: 600; font-size: 13.5px; padding: 7px 14px; border-radius: 999px; white-space: nowrap; }
+  .sections a:hover { color: var(--ink); background: var(--raise); }
+  .sections a[aria-current="true"] { color: var(--ink); background: var(--raise); box-shadow: var(--lift); }
+  .sections a[aria-current="true"]::after { content: ""; display: block; height: 2px; margin-top: 3px; border-radius: 2px; background: var(--prism); }
+  .bar .sync-mini { margin-left: auto; font-size: 12px; color: var(--mute); white-space: nowrap; flex: none; }
+
+  main { padding-block: 40px 72px; }
+  .part { display: grid; gap: 28px; min-width: 0; scroll-margin-top: 72px; grid-template-columns: minmax(0, 1fr); }
+  .part-head { display: grid; gap: 10px; max-width: 72ch; }
+  .part-head h2 { font-size: clamp(28px, 4vw, 40px); line-height: 1.1; }
+  .part-head p { color: var(--dim); }
+  .kicker { display: inline-flex; align-items: center; gap: 10px; }
+  .kicker::before { content: ""; width: 28px; height: 2px; border-radius: 2px; background: var(--prism); }
+
+  /* Header */
+  header.hero { display: grid; gap: 16px; }
+  header.hero h1 { font-size: clamp(38px, 6vw, 60px); line-height: 1.02; }
+  header.hero h1 .amp { font-style: italic; background: var(--prism); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { color: var(--dim); max-width: 68ch; font-size: 16px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 20px; color: var(--mute); font-size: 13px; }
+  .facts b { color: var(--dim); font-weight: 600; }
+  .vitals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 10px; align-items: start; }
+  .vital { padding: 22px 18px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .vital .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .vital .big { font-family: var(--display); font-size: 24px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.15; }
+  .vital p { color: var(--dim); font-size: 13px; line-height: 1.45; }
+  .vital .when { font-size: 12px; color: var(--mute); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; font-weight: 650; padding: 2px 9px; border-radius: 999px; }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.ok { color: var(--ok); background: var(--ok-soft); }
+  .pill.warn { color: var(--warn); background: var(--warn-soft); }
+  .pill.info { color: var(--doing); background: var(--doing-soft); }
+  .pill.muted { color: var(--dim); background: var(--paper-2); box-shadow: var(--well); }
+
+  /* Run order */
+  .plan-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px 28px; }
+  .progress { display: grid; gap: 6px; width: 320px; max-width: 100%; flex: none; }
+  .progress .label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--dim); align-items: center; }
+  .progress .track { height: 6px; border-radius: 3px; background: var(--paper-2); box-shadow: var(--well); overflow: hidden; display: flex; }
+  .progress .track i { display: block; height: 100%; transition: width 0.3s ease; }
+  .p-done { background: var(--ok); }
+  .p-doing { background: var(--doing); }
+  .sync-row { display: flex; align-items: center; gap: 8px; }
+  .sync { font-size: 12px; color: var(--mute); }
+  .reset-btn { font: 600 12px var(--body); color: var(--dim); background: var(--raise); border: 0; box-shadow: var(--lift); border-radius: 999px; padding: 2px 9px; cursor: pointer; display: none; }
+  .reset-btn.visible { display: inline-block; }
+  .reset-btn:hover { color: var(--ink); }
+  .sizes { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--mute); }
+  .sizes b { color: var(--dim); font-weight: 600; font-family: var(--mono); }
+  #phases { display: grid; gap: 44px; grid-template-columns: minmax(0, 1fr); }
+  .phase { display: grid; gap: 22px; grid-template-columns: minmax(0, 1fr); }
+  .phase-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .phase-head h3 { font-family: var(--display); font-size: 23px; font-weight: 500; letter-spacing: -0.01em; }
+  .phase-head .phase-sub { color: var(--mute); font-size: 13.5px; }
+  .phase-head .phase-count { margin-left: auto; color: var(--mute); font-size: 12.5px; }
+  .steps { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); }
+  .step { display: grid; grid-template-columns: minmax(0, 1fr) 184px; gap: 6px 20px; padding: 24px 20px 18px; }
+  .step.is-next { box-shadow: var(--depth), var(--shadow), 0 0 0 1.5px var(--accent); }
+  .step.is-done .title, .step.is-skipped .title { color: var(--dim); }
+  .step.is-skipped .title { text-decoration: line-through; text-decoration-color: var(--mute); }
+  .step.is-done .legend::after { content: "✓"; color: var(--ok); letter-spacing: 0; }
+  .step-body { display: grid; gap: 9px; min-width: 0; }
+  .title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .title { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.35; }
+  .next-tag { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #0b0c0e; background: var(--prism); padding: 2px 9px; border-radius: 999px; }
+  .why { color: var(--dim); font-size: 14.5px; max-width: 80ch; overflow-wrap: anywhere; }
+  .covers { display: grid; gap: 4px; font-size: 13.5px; color: var(--dim); max-width: 80ch; }
+  .covers li { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 6px; overflow-wrap: anywhere; }
+  .covers li::before { content: "–"; color: var(--mute); }
+  .done-when { font-size: 13.5px; color: var(--dim); max-width: 80ch; }
+  .done-when span { color: var(--ink); font-weight: 650; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--mute); }
+  .tag { font-family: var(--mono); font-size: 12px; color: var(--dim); line-height: 1.5; background: var(--paper-2); box-shadow: var(--well); border-radius: 6px; padding: 1px 7px; }
+  .tag.who { font-family: var(--body); font-weight: 600; }
+  .tag.who.you { color: var(--ember); }
+  .ctl { display: grid; gap: 6px; align-content: start; }
+  .state { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 650; padding: 6px 11px; border-radius: 10px; color: var(--mute); background: var(--paper-2); box-shadow: var(--well); }
+  .state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
+  .state.s-doing { color: var(--doing); background: var(--doing-soft); box-shadow: none; }
+  .state.s-doing::before { background: currentColor; animation: pulse 1.8s ease-in-out infinite; }
+  .state.s-done { color: var(--ok); background: var(--ok-soft); box-shadow: none; }
+  .state.s-done::before { background: currentColor; }
+  .state.s-skipped { box-shadow: none; outline: 1px dashed var(--line-strong); outline-offset: -1px; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  .ctl label { font-size: 12px; color: var(--mute); }
+  .ctl select { font: inherit; font-size: 13px; color: var(--ink); background: var(--raise); border: 0; box-shadow: var(--lift); border-radius: 10px; padding: 6px 9px; width: 100%; cursor: pointer; }
+  .ctl time { font-size: 12px; color: var(--mute); }
+  .plan-foot { color: var(--mute); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; }
+
+  /* Design boards */
+  .boards { display: grid; gap: 22px 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .boards .wide { grid-column: 1 / -1; }
+  .board { padding: 24px 18px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .board b { font-size: 15.5px; font-weight: 650; color: var(--ink); }
+  .board span.desc { color: var(--dim); font-size: 13.5px; }
+  .canvas-link { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 14px; text-decoration: none; color: var(--on-accent); background: var(--accent); padding: 9px 16px; border-radius: 999px; box-shadow: var(--lift); justify-self: start; }
+  .canvas-link:hover { filter: brightness(1.06); }
+  .ds-notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 30px 16px; }
+  .ds-note { padding: 24px 18px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+  .ds-note p { color: var(--dim); font-size: 14px; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+  .swatch { width: 26px; height: 26px; border-radius: 7px; box-shadow: inset 0 0 0 1px var(--shot-rim); }
+
+  /* Tables */
+  .table-card { padding: 22px 0 6px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); }
+  tr:last-child td { border-bottom: 0; }
+  .ws-table { min-width: 860px; }
+  .ws-table td:first-child { font-weight: 650; white-space: nowrap; }
+  .ws-table td.keys, .ws-table td.run { white-space: nowrap; }
+  .ws-table td.from { color: var(--dim); font-size: 13.5px; }
+  kbd { display: inline-block; font-family: var(--mono); font-size: 0.8em; line-height: 1.5; font-weight: 500; padding: 0 6px; border-radius: 6px; color: var(--ink); background: var(--raise); box-shadow: var(--lift); white-space: nowrap; vertical-align: 0.06em; }
+
+  /* Decisions */
+  .decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px 18px; }
+  .decision { padding: 24px 20px 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+  .decision h3 { font-size: 17px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.35; }
+  .decision > p { color: var(--dim); font-size: 14px; }
+  .options { display: grid; gap: 6px; font-size: 13.5px; color: var(--dim); }
+  .options li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 6px; }
+  .options li b { font-family: var(--mono); font-weight: 500; color: var(--mute); }
+  .rec { font-size: 13.5px; color: var(--ink); background: var(--paper-2); box-shadow: var(--well); border-radius: 10px; padding: 9px 12px; }
+  .rec::before { content: "Decided  "; color: var(--ok); font-weight: 650; }
+
+  /* Keys */
+  .cheat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px 18px; align-items: start; }
+  .cheat { padding: 22px 0 6px; min-width: 0; }
+  .cheat table { font-size: 13.5px; }
+  .cheat td { padding: 7px 16px; color: var(--dim); }
+  .cheat td.k { width: 1%; white-space: nowrap; color: var(--ink); }
+
+  @media (max-width: 900px) {
+    .vitals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 760px) {
+    .boards { grid-template-columns: minmax(0, 1fr); }
+    .cheat-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 640px) {
+    main { padding-block: 28px 56px; }
+    .column { gap: 52px; }
+    .bar-inner { gap: 10px; min-height: 52px; }
+    .brand b { display: none; }
+    .bar .sync-mini { display: none; }
+    .vitals { grid-template-columns: minmax(0, 1fr); }
+    .step { grid-template-columns: minmax(0, 1fr); padding: 22px 16px 16px; }
+    .ctl { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 10px; }
+    .ctl label { display: none; }
+    .ctl time { grid-column: 1 / -1; }
+    .progress { width: 100%; }
+    .cheat td { padding: 7px 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .state.s-doing::before { animation: none; } .progress .track i { transition: none; } }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+    .sections a { transition: background 0.15s ease, color 0.15s ease; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="bar gutter" aria-label="Sections">
+  <div class="bar-inner">
+    <a class="brand" href="#top"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#0b0c0e"/><path d="M16 14.6 L16 6.5 L23.8 11 Z" fill="#c9d6ff"/><path d="M16 14.6 L23.8 11 L23.8 20 Z" fill="#b9a8ff"/><path d="M16 14.6 L23.8 20 L16 24.5 Z" fill="#6e5fc0"/><path d="M16 14.6 L16 24.5 L8.2 20 Z" fill="#e9b37a"/><path d="M16 14.6 L8.2 20 L8.2 11 Z" fill="#7dd3b0"/><path d="M16 14.6 L8.2 11 L16 6.5 Z" fill="#ffffff"/></svg><b>Photon</b></a>
+    <div class="sections">
+      <a href="#plan" data-spy="plan">Plan</a>
+      <a href="#design" data-spy="design">Design</a>
+      <a href="#workspaces" data-spy="workspaces">Workspaces</a>
+      <a href="#decisions" data-spy="decisions">Decisions</a>
+      <a href="#keys" data-spy="keys">Keys</a>
+    </div>
+    <span class="sync-mini" id="sync-mini" aria-hidden="true"></span>
+  </div>
+</nav>
+
+<main class="gutter" id="top">
+  <div class="column">
+
+  <header class="hero">
+    <span class="eyebrow">Photon · status, plan and design</span>
+    <h1 class="display">Photon Status <span class="amp">&amp;</span> Plan</h1>
+    <p class="lede">Photon (formerly Aether) is the native macOS creative studio carved out of Proton’s Design, Model, Game, Canvas, Diffuse and Video modes. This page is the editable Antigravity &amp; local repo copy (<span class="mono">docs/status-and-plan.html</span>) tracking where it stands, the run order, the design boards, and the decisions it rests on.</p>
+    <div class="facts">
+      <span>Folder <b class="mono">~/Github/Applications/Aether</b> · <span class="mono">ntr</span> on <b class="mono">main</b> (<b class="mono">81682e1+</b>)</span>
+      <span>Design canvas <b class="tab-num">v11</b> · 12 boards</span>
+      <span>Updated <b>27 Nov 2026</b></span>
+    </div>
+    <section class="vitals" aria-label="Vitals">
+      <div class="vital paper">
+        <span class="legend">Design</span>
+        <div class="head"><span class="big">Approved</span><span class="pill ok">12 boards</span></div>
+        <p>All six workspaces, the thin rail, the omnibar, the Velvet Obsidian system, the asset pipeline and the app icon, clickable on the canvas.</p>
+        <span class="when">Approved 27 Oct</span>
+      </div>
+      <div class="vital paper">
+        <span class="legend">Repository</span>
+        <div class="head"><span class="big">On Neutrino</span><span class="pill ok">Photon</span></div>
+        <p>XcodeGen project for macOS 26, PhotonKit Swift package, and Rust cores via UniFFI. Builds refresh <span class="mono">~/Applications/Photon.app</span> (use <span class="mono">env -u NEXUS_KEY</span>). Game isometric slice 1 committed (81682e1); renamed Photon → Photon with .aether compatibility.</p>
+        <span class="when">Updated 27 Nov</span>
+      </div>
+      <div class="vital paper">
+        <span class="legend">Workspaces</span>
+        <div class="head"><span class="big">5 of 6 active</span><span class="pill info">Video left</span></div>
+        <p>Diffuse, Canvas and Design are built; Model has Edit, bevel, material layers and a denoised path tracer; Game has full side-on plus isometric slice 1 (503 Rust tests). Video is still a placeholder.</p>
+        <span class="when">As of 27 Nov</span>
+      </div>
+      <div class="vital paper">
+        <span class="legend">Next up</span>
+        <div class="head"><span class="big">Iso slice 2</span><span class="pill warn">Or low-poly</span></div>
+        <p>Verify <span class="mono">3e20d48</span> on forge, then tackle isometric slice 2 (8-way sprites, shadows, raised floors), low-poly 3D, Video, or launch time (~0.6 s vs 100 ms).</p>
+        <span class="when">See §10</span>
+      </div>
+    </section>
+  </header>
+
+  <section class="part" id="plan" aria-labelledby="plan-h">
+    <div class="plan-head">
+      <div class="part-head">
+        <span class="eyebrow kicker">Plan · RESEARCH_PLAN.md</span>
+        <h2 class="display" id="plan-h">Run order</h2>
+        <p>The design is approved, all five decisions are settled, and five of the six workspaces are up and running on top of M1’s shared project graph. The first unfinished step is marked Next.</p>
+      </div>
+      <div class="progress" aria-live="polite">
+        <div class="label">
+          <span id="progress-text">— done</span>
+          <span class="sync-row">
+            <span id="sync" class="sync">Synced to repo</span>
+            <button type="button" id="reset-btn" class="reset-btn" title="Clear local overrides">Reset</button>
+          </span>
+        </div>
+        <div class="track"><i class="p-done" id="bar-done" style="width:0%"></i><i class="p-doing" id="bar-doing" style="width:0%"></i></div>
+      </div>
+    </div>
+    <div class="sizes">
+      <span><b>S</b> an hour or two</span><span><b>M</b> about a session</span><span><b>L</b> several sessions</span>
+      <span>Canonical file: <span class="mono">docs/status-and-plan.html</span> · mirrored in Antigravity artifact.</span>
+    </div>
+    <div id="phases"></div>
+    <p class="plan-foot">Built from RESEARCH_PLAN.md and the original Claude Status &amp; Plan artifact. Dropdown edits persist in browser localStorage; Antigravity updates the canonical defaults in <span class="mono">docs/status-and-plan.html</span> as milestones land.</p>
+  </section>
+
+  <section class="part" id="design" aria-labelledby="design-h">
+    <div class="part-head">
+      <span class="eyebrow kicker">Design · canvas v11</span>
+      <h2 class="display" id="design-h">What it looks like</h2>
+      <p>The 12 boards on the design canvas (1440 × 900 unless noted). One sample project, Lumen, a small lantern game, runs through all six workspaces so you can follow a single asset from one mode to the next.</p>
+    </div>
+    <a class="canvas-link" href="https://claude.ai/artifact/Ho2LB6Q7GrnBXMc8jwfaEv" target="_blank" rel="noopener">Open the original design canvas ↗</a>
+
+    <div class="boards">
+      <article class="board paper wide">
+        <span class="legend">Design · ⌘1</span>
+        <b>Design workspace</b>
+        <span class="desc">Desktop and mobile breakpoints side by side. The selected button shows its auto-layout parent, and the inspector leads with tokens and the synced code. The 32 pt rail on the left holds the workspaces, Run, Search and the panel toggles, all set as vertical text.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Model · ⌘2</span>
+        <b>Model workspace</b>
+        <span class="desc">No transform gizmo: the face is the handle, with a contextual bar of Extrude, Inset, Bevel and Loop cut. Materials are a short layer stack.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Game · ⌘3</span>
+        <b>Game workspace (editing)</b>
+        <span class="desc">A room fed live by Canvas’s layers, with an ECS outliner and the lantern’s behaviour graph in a drawer below.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Game · playing</span>
+        <b>Play in the viewport</b>
+        <span class="desc">Run turns to Stop. Overlays and drawers step aside, and the HUD shows time, step-frame and frame timing. No separate game window.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Canvas · ⌘4</span>
+        <b>Canvas workspace</b>
+        <span class="desc">The navigator is hidden by default while painting. Vector booleans stay editable, and each layer is a Game parallax plane.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Diffuse · ⌘5</span>
+        <b>Diffuse workspace</b>
+        <span class="desc">The flow’s sources are a Model depth pass and the Canvas painting. Its output is the live key art in Design and Video.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Video · ⌘6</span>
+        <b>Video workspace</b>
+        <span class="desc">A real programme monitor at last, with a magnetic storyline whose clips come live from every other workspace.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Omnibar · ⌘K</span>
+        <b>Omnibar</b>
+        <span class="desc">Tools, actions, assets and Go-to in one list, with the selection’s likeliest commands first. Filters as you type.</span>
+      </article>
+      <article class="board paper wide">
+        <span class="legend">Asset pipeline · 1440 × 1040</span>
+        <b>One project graph, six views</b>
+        <span class="desc">Every workspace reads and writes one graph through transactions. Regenerate the key art and the hero and shot 3 update in place.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">Velvet Obsidian · 1440 × 2000</span>
+        <b>Design system</b>
+        <span class="desc">Colour, type, elevation, inspector rules, components, motion and keys.</span>
+      </article>
+      <article class="board paper">
+        <span class="legend">App icon</span>
+        <b>App icon</b>
+        <span class="desc">Six facets, one per workspace, on an obsidian squircle, shown at small sizes, in the Dock, and as a template glyph (<span class="mono">design/photon-icon.svg</span>).</span>
+      </article>
+    </div>
+
+    <div class="ds-notes">
+      <div class="ds-note paper">
+        <span class="legend">Chrome</span>
+        <div class="swatches" aria-label="Chrome colours"><span class="swatch" style="background:#0b0c0e"></span><span class="swatch" style="background:#121316"></span><span class="swatch" style="background:#1e1f24"></span><span class="swatch" style="background:#8b9099"></span><span class="swatch" style="background:#edeef0"></span><span class="swatch" style="background:#e8eaee"></span></div>
+        <p>Greyscale throughout, so the work is the only colour on screen. Run is the one bright control, in the same slot with the same shortcut in every workspace.</p>
+      </div>
+      <div class="ds-note paper">
+        <span class="legend">Signals</span>
+        <div class="swatches" aria-label="Signal colours"><span class="swatch" style="background:#9db4ff"></span><span class="swatch" style="background:#b9a8ff"></span><span class="swatch" style="background:#7dd3b0"></span><span class="swatch" style="background:#e9c46a"></span><span class="swatch" style="background:#ff8a7a"></span></div>
+        <p>Ice for selection, lavender for generative work, mint for live links and playing. Each always comes with a second cue: a label, an icon or a shape.</p>
+      </div>
+      <div class="ds-note paper">
+        <span class="legend">Layout</span>
+        <p>A 32 pt rail; a full-bleed viewport; navigator (⌘0) and inspector (⌘\) floating as glass; a contextual action bar beside the selection; a tool dock that re-centres in the free space.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="part" id="workspaces" aria-labelledby="ws-h">
+    <div class="part-head">
+      <span class="eyebrow kicker">Workspaces</span>
+      <h2 class="display" id="ws-h">The six workspaces</h2>
+      <p>What each one is, what comes over from its Proton mode, and where it stands today.</p>
+    </div>
+    <div class="paper table-card">
+      <span class="legend">Workspaces · 27 Nov 2026</span>
+      <div class="table-wrap"><table class="ws-table">
+        <thead><tr><th>Workspace</th><th>Key</th><th>What it is</th><th>From Proton</th><th>Run</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td>Design</td><td class="keys"><kbd>⌘1</kbd></td><td>UI and web layout on an infinite canvas, two-way bound to HTML/CSS, React, Tailwind and tokens, with Review.</td><td class="from">Design mode’s code binding and tokens; adds side-by-side breakpoints, nested components, light/dark schemes and Review.</td><td class="run">Preview</td><td><span class="pill ok">Built</span></td></tr>
+          <tr><td>Model</td><td class="keys"><kbd>⌘2</kbd></td><td>3D modelling in a Metal viewport: Object, Edit, material layers and a denoised path tracer.</td><td class="from">scene.proton.json and the modifier stack; direct face handles, material layer stack and Render assets.</td><td class="run">Render</td><td><span class="pill ok">Built in part</span></td></tr>
+          <tr><td>Game</td><td class="keys"><kbd>⌘3</kbd></td><td>Rooms, entities and behaviours, played in the viewport with no load step. Targets Metroidvania, Roguelite, Isometric &amp; Lowpoly.</td><td class="from">Proton’s engine formats and fixed-point simulation; adds lit Metal stage, pixel mode, skeletons, audio and isometric slice 1.</td><td class="run">Play</td><td><span class="pill info">Iso slice 1</span></td></tr>
+          <tr><td>Canvas</td><td class="keys"><kbd>⌘4</kbd></td><td>Painting, pixel art, animation, Make generators/filters, and live asset layers.</td><td class="from">The 64 px tile engine, Pixel/Paint presets, Scale2x/3x and PSD/Aseprite export; vector booleans remain.</td><td class="run">Export</td><td><span class="pill ok">Built</span></td></tr>
+          <tr><td>Diffuse</td><td class="keys"><kbd>⌘5</kbd></td><td>Node-based image generation on Core ML locally, or on forge through Nexus, with Gallery and sealed flows.</td><td class="from">flow.json and server-defined nodes; adds local Core ML SDXL, live Canvas/Game links and quit-during-run guard.</td><td class="run">Generate</td><td><span class="pill ok">Built</span></td></tr>
+          <tr><td>Video</td><td class="keys"><kbd>⌘6</kbd></td><td>A magnetic, trackless editor with a programme monitor and effect stacks.</td><td class="from">EDL and SRT round-trip; the monitor, GPU thumbnails and waveforms come from AVFoundation.</td><td class="run">Play</td><td><span class="pill muted">Placeholder</span></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="part" id="decisions" aria-labelledby="dec-h">
+    <div class="part-head">
+      <span class="eyebrow kicker">Decisions · RESEARCH_PLAN.md §9</span>
+      <h2 class="display" id="dec-h">Decided</h2>
+      <p>Five questions, settled on 27 Oct. Every card says what was chosen and what it changes.</p>
+    </div>
+    <div class="decisions">
+      <article class="decision paper">
+        <span class="legend">Q1 · decided 27 Oct</span>
+        <h3>Rust document cores, or a Swift rewrite?</h3>
+        <p>Proton’s raster engine, game simulation, flow and EDL code is Rust and already tested for byte-identical output.</p>
+        <ul class="options"><li><b>a</b><span>Rewrite in Swift: one language, but re-prove determinism.</span></li><li><b>b</b><span>Link the Rust cores via UniFFI: still native, formats stay shared with Proton.</span></li></ul>
+        <p class="rec">(b). Link Proton’s Rust cores through UniFFI for formats, ops, the simulation and the raster engine. UI, rendering and media stay Swift and Metal.</p>
+      </article>
+      <article class="decision paper">
+        <span class="legend">Q2 · decided 27 Oct</span>
+        <h3>Which macOS is the floor?</h3>
+        <p>The floor decides whether the glass is Liquid Glass or hand-built materials, and whether Metal 4 paths are available.</p>
+        <ul class="options"><li><b>a</b><span>macOS 26 and later.</span></li><li><b>b</b><span>macOS 15, with fallbacks.</span></li></ul>
+        <p class="rec">(a) macOS 26 and later. Panels use glassEffect, and Metal 4 is always available.</p>
+      </article>
+      <article class="decision paper">
+        <span class="legend">Q3 · decided 27 Oct</span>
+        <h3>Where does Diffuse run by default?</h3>
+        <p>Local Core ML is private and offline. forge’s RTX 4090 through Nexus is faster and runs every model Nexus has.</p>
+        <ul class="options"><li><b>a</b><span>Local by default, Nexus per flow.</span></li><li><b>b</b><span>Nexus by default, local when forge is away.</span></li></ul>
+        <p class="rec">(a). Core ML on the Neural Engine and GPU by default; a flow can switch to Nexus on forge, and the Run button names the backend.</p>
+      </article>
+      <article class="decision paper">
+        <span class="legend">Q4 · decided 27 Oct</span>
+        <h3>Which plugin runtime?</h3>
+        <p>Plugins add tools, nodes and inspector sections through a capability-scoped host API.</p>
+        <ul class="options"><li><b>a</b><span>Wasmtime: mature, Rust.</span></li><li><b>b</b><span>WasmKit: Swift-native, younger.</span></li></ul>
+        <p class="rec">(a) Wasmtime, since the Rust cores are linked anyway (Q1).</p>
+      </article>
+      <article class="decision paper">
+        <span class="legend">Q5 · decided 27 Oct</span>
+        <h3>Keep the traffic lights stacked?</h3>
+        <p>Stacking them down the 32 pt rail means re-laying out AppKit’s titlebar buttons, or drawing our own and losing the system hover glyphs.</p>
+        <ul class="options"><li><b>a</b><span>Stacked, as designed, if the spike is robust.</span></li><li><b>b</b><span>Horizontal in a corner above the rail.</span></li></ul>
+        <p class="rec">(a) Stacked, as designed. M0 proves it; the corner fallback is used only if it breaks on resize or full screen.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="part" id="keys" aria-labelledby="keys-h">
+    <div class="part-head">
+      <span class="eyebrow kicker">Keys</span>
+      <h2 class="display" id="keys-h">Cheatsheet</h2>
+      <p>The keys as designed. Everything here is also in the omnibar.</p>
+    </div>
+    <div class="cheat-grid">
+      <div class="cheat paper">
+        <span class="legend">Everywhere</span>
+        <table><tbody>
+          <tr><td class="k"><kbd>⌘1</kbd> – <kbd>⌘6</kbd></td><td>Switch workspace</td></tr>
+          <tr><td class="k"><kbd>⌘K</kbd></td><td>Omnibar; <kbd>⇥</kbd> changes its scope</td></tr>
+          <tr><td class="k"><kbd>⌘↩</kbd></td><td>Run: Preview, Render, Play, Export, Generate</td></tr>
+          <tr><td class="k"><kbd>esc</kbd></td><td>Stop, close, deselect</td></tr>
+          <tr><td class="k"><kbd>⌘0</kbd> · <kbd>⌘\</kbd></td><td>Navigator · inspector</td></tr>
+          <tr><td class="k"><kbd>⇧⌘\</kbd></td><td>All panels away</td></tr>
+          <tr><td class="k"><kbd>space</kbd></td><td>Hold to pan; play in Video</td></tr>
+          <tr><td class="k"><kbd>⇧⇥</kbd></td><td>Snapping on or off</td></tr>
+        </tbody></table>
+      </div>
+      <div class="cheat paper">
+        <span class="legend">Model</span>
+        <table><tbody>
+          <tr><td class="k"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Select vertices, edges, faces</td></tr>
+          <tr><td class="k"><kbd>E</kbd> · <kbd>I</kbd></td><td>Extrude · inset</td></tr>
+          <tr><td class="k"><kbd>⌘B</kbd> · <kbd>⌘R</kbd></td><td>Bevel · loop cut</td></tr>
+          <tr><td class="k"><kbd>⇧A</kbd></td><td>Add a primitive</td></tr>
+          <tr><td class="k">drag · <kbd>⌥</kbd> drag</td><td>Slide along the normal · extrude</td></tr>
+        </tbody></table>
+      </div>
+      <div class="cheat paper">
+        <span class="legend">Canvas</span>
+        <table><tbody>
+          <tr><td class="k"><kbd>B</kbd> <kbd>E</kbd> <kbd>S</kbd></td><td>Brush, eraser, smudge</td></tr>
+          <tr><td class="k"><kbd>P</kbd> <kbd>U</kbd> <kbd>G</kbd></td><td>Pen, shape, fill</td></tr>
+          <tr><td class="k"><kbd>L</kbd> · <kbd>I</kbd></td><td>Lasso · eyedropper</td></tr>
+          <tr><td class="k"><kbd>[</kbd> <kbd>]</kbd> · <kbd>X</kbd></td><td>Brush size · swap colours</td></tr>
+          <tr><td class="k"><kbd>⌥⌘S</kbd> · <kbd>⌥⌘E</kbd></td><td>Subtract shapes · flatten</td></tr>
+        </tbody></table>
+      </div>
+      <div class="cheat paper">
+        <span class="legend">Game · Diffuse</span>
+        <table><tbody>
+          <tr><td class="k"><kbd>⌘↩</kbd> · <kbd>.</kbd></td><td>Play from here · step one frame</td></tr>
+          <tr><td class="k"><kbd>⇧⌘A</kbd> · <kbd>G</kbd></td><td>Add component · open behaviour graph</td></tr>
+          <tr><td class="k"><kbd>⇥</kbd> on the flow</td><td>Node library at the pointer</td></tr>
+          <tr><td class="k"><kbd>⌘G</kbd> · <kbd>N</kbd></td><td>Group nodes · sticky note</td></tr>
+          <tr><td class="k"><kbd>⌘L</kbd> · <kbd>⇧T</kbd></td><td>Lock seed · tidy wires</td></tr>
+        </tbody></table>
+      </div>
+      <div class="cheat paper">
+        <span class="legend">Video</span>
+        <table><tbody>
+          <tr><td class="k"><kbd>A</kbd> <kbd>B</kbd> <kbd>T</kbd> <kbd>R</kbd></td><td>Select, blade, trim, range</td></tr>
+          <tr><td class="k"><kbd>N</kbd> · <kbd>S</kbd></td><td>Magnetic snapping · skimming</td></tr>
+          <tr><td class="k"><kbd>←</kbd> <kbd>→</kbd></td><td>One frame back, forward</td></tr>
+          <tr><td class="k"><kbd>↑</kbd> <kbd>↓</kbd></td><td>Previous, next edit</td></tr>
+          <tr><td class="k"><kbd>⌥T</kbd> · <kbd>⌘E</kbd></td><td>Title card from Design · export</td></tr>
+        </tbody></table>
+      </div>
+      <div class="cheat paper">
+        <span class="legend">Design</span>
+        <table><tbody>
+          <tr><td class="k"><kbd>V</kbd> <kbd>F</kbd> <kbd>A</kbd> <kbd>T</kbd></td><td>Select, frame, stack, text</td></tr>
+          <tr><td class="k"><kbd>C</kbd> · <kbd>⇧⌘K</kbd></td><td>Insert component · place an asset</td></tr>
+          <tr><td class="k"><kbd>⌥A</kbd> · <kbd>⌥⌘K</kbd></td><td>Wrap in stack · extract component</td></tr>
+          <tr><td class="k"><kbd>⌘T</kbd> · <kbd>⇧⌘C</kbd></td><td>Bind to token · copy as Tailwind</td></tr>
+          <tr><td class="k"><kbd>⌘/</kbd></td><td>Show the synced code</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+  </section>
+
+  </div>
+</main>
+
+<script>
+(() => {
+  const STORAGE_KEY = 'photon-status-plan-overrides-v1';
+
+  const PHASES = [
+    { id: 'design', title: 'Design', sub: '27 Oct', steps: [
+      { id: 'd1', state: 'done', at: '2026-10-27', title: 'Survey Proton’s six creative modes', who: 'Claude', size: 'S', refs: ['DESIGN.md', 'README'],
+        why: 'Read Proton’s design spec, README and running prototype to see what each mode does today and what it cannot do in a web view.',
+        covers: ['Design, Modeling, Game, Canvas, Diffuse and Video, and their Rust crates', 'What to keep, change and drop for each'],
+        done: 'a keep / change table per mode in RESEARCH_PLAN.md §2' },
+      { id: 'd2', state: 'done', at: '2026-10-27', title: 'UX architecture and the Velvet Obsidian system', who: 'Claude', size: 'M', refs: ['Tokens board'],
+        why: 'One window anatomy for all six workspaces, and a token set where the chrome stays grey so the work carries the colour.',
+        covers: ['Rail, floating navigator and inspector, contextual action bar, tool dock, omnibar', 'Colour, type, elevation, motion, inspector rules, keys'],
+        done: 'the design-system board and §3–§5 of the plan' },
+      { id: 'd3', state: 'done', at: '2026-10-27', title: 'Click-through prototype on the design canvas', who: 'Claude', size: 'L', refs: ['canvas v11'],
+        why: 'Every workspace drawn at 1440 × 900 around one sample project, so a single asset can be followed between workspaces.',
+        covers: ['Six workspaces, each with working panel toggles and the omnibar', 'Game’s Play button switches to the play state', 'The rail moved to a 32 pt vertical strip with text-only labels'],
+        done: '12 boards published, clickable in the canvas’s Play mode' },
+      { id: 'd4', state: 'done', at: '2026-10-27', title: 'App icon', who: 'Claude', size: 'S', refs: ['App icon board'],
+        why: 'A mark that reads at 16 px and still says six workspaces, one project.',
+        covers: ['1024 px master, small sizes on dark and light, Dock, template glyph'],
+        done: 'the App icon board' },
+      { id: 'd5', state: 'done', at: '2026-10-27', title: 'Review the prototype', who: 'you', size: 'S', refs: ['canvas'],
+        why: 'Comment on the canvas wherever a workspace feels wrong before any of it is built.',
+        covers: ['Approved 27 Oct'],
+        done: 'feedback folded into the canvas, or an all-clear' },
+    ]},
+    { id: 'decide', title: 'Decide', sub: '27 Oct', steps: [
+      { id: 'q', state: 'done', at: '2026-10-27', title: 'Settle the five open decisions', who: 'you', size: 'S', refs: ['§9', 'Q1–Q5'],
+        why: 'Settled on 27 Oct. The Decisions section below says what each one changes.',
+        covers: ['Q1 link the Rust cores through UniFFI', 'Q2 macOS 26 and later', 'Q3 Diffuse runs locally by default, Nexus per flow', 'Q4 Wasmtime for plugins', 'Q5 stacked traffic lights, with the corner fallback'],
+        done: 'answers recorded in RESEARCH_PLAN.md §9' },
+    ]},
+    { id: 'm0', title: 'M0 · Shell', sub: 'shell, viewport & budgets', steps: [
+      { id: 'm0a', state: 'done', at: '2026-10-30', title: 'Frame budget, heaps and transaction rules', who: 'Antigravity', size: 'M', refs: ['§6.4a', '§7a', '§7b'],
+        why: 'Check the 8.33 ms split, specify how transactions invert, and measure frame/asset passes under Instruments.',
+        covers: ['Done: transaction rules (§6.4a) — all-or-nothing, inverse per op, one history walked document by document', 'Done: measured under Instruments (§7b) — hitch time down 80% (worst hitch 21 ms vs 200 ms); PNG encode/decode and GPU wait moved off the main thread'],
+        done: 'rules in RESEARCH_PLAN.md and frame/asset passes measured' },
+      { id: 'm0b', state: 'done', at: '2026-11-03', title: 'Create the repository and Xcode project', who: 'Antigravity', size: 'S', refs: ['§6.1', '§10a'],
+        why: 'Swift 6 strict concurrency from the first commit, Rust cores bridged through UniFFI, and a persistent copy outside build/.',
+        covers: ['XcodeGen project, PhotonKit Swift package, Rust workspace (proton-diffuse, proton-raster, proton-game, photon-layers)', 'Builds refresh ~/Applications/Photon.app via scripts/keep-app.sh (always run with env -u NEXUS_KEY)', 'Quit guards for unsaved changes (ac89d7e) and active Diffuse runs (3e20d48; forge live check pending)'],
+        done: 'the window builds and launches' },
+      { id: 'm0c', state: 'done', at: '2026-10-28', title: 'Rail, floating panels and omnibar in SwiftUI', who: 'Antigravity', size: 'M', refs: ['Rail', 'Omnibar', '§10a'],
+        why: 'The chrome every workspace shares, built to the canvas.',
+        covers: ['Built: 32 pt rail with vertical labels, glass panels, omnibar (⌘K) with Here, Actions, Assets and Go to'],
+        done: 'rail, panels and omnibar working across workspaces' },
+      { id: 'm0d', state: 'done', at: '2026-10-30', title: 'Metal viewport at 120 Hz', who: 'Antigravity', size: 'M', refs: ['§6.3', '§7b'],
+        why: 'Keep Metal viewports smooth while panels animate on top.',
+        covers: ['Built: Metal viewports for Model and Game (lit 2D/isometric stage, pixel mode)', 'Measured under Instruments: keeping panels mounted cut hitch time by 80%'],
+        done: 'Metal viewport running smoothly under Instruments' },
+      { id: 'm0e', state: 'done', at: '2026-10-27', title: 'Stacked traffic lights', who: 'Antigravity', size: 'S', refs: ['Q5', '§6.5'],
+        why: 'System buttons living cleanly with the 32 pt rail through resize, full screen and appearance changes.',
+        covers: ['Built in shell chrome'],
+        done: 'stacked lights or corner fallback proven' },
+      { id: 'm0f', state: 'doing', at: '2026-10-30', title: 'Cold start under 100 ms, measured', who: 'Antigravity', size: 'S', refs: ['§7', '§7b'],
+        why: 'A signpost from process start to first drawable.',
+        covers: ['Measured (§7b): ~0.6 s vs 100 ms target; an empty SwiftUI app takes 0.35–0.45 s on this Mac, so the target needs restating or deferred startup work'],
+        done: 'launch time restated and optimised to target' },
+    ]},
+    { id: 'm1', title: 'M1 · Project graph', sub: 'transactions, live links & packages', steps: [
+      { id: 'm1a', state: 'done', at: '2026-10-28', title: 'ProjectGraph, transactions and undo', who: 'Antigravity', size: 'L', refs: ['§6.4a', '§10a'],
+        why: 'One graph that every workspace changes only through all-or-nothing transactions, with one history for every document.',
+        covers: ['Built & checked: AetherGraph with copy-validated ops, inverses, and unified ⌘Z history across document + project steps'],
+        done: 'a step and its project change undo as one' },
+      { id: 'm1b', state: 'done', at: '2026-10-30', title: 'AssetPool and live links', who: 'Antigravity', size: 'M', refs: ['§4', '§7a', '§10a'],
+        why: 'Publishing an asset version updates everything that follows it, from bytes kept once.',
+        covers: ['Built: live links across Diffuse → Canvas, Canvas → Diffuse, Canvas → Canvas, Model Render/Depth → assets, Design live images, and Send to Game', 'APFS-cloned blobs, off-main-thread PNG encode/decode'],
+        done: 'live assets flow across workspaces without blocking the main thread' },
+      { id: 'm1c', state: 'done', at: '2026-10-28', title: 'The project package', who: 'Antigravity', size: 'M', refs: ['§4', '§6.4a'],
+        why: 'Diffable JSON plus content-addressed blobs, in Proton’s formats wherever one exists.',
+        covers: ['Built & checked: .aether packages, sorted project.json, atomic saves, New/Open/Recent Project, unsaved-work prompts'],
+        done: 'a package saves, reopens and diffs cleanly' },
+    ]},
+    { id: 'm2', title: 'M2–M5 · Workspaces', sub: 'in build order', steps: [
+      { id: 'm3', state: 'done', at: '2026-11-03', title: 'M3 · Diffuse (built first)', who: 'Antigravity', size: 'L', refs: ['M3', 'Q3', '§10a'],
+        why: 'Flows run on Core ML locally by default (Q3), and on forge through Nexus when a flow asks for it.',
+        covers: ['Built: .flow.json via Rust core, node canvas, inspector, library, run queue, Gallery, Touch ID sealed flows, Load Image, mask painting, Run to here', 'Built: local Core ML SDXL (prompt cache skips re-encode on seed change) + Nexus/forge automatic fallback', 'Built: Send to Canvas, Send to Game, quit-during-run guard (3e20d48 — on-screen forge check pending)'],
+        done: 'flows run locally and on forge and feed other workspaces live' },
+      { id: 'm2', state: 'done', at: '2026-10-30', title: 'M2 · Canvas and Model', who: 'Antigravity', size: 'L', refs: ['M2', '§10a'],
+        why: 'The two workspaces that produce most assets for the others.',
+        covers: ['Canvas: full Proton parity on proton-raster — brushes, layers, selections, transform, clipboard, palette, pixel grid, mirror, animation/onion skin/tags, Make generators/filters, Scale2x/3x, PNG/sprite-sheet/PSD export (vector booleans remain)', 'Model: Proton scenes, outliner, modifier stack, Metal viewport, Edit mode (extrude, inset, loop cut, bevel, face handles), material layers & graph drawer, Render with cameras/lights/shadows, path tracer & denoiser'],
+        done: 'Canvas parity + Model Edit, materials and denoised Render' },
+      { id: 'm4', state: 'doing', at: '2026-11-07', title: 'M4 · Game', who: 'Antigravity', size: 'L', refs: ['M4', '§9b', '§10a'],
+        why: 'Simulation core, room editor, lit Metal stage and Play in the viewport across Metroidvania, Roguelite, Isometric and Lowpoly.',
+        covers: ['Done: side-on complete — Proton fixed-point engine (replay hashes matched), collision drawing, entity placing, lights, frame animations, lit Metal renderer, pixel mode, importers & Send to Game, particles, skeletons, squash/stretch/shake, audio', 'Done (81682e1): isometric first slice — 503 Rust tests (incl. ground.rs) + GameIsometricTests, verified on screen', 'Next: isometric slice 2 (8-way sprites, shadows, raised floors, enemy pathing) and low-poly 3D slice (§9b.3)'],
+        done: 'all four target niches playable in the viewport' },
+      { id: 'm5', state: 'doing', at: '2026-11-07', title: 'M5 · Design and Video', who: 'Antigravity', size: 'L', refs: ['M5', '§10a'],
+        why: 'Design’s artboards with live two-way code sync, then Video’s editor and monitor.',
+        covers: ['Done (Design): native pages & layers bound to theme.css tokens, live asset images, breakpoints, components with variants/states/nesting/Detach, light & dark schemes, two-way HTML/CSS folder sync, React sync (d7d1f50), Tailwind sync (add0412), and Review (7bf4621)', 'Not yet (Video): still a placeholder — programme monitor, magnetic timeline, EDL/SRT round-trip'],
+        done: 'Design code sync complete and Video editor built' },
+    ]},
+    { id: 'backlog', title: 'Backlog', sub: 'ideas kept, not scheduled; each waits for your go-ahead', steps: [
+      { id: 'b1', state: 'todo', at: '2026-10-28', title: 'World mode: a picture to a 3D model to an interactive world', who: 'Antigravity', size: 'L', refs: ['§9a B1', 'M1'],
+        why: 'A seventh mode for world simulation models: Diffuse makes a picture, Model turns it into a mesh, and a world model makes an interactive world from it, linked live via M1.',
+        covers: ['Diffuse → Model: image-to-3D node (Hunyuan3D or TRELLIS class) on forge’s 4090', 'Model → World: evaluate which world models run on forge or via API', 'Distinct from Game (authored/deterministic) vs World (generated/streamed)', 'Awaits your go-ahead + forge spike'],
+        done: 'the spike’s findings in RESEARCH_PLAN.md §9a, and a decision on the mode' },
+    ]},
+  ];
+
+  const LABEL = { todo: 'To do', doing: 'Doing', done: 'Done', skipped: 'Skipped' };
+  const steps = PHASES.flatMap((p) => p.steps);
+  const fmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+
+  function loadOverrides() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
+  }
+  function saveOverrides(map) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(map)); } catch {}
+  }
+
+  let overrides = loadOverrides();
+  const status = {};
+  function rebuildStatus() {
+    steps.forEach((s) => {
+      const ov = overrides[s.id];
+      if (ov && LABEL[ov.state]) {
+        status[s.id] = { state: ov.state, at: ov.at };
+      } else {
+        status[s.id] = { state: s.state, at: s.at ? Date.parse(s.at) : null };
+      }
+    });
+  }
+
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  function updateSyncUI() {
+    const hasOv = Object.keys(overrides).length > 0;
+    document.getElementById('sync').textContent = hasOv ? 'Local edits saved' : 'Synced to repo';
+    document.getElementById('reset-btn').classList.toggle('visible', hasOv);
+  }
+
+  function render() {
+    rebuildStatus();
+    const root = document.getElementById('phases');
+    root.textContent = '';
+    const nextId = (steps.find((s) => !['done', 'skipped'].includes(status[s.id].state)) || {}).id;
+    PHASES.forEach((phase) => {
+      const sec = el('section', 'phase');
+      const head = el('div', 'phase-head');
+      head.append(el('h3', null, phase.title), el('span', 'phase-sub', phase.sub));
+      const done = phase.steps.filter((s) => status[s.id].state === 'done').length;
+      head.append(el('span', 'phase-count tab-num', done + ' of ' + phase.steps.length + ' done'));
+      sec.append(head);
+      const list = el('div', 'steps');
+      phase.steps.forEach((s) => {
+        const st = status[s.id];
+        const card = el('article', 'step paper');
+        if (st.state === 'done') card.classList.add('is-done');
+        if (st.state === 'skipped') card.classList.add('is-skipped');
+        if (s.id === nextId) card.classList.add('is-next');
+        card.append(el('span', 'legend', s.id.toUpperCase() + ' · ' + phase.title));
+        const body = el('div', 'step-body');
+        const tr = el('div', 'title-row');
+        tr.append(el('h4', 'title', s.title));
+        if (s.id === nextId) tr.append(el('span', 'next-tag', 'Next'));
+        body.append(tr, el('p', 'why', s.why));
+        const ul = el('ul', 'covers');
+        s.covers.forEach((c) => ul.append(el('li', null, c)));
+        body.append(ul);
+        const dw = el('p', 'done-when');
+        dw.append(el('span', null, 'Done when '), document.createTextNode(s.done + '.'));
+        body.append(dw);
+        const meta = el('div', 'meta');
+        meta.append(el('span', 'tag', s.size), el('span', 'tag who' + (s.who === 'you' ? ' you' : ''), s.who === 'you' ? 'You' : s.who));
+        s.refs.forEach((r) => meta.append(el('span', 'tag', r)));
+        body.append(meta);
+        const ctl = el('div', 'ctl');
+        ctl.append(el('span', 'state s-' + st.state, LABEL[st.state]));
+        const lab = el('label', null, 'Set status');
+        lab.htmlFor = 'st-' + s.id;
+        const sel = el('select');
+        sel.id = 'st-' + s.id;
+        ['todo', 'doing', 'done', 'skipped'].forEach((v) => {
+          const o = el('option', null, LABEL[v]);
+          o.value = v;
+          if (v === st.state) o.selected = true;
+          sel.append(o);
+        });
+        sel.addEventListener('change', () => {
+          overrides[s.id] = { state: sel.value, at: Date.now() };
+          saveOverrides(overrides);
+          render();
+        });
+        ctl.append(lab, sel);
+        if (st.at) {
+          const d = new Date(st.at);
+          const t = el('time', null, 'Updated ' + fmt.format(d));
+          t.dateTime = d.toISOString();
+          ctl.append(t);
+        }
+        card.append(body, ctl);
+        list.append(card);
+      });
+      sec.append(list);
+      root.append(sec);
+    });
+
+    const total = steps.length;
+    const nDone = steps.filter((s) => status[s.id].state === 'done').length;
+    const nDoing = steps.filter((s) => status[s.id].state === 'doing').length;
+    document.getElementById('progress-text').textContent = nDone + ' of ' + total + ' done';
+    document.getElementById('bar-done').style.width = (100 * nDone / total) + '%';
+    document.getElementById('bar-doing').style.width = (100 * nDoing / total) + '%';
+    document.getElementById('sync-mini').textContent = nDone + '/' + total + ' steps done';
+    updateSyncUI();
+  }
+
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    overrides = {};
+    saveOverrides(overrides);
+    render();
+  });
+
+  render();
+
+  // Section spy
+  const links = Array.from(document.querySelectorAll('.sections a'));
+  const spy = new IntersectionObserver((entries) => {
+    entries.forEach((en) => {
+      if (en.isIntersecting) {
+        links.forEach((a) => a.setAttribute('aria-current', a.dataset.spy === en.target.id ? 'true' : 'false'));
+      }
+    });
+  }, { rootMargin: '-40% 0px -55% 0px' });
+  ['plan', 'design', 'workspaces', 'decisions', 'keys'].forEach((id) => {
+    const n = document.getElementById(id);
+    if (n) spy.observe(n);
+  });
+})();
+</script>
+</body>
+</html>

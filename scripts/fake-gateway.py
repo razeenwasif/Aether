@@ -6,7 +6,7 @@ graph actually sent (each node runs in turn, samplers count their steps and
 send previews, output nodes send an image) without a GPU.
 
     python3 scripts/fake-gateway.py [--port 7421] [--image build/fake/output.png --preview build/fake/preview.jpg]
-    AETHER_GATEWAY=http://127.0.0.1:7421/img/v1 NEXUS_KEY=dev build/.../Aether.app/Contents/MacOS/Aether
+    PHOTON_GATEWAY=http://127.0.0.1:7421/img/v1 NEXUS_KEY=dev build/.../Photon.app/Contents/MacOS/Photon
 """
 
 import argparse
@@ -20,7 +20,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FIXTURES = os.path.join(ROOT, "Packages/AetherKit/Tests/DiffuseCoreTests/Fixtures")
+FIXTURES = os.path.join(ROOT, "Packages/PhotonKit/Tests/DiffuseCoreTests/Fixtures")
 PREFIX = "/img/v1"
 
 runs = {}

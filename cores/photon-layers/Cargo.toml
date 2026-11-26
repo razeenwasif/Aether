@@ -1,0 +1,11 @@
+[package]
+name = "photon-layers"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license = "MIT"
+description = "Model's material layers: a short stack of surfaces, written as an ordinary Proton material graph and read back from one."
+
+[dependencies]
+proton-scene = { path = "../proton-scene" }
+serde = { version = "1", features = ["derive"] }

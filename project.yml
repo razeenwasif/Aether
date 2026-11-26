@@ -1,17 +1,17 @@
-# XcodeGen spec for Aether.xcodeproj (generated, not committed):
+# XcodeGen spec for Photon.xcodeproj (generated, not committed):
 #   xcodegen generate
-# Everything but the app entry point lives in Packages/AetherKit.
-name: Aether
+# Everything but the app entry point lives in Packages/PhotonKit.
+name: Photon
 options:
   bundleIdPrefix: dev.razeen
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
 packages:
-  AetherKit:
-    path: Packages/AetherKit
+  PhotonKit:
+    path: Packages/PhotonKit
 targets:
-  Aether:
+  Photon:
     type: application
     platform: macOS
     sources:
@@ -19,8 +19,8 @@ targets:
         excludes:
           - Info.plist
     dependencies:
-      - package: AetherKit
-        product: AetherKit
+      - package: PhotonKit
+        product: PhotonKit
     postBuildScripts:
       - name: Keep a copy of the app
         script: '"$SRCROOT/scripts/keep-app.sh"'
@@ -30,16 +30,16 @@ targets:
         showEnvVars: false
     settings:
       base:
-        PRODUCT_NAME: Aether
-        PRODUCT_BUNDLE_IDENTIFIER: dev.razeen.aether
+        PRODUCT_NAME: Photon
+        PRODUCT_BUNDLE_IDENTIFIER: dev.razeen.photon
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         GENERATE_INFOPLIST_FILE: YES
-        # The .aether project type; Xcode adds the generated keys to it.
+        # The .photon (and legacy .aether) project type; Xcode adds the generated keys to it.
         INFOPLIST_FILE: App/Info.plist
-        INFOPLIST_KEY_CFBundleDisplayName: Aether
+        INFOPLIST_KEY_CFBundleDisplayName: Photon
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.graphics-design
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

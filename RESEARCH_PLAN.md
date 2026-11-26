@@ -1,4 +1,6 @@
-# RESEARCH_PLAN.md — Aether: a native creative studio for macOS
+# RESEARCH_PLAN.md — Photon (formerly Aether): a native creative studio for macOS
+
+> **Renamed to Photon (2026-11-27):** Aether was renamed to **Photon** (`Photon.app`, `Photon.xcodeproj`, `PhotonKit`, `cores/photon-*`, `dev.razeen.photon`, `.photon` packages with automatic fallback for legacy `.aether` / `~/Documents/Aether` and `Application Support/Aether/Models`). Historical notes below preserve the original Aether name.
 
 Owner: Claude (Principal Investigator) · Created: 2026-10-27 · Status: **Design approved and Q1–Q5 settled 27 Oct; Diffuse and Canvas are built, and M1's project graph links them; Model is built in part, Game for side-on games, and Design's first slice is in (see §10a); Video is designed and waiting**
 

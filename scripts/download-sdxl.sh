@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Downloads Apple's 4.5-bit palettized SDXL base (Core ML, compiled for
-# Swift) into Aether's Models folder: only the compiled files, 3.36 GB, each
+# Swift) into Photon's Models folder: only the compiled files, 3.36 GB, each
 # checked against its published size. Into a .partial folder first, renamed
 # when every file is there, so a half-done download is never taken for a
 # model. Run again to finish one that stopped.
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 BASE="https://huggingface.co/apple/coreml-stable-diffusion-mixed-bit-palettization/resolve/main/coreml-stable-diffusion-xl-base_mbp_4_50_palettized/compiled"
-MODELS="$HOME/Library/Application Support/Aether/Models"
+MODELS="$HOME/Library/Application Support/Photon/Models"
 NAME="SDXL base (4.5-bit)"
 DEST="$MODELS/$NAME"
 PART="$DEST.partial"
@@ -69,7 +69,7 @@ for ((i = 1; i <= ${#FILES}; i += 2)); do
   fi
 done
 
-cat > "$PART/aether-model.json" <<'JSON'
+cat > "$PART/photon-model.json" <<'JSON'
 {
   "name": "SDXL base (4.5-bit)",
   "answersTo": ["sd_xl_base_1.0.safetensors", "sd_xl_base_1.0_0.9vae.safetensors"],

@@ -1,4 +1,4 @@
-// Renders design/aether-icon.svg into the app's AppIcon set. Only needed
+// Renders design/photon-icon.svg into the app's AppIcon set. Only needed
 // after changing the icon; the rendered set is checked in.
 //   npm install --no-save playwright && npx playwright install chromium
 //   node scripts/render-icon.mjs
@@ -13,7 +13,7 @@ const { chromium } = await import('playwright').catch(() => {
 });
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const svg = readFileSync(join(root, 'design/aether-icon.svg'), 'utf8');
+const svg = readFileSync(join(root, 'design/photon-icon.svg'), 'utf8');
 const set = join(root, 'App/Assets.xcassets/AppIcon.appiconset');
 mkdirSync(set, { recursive: true });
 
